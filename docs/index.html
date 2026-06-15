@@ -1,0 +1,1752 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>noxed — every server, one window</title>
+<meta name="description" content="noxed is a free, open-source connection manager for people who live in terminals. SSH, SFTP, databases, Redis, Docker, and Kubernetes — in tabs of a single desktop app." />
+<meta property="og:title" content="noxed — every server, one window" />
+<meta property="og:description" content="Free, open-source SSH sessions, SFTP, databases, Redis, Docker, and Kubernetes in one desktop app." />
+<meta property="og:type" content="website" />
+<link rel="icon" type="image/svg+xml" href='data:image/svg+xml,%3Csvg viewBox="0 0 256 256" xmlns="http://www.w3.org/2000/svg"%3E%3Cdefs%3E%3CclipPath id="s"%3E%3Crect width="256" height="256" rx="58"/%3E%3C/clipPath%3E%3C/defs%3E%3Cg clip-path="url(%23s)"%3E%3Cpath d="M0 0 L148 0 Q138 64 128 128 Q64 118 0 108 Z" fill="%23A78BFA"/%3E%3Cpath d="M148 0 L256 0 L256 148 Q192 138 128 128 Q138 64 148 0 Z" fill="%236D28D9"/%3E%3Cpath d="M256 148 L256 256 L108 256 Q118 192 128 128 Q192 138 256 148 Z" fill="%23312A7D"/%3E%3Cpath d="M108 256 L0 256 L0 108 Q64 118 128 128 Q118 192 108 256 Z" fill="%234C6EF5"/%3E%3C/g%3E%3Cpath d="M128 44 C136 100 156 120 212 128 C156 136 136 156 128 212 C120 156 100 136 44 128 C100 120 120 100 128 44 Z" fill="%23FFFFFF" transform="rotate(14 128 128)"/%3E%3C/svg%3E' />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+
+<style>
+:root {
+  --bg: #07060e;
+  --bg-soft: #0c0a18;
+  --panel: rgba(167, 139, 250, 0.04);
+  --border: rgba(167, 139, 250, 0.14);
+  --border-bright: rgba(167, 139, 250, 0.35);
+  --text: #ece9fb;
+  --text-dim: #9d96bf;
+  --text-faint: #645d85;
+  --violet: #a78bfa;
+  --violet-deep: #6d28d9;
+  --indigo: #4c6ef5;
+  --ink: #312a7d;
+  --green: #4ade80;
+  --amber: #fbbf24;
+  --red: #f87171;
+  --radius: 16px;
+  --font-ui: "Inter", system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html { scroll-behavior: smooth; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-ui);
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+  line-height: 1.6;
+}
+
+::selection { background: rgba(109, 40, 217, 0.55); color: #fff; }
+
+a { color: inherit; text-decoration: none; }
+
+/* ---------- nav ---------- */
+.nav {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px clamp(20px, 4vw, 48px);
+  transition: background 0.4s ease, border-color 0.4s ease, padding 0.4s ease;
+  border-bottom: 1px solid transparent;
+}
+.nav.scrolled {
+  background: rgba(7, 6, 14, 0.72);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  border-bottom-color: var(--border);
+  padding-top: 10px;
+  padding-bottom: 10px;
+}
+.nav-brand {
+  display: flex; align-items: center; gap: 11px;
+  font-weight: 700; font-size: 18px; letter-spacing: -0.02em;
+}
+.nav-brand img, .nav-brand svg { width: 30px; height: 30px; border-radius: 8px; }
+.nav-links { display: flex; align-items: center; gap: clamp(14px, 2.5vw, 32px); }
+.nav-links a {
+  font-size: 14px; font-weight: 500; color: var(--text-dim);
+  transition: color 0.2s;
+}
+.nav-links a:hover { color: var(--text); }
+.nav-gh {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 8px 16px;
+  border: 1px solid var(--border-bright);
+  border-radius: 999px;
+  font-size: 13.5px; font-weight: 600;
+  color: var(--text) !important;
+  background: rgba(167, 139, 250, 0.07);
+  transition: background 0.2s, border-color 0.2s, transform 0.2s;
+}
+.nav-gh:hover { background: rgba(167, 139, 250, 0.16); transform: translateY(-1px); }
+.nav-gh svg { width: 16px; height: 16px; fill: currentColor; }
+@media (max-width: 640px) { .nav-links a:not(.nav-gh) { display: none; } }
+
+/* ---------- hero ---------- */
+.hero {
+  position: relative;
+  min-height: 100svh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 120px 24px 80px;
+  overflow: hidden;
+}
+#scene {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+}
+.hero::after {
+  content: "";
+  position: absolute;
+  inset: auto 0 0 0;
+  height: 220px;
+  background: linear-gradient(to bottom, transparent, var(--bg));
+  z-index: 1;
+  pointer-events: none;
+}
+.hero-inner { position: relative; z-index: 2; max-width: 980px; }
+
+.hero-kicker {
+  font-family: var(--font-mono);
+  font-size: 15px;
+  color: var(--text-dim);
+  margin-bottom: 26px;
+}
+.hero-kicker .ps1 { color: var(--violet); font-weight: 600; }
+.hero-kicker .typed { color: var(--text); }
+.hero-kicker .cursor {
+  background: var(--violet);
+  width: 9px; height: 18px; vertical-align: -3px;
+}
+
+.hero h1 {
+  font-size: clamp(44px, 8.5vw, 96px);
+  font-weight: 800;
+  letter-spacing: -0.045em;
+  line-height: 1.03;
+  animation: rise 0.9s 0.08s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.hero h1 .grad {
+  background: linear-gradient(100deg, #c4b5fd 0%, var(--violet) 30%, var(--indigo) 70%, #818cf8 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.hero-sub {
+  margin: 26px auto 0;
+  max-width: 640px;
+  font-size: clamp(16px, 2.2vw, 19px);
+  color: var(--text-dim);
+  animation: rise 0.9s 0.16s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.hero-sub strong { color: var(--text); font-weight: 600; }
+
+.hero-ctas {
+  display: flex; gap: 14px; justify-content: center; flex-wrap: wrap;
+  margin-top: 40px;
+  animation: rise 0.9s 0.24s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.btn {
+  display: inline-flex; align-items: center; gap: 10px;
+  padding: 14px 28px;
+  border-radius: 12px;
+  font-size: 15.5px; font-weight: 600;
+  transition: transform 0.2s, box-shadow 0.2s, background 0.2s, border-color 0.2s;
+  cursor: pointer;
+}
+.btn svg { width: 18px; height: 18px; fill: currentColor; }
+.btn-primary {
+  background: linear-gradient(110deg, var(--violet-deep), var(--indigo));
+  color: #fff;
+  box-shadow: 0 0 0 1px rgba(167, 139, 250, 0.35) inset,
+              0 8px 32px -8px rgba(109, 40, 217, 0.65);
+}
+.btn-primary:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 0 0 1px rgba(196, 181, 253, 0.6) inset,
+              0 14px 44px -8px rgba(109, 40, 217, 0.85);
+}
+.btn-ghost {
+  border: 1px solid var(--border-bright);
+  color: var(--text);
+  background: rgba(12, 10, 24, 0.55);
+  backdrop-filter: blur(8px);
+}
+.btn-ghost:hover { background: rgba(167, 139, 250, 0.12); transform: translateY(-2px); }
+
+.hero-meta {
+  margin-top: 26px;
+  display: flex; gap: 22px; justify-content: center; flex-wrap: wrap;
+  font-size: 13px; color: var(--text-faint);
+  animation: rise 0.9s 0.32s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.hero-meta span { display: inline-flex; align-items: center; gap: 7px; }
+.hero-meta svg { width: 14px; height: 14px; stroke: var(--violet); fill: none; stroke-width: 2; }
+
+@keyframes rise {
+  from { opacity: 0; transform: translateY(26px); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* ---------- app window showcase (mirrors the real noxed UI) ---------- */
+.showcase {
+  position: relative;
+  z-index: 3;
+  max-width: 1100px;
+  margin: -30px auto 0;
+  padding: 0 24px 40px;
+}
+.appwin {
+  --aw-shell: #161b22;
+  --aw-bg: #0d1117;
+  --aw-border: #30363d;
+  --aw-text: #e6edf3;
+  --aw-text2: #8b949e;
+  --aw-text3: #6e7681;
+  --aw-accent: #3b5ccc;
+  --aw-green: #10b981;
+  border: 1px solid #3a414b;
+  border-radius: 12px;
+  background: var(--aw-bg);
+  box-shadow:
+    0 0 0 1px rgba(0,0,0,0.55),
+    0 30px 90px -20px rgba(109, 40, 217, 0.38),
+    0 70px 160px -40px rgba(76, 110, 245, 0.22);
+  overflow: hidden;
+  font-size: 12px;
+  color: var(--aw-text2);
+  text-align: left;
+  line-height: 1.45;
+}
+.appwin svg.i { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0; }
+.appwin svg.i.s { width: 11px; height: 11px; }
+
+/* top bar — 44px, brand zone matches sidebar width */
+.aw-top { display: flex; align-items: stretch; height: 42px; background: var(--aw-shell); border-bottom: 1px solid var(--aw-border); }
+.aw-brandzone { display: flex; align-items: center; gap: 8px; width: 220px; padding: 0 14px; border-right: 1px solid var(--aw-border); flex-shrink: 0; }
+.aw-lights { display: flex; gap: 7px; margin-right: 7px; }
+.aw-lights i { width: 11px; height: 11px; border-radius: 50%; }
+.aw-lights i:nth-child(1) { background: #ff5f57; }
+.aw-lights i:nth-child(2) { background: #febc2e; }
+.aw-lights i:nth-child(3) { background: #28c840; }
+.aw-brandzone svg.logo { width: 19px; height: 19px; }
+.aw-brandzone b { color: var(--aw-text); font-size: 13px; font-weight: 700; letter-spacing: -0.01em; }
+.aw-searchwrap { flex: 1; display: flex; align-items: center; padding: 0 14px; min-width: 0; }
+.aw-search { display: flex; align-items: center; gap: 8px; background: var(--aw-bg); border: 1px solid var(--aw-border); border-radius: 7px; padding: 5px 10px; color: var(--aw-text3); font-size: 11.5px; flex: 1; max-width: 380px; white-space: nowrap; overflow: hidden; }
+.aw-actions { display: flex; align-items: center; gap: 12px; padding-right: 14px; }
+.aw-newbtn { display: flex; align-items: center; gap: 6px; background: var(--aw-accent); color: #fff; font-size: 11.5px; font-weight: 500; border-radius: 7px; padding: 5.5px 11px; white-space: nowrap; }
+
+/* tab strip — active tab gets the blue underline */
+.aw-tabbar { display: flex; align-items: stretch; height: 34px; background: var(--aw-shell); border-bottom: 1px solid var(--aw-border); overflow: hidden; }
+.aw-tab { display: flex; align-items: center; gap: 6px; padding: 0 12px; font-size: 11.5px; color: var(--aw-text2); border-right: 1px solid var(--aw-border); white-space: nowrap; }
+.aw-tab.on { color: var(--aw-text); background: var(--aw-bg); box-shadow: inset 0 -2px 0 var(--aw-accent); font-weight: 500; }
+.aw-tab.on svg.i { color: var(--aw-accent); }
+.aw-tab .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--aw-green); }
+.aw-tabplus { display: flex; align-items: center; padding: 0 11px; color: var(--aw-text3); }
+
+/* body: sidebar + main */
+.aw-body { display: flex; align-items: stretch; height: 400px; }
+.aw-side { width: 220px; flex-shrink: 0; background: var(--aw-bg); border-right: 1px solid var(--aw-border); display: flex; flex-direction: column; padding: 10px 8px 8px; overflow: hidden; }
+.aw-sidesearch { display: flex; align-items: center; gap: 7px; background: var(--aw-shell); border: 1px solid var(--aw-border); border-radius: 7px; padding: 5px 9px; color: var(--aw-text3); font-size: 11px; margin: 0 4px 8px; }
+.aw-seg { display: flex; background: var(--aw-shell); border: 1px solid var(--aw-border); border-radius: 7px; padding: 2px; margin: 0 4px 10px; }
+.aw-seg span { flex: 1; display: flex; align-items: center; justify-content: center; gap: 5px; padding: 4px 0; border-radius: 5px; font-size: 10.5px; font-weight: 500; color: var(--aw-text2); }
+.aw-seg .on { background: var(--aw-accent); color: #fff; }
+.aw-nav { flex: 1; overflow: hidden; padding: 0 2px; }
+.aw-item { display: flex; align-items: center; gap: 8px; padding: 5px 8px; border-radius: 6px; color: var(--aw-text); font-size: 11.5px; margin-bottom: 1px; }
+.aw-item svg.i { color: var(--aw-text2); }
+.aw-item.on { background: #1c2d5e; color: #79a0ff; }
+.aw-item.on svg.i { color: #79a0ff; }
+.aw-sechead { padding: 9px 8px 3px; font-size: 9px; letter-spacing: 0.1em; font-weight: 600; color: var(--aw-text3); text-transform: uppercase; display: flex; align-items: center; justify-content: space-between; }
+.aw-sechead svg.i { width: 10px; height: 10px; }
+.aw-conn { display: flex; align-items: center; gap: 7px; padding: 3.5px 8px; border-radius: 6px; color: var(--aw-text); font-size: 11.5px; }
+.aw-conn svg.i { color: var(--aw-text2); }
+.aw-conn .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--aw-green); margin-left: auto; }
+.aw-sidefoot { border-top: 1px solid var(--aw-border); padding: 6px 2px 0; margin-top: 6px; }
+
+/* main pane: host header + terminal */
+.aw-main { flex: 1; min-width: 0; display: flex; flex-direction: column; background: var(--aw-bg); }
+.aw-hosthead { display: flex; align-items: center; gap: 10px; height: 32px; padding: 0 12px; border-bottom: 1px solid rgba(255,255,255,0.05); background: rgba(255,255,255,0.015); flex-shrink: 0; overflow: hidden; }
+.aw-statdot { width: 6px; height: 6px; border-radius: 50%; background: #22c55e; box-shadow: 0 0 6px rgba(34,197,94,0.5); flex-shrink: 0; }
+.aw-host { font-family: var(--font-mono); font-size: 11px; font-weight: 600; color: #eeeef2; white-space: nowrap; }
+.aw-host em { font-style: normal; color: rgba(255,255,255,0.3); }
+.aw-elapsed { font-family: var(--font-mono); font-size: 10px; color: rgba(255,255,255,0.22); }
+.aw-flex { flex: 1; }
+.aw-metric { display: flex; align-items: center; gap: 4px; font-size: 9.5px; letter-spacing: 0.08em; color: rgba(255,255,255,0.25); text-transform: uppercase; white-space: nowrap; }
+.aw-metric b { font-family: var(--font-mono); font-weight: 600; font-size: 10px; letter-spacing: 0; color: #7ee787; font-variant-numeric: tabular-nums; }
+.aw-metric .spark { font-family: var(--font-mono); font-size: 9px; color: rgba(255,255,255,0.25); letter-spacing: 0; text-transform: none; }
+.aw-metric em { font-style: normal; font-family: var(--font-mono); font-size: 10px; color: rgba(255,255,255,0.2); letter-spacing: 0; }
+.aw-vr { width: 1px; height: 12px; background: rgba(255,255,255,0.07); }
+.aw-toggle { display: flex; align-items: center; gap: 4px; height: 20px; padding: 0 8px; border-radius: 5px; border: 1px solid rgba(255,255,255,0.08); color: rgba(255,255,255,0.4); font-size: 9.5px; font-weight: 500; white-space: nowrap; }
+.aw-toggle svg.i { width: 10px; height: 10px; }
+.aw-toggle.on { color: var(--aw-green); background: rgba(16,185,129,0.15); border-color: rgba(16,185,129,0.3); }
+.aw-term { flex: 1; padding: 13px 16px; font-family: var(--font-mono); font-size: 12px; line-height: 1.8; overflow: hidden; color: #b9c0ca; }
+.aw-term { overflow: hidden; }
+.aw-term .ln { white-space: pre; overflow: hidden; }
+
+/* status bar */
+.aw-status { display: flex; align-items: center; gap: 12px; height: 26px; padding: 0 14px; background: var(--aw-bg); border-top: 1px solid var(--aw-border); font-size: 10px; color: var(--aw-text2); white-space: nowrap; overflow: hidden; }
+.aw-status .sep { color: var(--aw-text3); }
+.aw-sdot { width: 6px; height: 6px; border-radius: 50%; background: var(--aw-green); }
+.aw-status .grn { display: flex; align-items: center; gap: 5px; color: var(--aw-green); }
+.aw-status .grn span { color: var(--aw-text2); }
+.aw-status svg.i { width: 11px; height: 11px; }
+
+/* terminal text colors (match the dark theme syntax tokens) */
+/* interactive views */
+.aw-tab, .aw-item, .aw-conn, .aw-seg span, .aw-card { cursor: pointer; }
+.aw-tab:not(.on):hover { background: rgba(255,255,255,0.03); color: var(--aw-text); }
+.aw-item:not(.on):hover, .aw-conn:hover { background: rgba(255,255,255,0.045); }
+.aw-tab.on[data-goto="database"] svg.i { color: #10b981; }
+.aw-tab.on[data-goto="k8s"] svg.i { color: #8b5cf6; }
+.aw-tab.on[data-goto="sftp"] svg.i { color: #ec4899; }
+.aw-view { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.aw-view[hidden] { display: none; }
+.aw-viewtitle { font-size: 11px; font-weight: 600; color: var(--aw-text); }
+.aw-viewsub { font-size: 10px; color: var(--aw-text3); white-space: nowrap; }
+.aw-pgroup { display: flex; align-items: center; gap: 7px; padding: 9px 8px 4px; font-size: 10.5px; font-weight: 600; color: var(--aw-text2); }
+.aw-pgroup i { width: 7px; height: 7px; border-radius: 2px; }
+.aw-pgroup .ct { margin-left: auto; font-size: 9px; color: var(--aw-text3); }
+.aw-dash { flex: 1; overflow: hidden; padding: 12px 14px; }
+.aw-dghead { display: flex; align-items: center; gap: 6px; font-size: 9px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--aw-text3); margin: 4px 0 8px; }
+.aw-dghead i { width: 7px; height: 7px; border-radius: 2px; }
+.aw-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); gap: 8px; margin-bottom: 14px; }
+.aw-card { display: flex; gap: 9px; background: var(--aw-shell); border: 1px solid var(--aw-border); border-radius: 6px; padding: 9px 11px; transition: background 0.15s; min-width: 0; }
+.aw-card:hover { background: #1b212a; }
+.aw-card .bar { width: 3px; border-radius: 2px; flex-shrink: 0; }
+.aw-card .nm { display: flex; align-items: center; gap: 6px; color: var(--aw-text); font-size: 11.5px; font-weight: 600; white-space: nowrap; }
+.aw-card .nm i { width: 6px; height: 6px; border-radius: 50%; background: var(--aw-green); flex-shrink: 0; }
+.aw-card .sub { font-family: var(--font-mono); font-size: 10px; color: var(--aw-text3); margin-top: 3px; white-space: nowrap; }
+.aw-sqledit { padding: 12px 14px; font-family: var(--font-mono); font-size: 11.5px; line-height: 1.75; color: var(--aw-text); border-bottom: 1px solid var(--aw-border); white-space: pre; overflow: hidden; }
+.aw-sqledit .k { color: #c792ea; } .aw-sqledit .s { color: #7ee787; } .aw-sqledit .n { color: #ffab70; }
+.aw-tablewrap { flex: 1; overflow: hidden; }
+.aw-table { width: 100%; border-collapse: collapse; font-family: var(--font-mono); font-size: 10.5px; }
+.aw-table th { text-align: left; color: var(--aw-text3); font-weight: 500; padding: 6px 14px; border-bottom: 1px solid var(--aw-border); text-transform: uppercase; font-size: 8.5px; letter-spacing: 0.08em; }
+.aw-table td { padding: 5.5px 14px; border-bottom: 1px solid rgba(255,255,255,0.04); color: var(--aw-text2); white-space: nowrap; }
+.aw-table td.nm { color: var(--aw-text); }
+.aw-table .ok { color: var(--aw-green); }
+.aw-table .warn { color: #f59e0b; }
+.aw-runbtn { display: flex; align-items: center; gap: 5px; height: 20px; padding: 0 9px; border-radius: 5px; background: var(--aw-accent); color: #fff; font-size: 9.5px; font-weight: 600; white-space: nowrap; cursor: pointer; }
+
+/* db / k8s / sftp views (mirroring the real components) */
+.aw-split { flex: 1; display: flex; min-height: 0; }
+.aw-vmain { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.aw-toolrow { display: flex; align-items: center; gap: 9px; height: 30px; padding: 0 10px; background: var(--aw-shell); border-bottom: 1px solid var(--aw-border); flex-shrink: 0; }
+.aw-tbtn { display: flex; align-items: center; gap: 4px; font-size: 10px; color: var(--aw-text3); cursor: pointer; white-space: nowrap; }
+.aw-tbsel { font-family: var(--font-mono); font-size: 9.5px; color: var(--aw-text3); }
+.aw-kbd { font-family: var(--font-mono); font-size: 8.5px; padding: 1px 5px; border-radius: 3px; background: #1c2d5e; color: var(--aw-text3); }
+.aw-dbside { width: 178px; flex-shrink: 0; background: var(--aw-shell); border-right: 1px solid var(--aw-border); display: flex; flex-direction: column; overflow: hidden; }
+.aw-dbhead { display: flex; align-items: center; gap: 6px; height: 30px; padding: 0 10px; border-bottom: 1px solid var(--aw-border); flex-shrink: 0; }
+.aw-dbhead b { flex: 1; color: var(--aw-text); font-size: 11px; font-weight: 600; }
+.aw-dbhead svg.i, .aw-dbfilter svg.i { color: var(--aw-text3); }
+.aw-dbfilter { display: flex; align-items: center; gap: 6px; margin: 8px 8px 6px; padding: 4px 8px; border-radius: 5px; background: var(--aw-bg); border: 1px solid var(--aw-border); font-family: var(--font-mono); font-size: 10px; color: var(--aw-text3); }
+.aw-dblabel { padding: 2px 10px 4px; font-size: 8.5px; letter-spacing: 0.1em; text-transform: uppercase; font-weight: 600; color: var(--aw-text3); }
+.aw-dbtables { flex: 1; overflow: hidden; }
+.aw-dbtable { display: flex; align-items: center; gap: 5px; padding: 4px 10px; font-family: var(--font-mono); font-size: 10.5px; color: var(--aw-text2); }
+.aw-dbtable svg.i { color: var(--aw-text3); }
+.aw-dbtable.on { color: var(--aw-text); background: rgba(59,92,204,0.06); }
+.aw-dbcol { display: flex; align-items: center; gap: 5px; padding: 2px 10px 2px 26px; font-family: var(--font-mono); font-size: 9.5px; color: var(--aw-text3); }
+.aw-dbcol svg.i { width: 9px; height: 9px; opacity: 0.4; }
+.aw-dbcol .ty { margin-left: auto; font-size: 8.5px; padding: 0 4px; border-radius: 3px; background: rgba(255,255,255,0.05); }
+.aw-dbfoot { display: flex; align-items: center; gap: 5px; padding: 6px 10px; border-top: 1px solid var(--aw-border); font-family: var(--font-mono); font-size: 9px; color: var(--aw-text3); flex-shrink: 0; }
+.aw-paneltabs { display: flex; align-items: center; background: var(--aw-shell); border-top: 1px solid var(--aw-border); border-bottom: 1px solid var(--aw-border); padding-right: 10px; flex-shrink: 0; height: 26px; }
+.aw-paneltabs > span:not(.aw-flex):not(.meta) { display: flex; align-items: center; gap: 5px; padding: 0 10px; height: 100%; font-size: 10px; color: var(--aw-text3); cursor: pointer; }
+.aw-paneltabs .on { color: var(--aw-text); box-shadow: inset 0 -2px 0 var(--aw-accent); }
+.aw-paneltabs b { font-family: var(--font-mono); font-size: 8.5px; font-weight: 500; padding: 0 4px; border-radius: 6px; background: var(--aw-border); color: var(--aw-text2); }
+.aw-paneltabs .meta { font-family: var(--font-mono); font-size: 9px; color: var(--aw-text3); margin-right: 8px; }
+.aw-paneltabs svg.i { color: var(--aw-text3); margin-left: 7px; }
+.aw-dbgrid { width: 100%; border-collapse: collapse; font-family: var(--font-mono); font-size: 10.5px; }
+.aw-dbgrid th { text-align: left; padding: 5px 10px; font-size: 8.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--aw-text2); background: var(--aw-shell); border-bottom: 2px solid var(--aw-border); }
+.aw-dbgrid td { padding: 4.5px 10px; border-bottom: 1px solid rgba(255,255,255,0.05); color: var(--aw-text); white-space: nowrap; }
+.aw-dbgrid .rn { text-align: right; color: var(--aw-text3); width: 28px; font-size: 9.5px; }
+.aw-k8sbar { display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 10px; background: var(--aw-shell); border-bottom: 1px solid var(--aw-border); flex-shrink: 0; }
+.aw-k8sfilter { flex: 1; display: flex; align-items: center; gap: 6px; background: var(--aw-bg); border: 1px solid var(--aw-border); border-radius: 5px; padding: 3.5px 8px; font-size: 10px; color: var(--aw-text3); max-width: 300px; }
+.aw-k8sside { width: 185px; flex-shrink: 0; background: var(--aw-shell); border-right: 1px solid var(--aw-border); display: flex; flex-direction: column; overflow: hidden; }
+.aw-k8sid { display: flex; gap: 7px; align-items: center; padding: 10px 10px 8px; }
+.aw-k8sid .cube { width: 22px; height: 22px; border-radius: 5px; background: #8b5cf6; display: grid; place-items: center; flex-shrink: 0; }
+.aw-k8sid b { display: block; color: var(--aw-text); font-size: 11px; font-weight: 600; line-height: 1.2; }
+.aw-k8sid .cs { display: flex; align-items: center; gap: 4px; font-size: 9px; color: var(--aw-text3); }
+.aw-k8sid .cs i { width: 5px; height: 5px; border-radius: 50%; background: var(--aw-green); }
+.aw-k8sns { margin: 0 10px 8px; padding: 4px 8px; border-radius: 5px; background: var(--aw-bg); border: 1px solid var(--aw-border); font-size: 10px; color: var(--aw-text); display: flex; justify-content: space-between; }
+.aw-k8sns span { color: var(--aw-text3); }
+.aw-k8snav { flex: 1; padding: 0 6px; overflow: hidden; border-top: 1px solid var(--aw-border); }
+.aw-k8ssec { display: flex; justify-content: space-between; align-items: center; padding: 7px 6px 3px; font-size: 8.5px; letter-spacing: 0.1em; text-transform: uppercase; font-weight: 600; color: var(--aw-text3); }
+.aw-k8ssec svg.i { width: 9px; height: 9px; }
+.aw-k8sitem { display: flex; align-items: center; gap: 7px; padding: 3.5px 8px; border-radius: 5px; font-size: 10.5px; color: var(--aw-text); }
+.aw-k8sitem svg.i { color: var(--aw-text2); }
+.aw-k8sitem .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--aw-text3); opacity: 0.6; }
+.aw-k8sitem.on { background: #1c2d5e; color: #79a0ff; }
+.aw-k8sitem.on .dot { background: #79a0ff; opacity: 1; }
+.aw-k8sitem b { margin-left: auto; font-family: var(--font-mono); font-size: 8.5px; font-weight: 500; padding: 0 4px; border-radius: 3px; background: var(--aw-border); color: var(--aw-text2); }
+.aw-k8spf { border-top: 1px solid var(--aw-border); padding: 6px 10px; flex-shrink: 0; }
+.aw-k8spf .lbl { font-size: 8.5px; letter-spacing: 0.1em; text-transform: uppercase; font-weight: 600; color: var(--aw-text3); margin-bottom: 3px; }
+.aw-k8spf .pf { display: flex; justify-content: space-between; align-items: center; font-family: var(--font-mono); font-size: 9.5px; color: var(--aw-text2); }
+.aw-k8shead { padding: 10px 14px 8px; border-bottom: 1px solid var(--aw-border); flex-shrink: 0; }
+.aw-k8shead h4 { font-size: 13px; color: var(--aw-text); font-weight: 600; }
+.aw-k8shead p { font-size: 10px; color: var(--aw-text2); margin-top: 1px; }
+.aw-k8stable { width: 100%; border-collapse: collapse; font-family: var(--font-mono); font-size: 10.5px; }
+.aw-k8stable th { text-align: left; padding: 6px 12px; font-size: 8.5px; letter-spacing: 0.08em; text-transform: uppercase; font-weight: 600; color: var(--aw-text3); border-bottom: 1px solid var(--aw-border); background: var(--aw-shell); white-space: nowrap; }
+.aw-k8stable td { padding: 5px 12px; border-bottom: 1px solid rgba(255,255,255,0.04); color: var(--aw-text2); white-space: nowrap; }
+.aw-k8stable td.nm { color: var(--aw-text); }
+.aw-k8stable td.age, .aw-k8stable .kbadge { font-family: var(--font-ui); }
+.aw-k8stable .r { text-align: right; }
+.aw-k8stable .pbar { display: inline-block; width: 3px; height: 13px; border-radius: 2px; margin-right: 7px; vertical-align: -2px; }
+.kbadge { display: inline-flex; align-items: center; gap: 5px; padding: 1.5px 7px; border-radius: 5px; font-size: 9.5px; font-weight: 500; }
+.kbadge i { width: 5px; height: 5px; border-radius: 50%; }
+.acts { display: inline-flex; gap: 8px; color: var(--aw-text2); }
+.aw-sftpbar { display: flex; align-items: center; justify-content: center; gap: 10px; height: 28px; background: var(--aw-shell); border-bottom: 1px solid var(--aw-border); flex-shrink: 0; }
+.aw-pane { flex: 1; min-width: 0; display: flex; flex-direction: column; overflow: hidden; }
+.aw-panediv { width: 4px; background: var(--aw-border); flex-shrink: 0; }
+.aw-panehead { display: flex; align-items: center; gap: 6px; height: 26px; padding: 0 10px; border-bottom: 1px solid var(--aw-border); flex-shrink: 0; }
+.aw-panehead.focused { background: var(--aw-shell); }
+.aw-panehead b { flex: 1; font-size: 10.5px; font-weight: 600; color: var(--aw-text); }
+.aw-panehead svg.i { color: var(--aw-text3); }
+.aw-panepath { display: flex; align-items: center; gap: 5px; height: 22px; padding: 0 8px; border-bottom: 1px solid var(--aw-border); font-family: var(--font-mono); font-size: 9.5px; color: var(--aw-text3); flex-shrink: 0; }
+.aw-panepath svg.i { width: 9px; height: 9px; }
+.aw-files { width: 100%; border-collapse: collapse; font-family: var(--font-mono); font-size: 10px; }
+.aw-files th { text-align: left; padding: 4px 8px; font-size: 8.5px; letter-spacing: 0.08em; text-transform: uppercase; font-weight: 600; color: var(--aw-text3); background: var(--aw-shell); border-bottom: 1px solid var(--aw-border); }
+.aw-files td { padding: 3.5px 8px; color: var(--aw-text2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.aw-files td:first-child { display: flex; align-items: center; gap: 6px; }
+.aw-files td.dir { color: var(--aw-text); }
+.aw-files td svg.i { color: var(--aw-text3); }
+.aw-files tr.sel { background: rgba(59,92,204,0.08); }
+.aw-files .r { text-align: right; color: var(--aw-text3); }
+.aw-files .dt { color: var(--aw-text3); font-size: 9px; }
+.aw-sftpstatus { display: flex; align-items: center; gap: 8px; height: 24px; padding: 0 10px; border-top: 1px solid var(--aw-border); background: var(--aw-shell); font-family: var(--font-mono); font-size: 9.5px; color: var(--aw-text3); flex-shrink: 0; }
+.aw-sftpstatus .up { display: flex; align-items: center; gap: 5px; color: var(--aw-text2); }
+.aw-tfbar { width: 70px; height: 3px; border-radius: 2px; background: var(--aw-border); overflow: hidden; }
+.aw-tfbar i { display: block; height: 100%; border-radius: 2px; background: #3b5ccc; transition: width 0.8s ease; }
+
+.tp { color: #7ee787; }
+.tb { color: #79c0ff; }
+.td { color: #6e7681; }
+.tc { color: #e6edf3; }
+.tw { color: #ffab70; }
+.cursor {
+  display: inline-block; width: 7px; height: 15px;
+  background: #7ee787;
+  vertical-align: -2px;
+  animation: blink 1.05s steps(1) infinite;
+}
+@keyframes blink { 50% { opacity: 0; } }
+
+@media (max-width: 940px) {
+  .aw-side { display: none; }
+  .aw-brandzone { width: auto; border-right: none; }
+}
+@media (max-width: 700px) {
+  .aw-searchwrap, .aw-tab:nth-child(4), .aw-tab:nth-child(5), .aw-elapsed { display: none; }
+  .aw-metric, .aw-toggle, .aw-runbtn { display: none; }
+  .aw-status .sep, .aw-status > span:not(.aw-flex):not(.grn) { display: none; }
+}
+
+/* ---------- ticker ---------- */
+.ticker-wrap {
+  padding: 44px 0 8px;
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent);
+  mask-image: linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent);
+}
+.ticker { display: flex; gap: 14px; width: max-content; animation: scroll 36s linear infinite; }
+@keyframes scroll { to { transform: translateX(-50%); } }
+.ticker span {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 8px 20px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  background: var(--panel);
+}
+.ticker span::before { content: "✦"; color: var(--violet); font-size: 11px; }
+
+/* ---------- sections ---------- */
+section { position: relative; }
+.wrap { max-width: 1120px; margin: 0 auto; padding: clamp(70px, 10vw, 130px) 24px; }
+.kicker {
+  font-family: var(--font-mono);
+  font-size: 13px; font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--violet);
+  margin-bottom: 16px;
+}
+.kicker::before { content: "// "; color: var(--text-faint); }
+h2 {
+  font-size: clamp(30px, 4.6vw, 48px);
+  font-weight: 800;
+  letter-spacing: -0.035em;
+  line-height: 1.12;
+  max-width: 640px;
+}
+.section-sub { margin-top: 16px; max-width: 560px; color: var(--text-dim); font-size: 16.5px; }
+
+/* reveal on scroll */
+.reveal { opacity: 0; transform: translateY(34px); transition: opacity 0.8s cubic-bezier(0.22,1,0.36,1), transform 0.8s cubic-bezier(0.22,1,0.36,1); }
+.reveal.in { opacity: 1; transform: none; }
+
+/* ---------- features ---------- */
+.feat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(255px, 1fr));
+  gap: 16px;
+  margin-top: 56px;
+}
+.feat {
+  position: relative;
+  padding: 28px 26px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel);
+  overflow: hidden;
+  transition: border-color 0.3s, transform 0.3s, background 0.3s;
+}
+.feat::before {
+  content: "";
+  position: absolute; inset: 0;
+  background: radial-gradient(420px circle at var(--mx, 50%) var(--my, 0%), rgba(167,139,250,0.1), transparent 65%);
+  opacity: 0;
+  transition: opacity 0.35s;
+  pointer-events: none;
+}
+.feat:hover { border-color: var(--border-bright); transform: translateY(-3px); }
+.feat:hover::before { opacity: 1; }
+.feat-icon {
+  width: 42px; height: 42px;
+  display: grid; place-items: center;
+  border-radius: 11px;
+  background: linear-gradient(135deg, rgba(109,40,217,0.32), rgba(76,110,245,0.22));
+  border: 1px solid var(--border-bright);
+  margin-bottom: 18px;
+}
+.feat-icon svg { width: 21px; height: 21px; stroke: #c4b5fd; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.feat h3 { font-size: 16.5px; font-weight: 700; letter-spacing: -0.01em; margin-bottom: 8px; }
+.feat p { font-size: 14px; color: var(--text-dim); line-height: 1.65; }
+.feat p code {
+  font-family: var(--font-mono); font-size: 12px;
+  background: rgba(167,139,250,0.12);
+  padding: 1.5px 6px; border-radius: 5px;
+  color: #c4b5fd;
+}
+.feat.wide { grid-column: span 2; }
+@media (max-width: 620px) { .feat.wide { grid-column: span 1; } }
+
+/* ---------- shortcuts ---------- */
+.shortcuts {
+  margin-top: 64px;
+  display: flex; flex-wrap: wrap; gap: 12px 28px;
+  justify-content: center;
+  padding: 26px 24px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, rgba(167,139,250,0.05), transparent);
+}
+.shortcut { display: inline-flex; align-items: center; gap: 10px; font-size: 13px; color: var(--text-dim); }
+kbd {
+  font-family: var(--font-mono); font-size: 11.5px;
+  padding: 3.5px 8px;
+  border-radius: 6px;
+  background: rgba(167,139,250,0.1);
+  border: 1px solid var(--border-bright);
+  border-bottom-width: 2px;
+  color: var(--text);
+}
+
+/* ---------- security strip ---------- */
+.sec-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 16px;
+  margin-top: 56px;
+}
+.sec-item {
+  display: flex; gap: 14px; align-items: flex-start;
+  padding: 22px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--panel);
+}
+.sec-item svg { width: 20px; height: 20px; flex-shrink: 0; margin-top: 3px; stroke: var(--green); fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.sec-item b { display: block; font-size: 14.5px; margin-bottom: 4px; }
+.sec-item span { font-size: 13.5px; color: var(--text-dim); line-height: 1.55; }
+
+/* ---------- install ---------- */
+.install-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 40px;
+  align-items: start;
+  margin-top: 56px;
+}
+@media (max-width: 880px) { .install-grid { grid-template-columns: 1fr; } }
+.platforms { display: flex; flex-direction: column; gap: 12px; }
+.platform {
+  display: flex; align-items: center; gap: 16px;
+  padding: 18px 22px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--panel);
+  transition: border-color 0.25s, background 0.25s, transform 0.25s;
+}
+.platform:hover { border-color: var(--border-bright); background: rgba(167,139,250,0.08); transform: translateX(4px); }
+.platform svg { width: 26px; height: 26px; fill: var(--text-dim); flex-shrink: 0; }
+.platform b { font-size: 15px; display: block; }
+.platform span { font-size: 12.5px; color: var(--text-faint); font-family: var(--font-mono); }
+.platform .arrow { margin-left: auto; color: var(--text-faint); transition: transform 0.25s, color 0.25s; }
+.platform:hover .arrow { transform: translateX(3px); color: var(--violet); }
+
+.codeblock {
+  border: 1px solid var(--border-bright);
+  border-radius: 14px;
+  background: #0a0816;
+  overflow: hidden;
+  font-family: var(--font-mono);
+  font-size: 13.5px;
+}
+.codeblock-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 11px 18px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px; color: var(--text-faint);
+}
+.copy-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: none; border: 1px solid var(--border);
+  border-radius: 7px;
+  color: var(--text-dim);
+  font-family: var(--font-ui); font-size: 12px; font-weight: 500;
+  padding: 5px 12px;
+  cursor: pointer;
+  transition: color 0.2s, border-color 0.2s;
+}
+.copy-btn:hover { color: var(--text); border-color: var(--border-bright); }
+.codeblock pre { padding: 20px 22px; line-height: 1.9; overflow-x: auto; }
+.codeblock .c { color: var(--text-faint); }
+.codeblock .p { color: var(--violet); user-select: none; }
+.install-note {
+  margin-top: 16px;
+  font-size: 13px; color: var(--text-faint);
+  line-height: 1.7;
+}
+.install-note code { font-family: var(--font-mono); font-size: 12px; color: var(--text-dim); background: rgba(167,139,250,0.08); padding: 1px 6px; border-radius: 5px; }
+
+/* ---------- open source CTA ---------- */
+.oss {
+  text-align: center;
+  position: relative;
+}
+.oss .wrap { padding-top: clamp(90px, 12vw, 150px); padding-bottom: clamp(90px, 12vw, 150px); }
+.oss h2 { max-width: none; }
+.oss-star {
+  width: 74px; height: 74px;
+  margin: 0 auto 34px;
+  animation: spin 26s linear infinite;
+  filter: drop-shadow(0 0 28px rgba(167,139,250,0.55));
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.oss-glow {
+  position: absolute;
+  left: 50%; top: 50%;
+  width: 900px; height: 900px;
+  transform: translate(-50%, -50%);
+  background: radial-gradient(closest-side, rgba(109,40,217,0.13) 0%, rgba(76,110,245,0.05) 45%, transparent 100%);
+  pointer-events: none;
+}
+.oss p { max-width: 540px; margin: 18px auto 0; color: var(--text-dim); font-size: 16.5px; }
+.oss .hero-ctas { margin-top: 38px; }
+
+/* ---------- footer ---------- */
+footer {
+  border-top: 1px solid var(--border);
+  padding: 36px clamp(20px, 4vw, 48px);
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 16px;
+  font-size: 13.5px; color: var(--text-faint);
+}
+.foot-brand { display: flex; align-items: center; gap: 10px; font-weight: 600; color: var(--text-dim); }
+.foot-brand svg { width: 22px; height: 22px; border-radius: 6px; }
+footer nav { display: flex; justify-content: center; gap: 24px; }
+footer nav a { color: var(--text-faint); transition: color 0.2s; }
+footer nav a:hover { color: var(--text); }
+footer > span { justify-self: end; }
+
+@media (max-width: 760px) {
+  footer {
+    grid-template-columns: 1fr;
+    justify-items: center;
+    text-align: center;
+  }
+  footer > span { justify-self: center; }
+  footer nav { flex-wrap: wrap; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
+  html { scroll-behavior: auto; }
+}
+</style>
+</head>
+<body>
+
+<!-- ===================== NAV ===================== -->
+<nav class="nav" id="nav">
+  <a class="nav-brand" href="#">
+    <svg viewBox="0 0 256 256" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <defs><clipPath id="sq1"><rect width="256" height="256" rx="58"/></clipPath></defs>
+      <g clip-path="url(#sq1)">
+        <path d="M0 0 L148 0 Q138 64 128 128 Q64 118 0 108 Z" fill="#A78BFA"/>
+        <path d="M148 0 L256 0 L256 148 Q192 138 128 128 Q138 64 148 0 Z" fill="#6D28D9"/>
+        <path d="M256 148 L256 256 L108 256 Q118 192 128 128 Q192 138 256 148 Z" fill="#312A7D"/>
+        <path d="M108 256 L0 256 L0 108 Q64 118 128 128 Q118 192 108 256 Z" fill="#4C6EF5"/>
+      </g>
+      <path d="M128 44 C136 100 156 120 212 128 C156 136 136 156 128 212 C120 156 100 136 44 128 C100 120 120 100 128 44 Z" fill="#FFF" transform="rotate(14 128 128)"/>
+    </svg>
+    noxed
+  </a>
+  <div class="nav-links">
+    <a href="#features">Features</a>
+    <a href="#security">Security</a>
+    <a href="#install">Install</a>
+    <a class="nav-gh" href="https://github.com/Meanski/noxed" target="_blank" rel="noopener">
+      <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
+      Star on GitHub
+    </a>
+  </div>
+</nav>
+
+<!-- ===================== HERO ===================== -->
+<header class="hero">
+  <canvas id="scene" aria-hidden="true"></canvas>
+  <div class="hero-inner">
+    <div class="hero-kicker">
+      <span class="ps1">❯</span> <span class="typed" id="hero-typed"></span><span class="cursor"></span>
+    </div>
+    <h1>Every server.<br /><span class="grad">One window.</span></h1>
+    <p class="hero-sub">
+      noxed is a connection manager for people who live in terminals.
+      <strong>SSH, SFTP, databases, Redis, Docker, and Kubernetes</strong> —
+      tabs of a single desktop app, with live metrics streamed over the connection you already have.
+    </p>
+    <div class="hero-ctas">
+      <a class="btn btn-primary" href="https://github.com/Meanski/noxed/releases" target="_blank" rel="noopener">
+        <svg viewBox="0 0 24 24"><path d="M12 16l-6-6h4V3h4v7h4l-6 6zm-8 2h16v3H4v-3z"/></svg>
+        Download
+      </a>
+      <a class="btn btn-ghost" href="https://github.com/Meanski/noxed" target="_blank" rel="noopener">
+        <svg viewBox="0 0 16 16"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
+        View source
+      </a>
+    </div>
+    <div class="hero-meta">
+      <span><svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg> macOS · Windows · Linux</span>
+      <span><svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg> No accounts, no cloud</span>
+      <span><svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg> Credentials stay in your OS keychain</span>
+    </div>
+  </div>
+</header>
+
+<!-- ===================== APP SHOWCASE ===================== -->
+<div class="showcase reveal">
+  <div class="appwin">
+
+    <!-- top bar -->
+    <div class="aw-top">
+      <div class="aw-brandzone">
+        <span class="aw-lights"><i></i><i></i><i></i></span>
+        <svg class="logo" viewBox="0 0 256 256">
+          <defs><clipPath id="sq3"><rect width="256" height="256" rx="58"/></clipPath></defs>
+          <g clip-path="url(#sq3)">
+            <path d="M0 0 L148 0 Q138 64 128 128 Q64 118 0 108 Z" fill="#A78BFA"/>
+            <path d="M148 0 L256 0 L256 148 Q192 138 128 128 Q138 64 148 0 Z" fill="#6D28D9"/>
+            <path d="M256 148 L256 256 L108 256 Q118 192 128 128 Q192 138 256 148 Z" fill="#312A7D"/>
+            <path d="M108 256 L0 256 L0 108 Q64 118 128 128 Q118 192 108 256 Z" fill="#4C6EF5"/>
+          </g>
+          <path d="M128 44 C136 100 156 120 212 128 C156 136 136 156 128 212 C120 156 100 136 44 128 C100 120 120 100 128 44 Z" fill="#FFF" transform="rotate(14 128 128)"/>
+        </svg>
+        <b>noxed</b>
+      </div>
+      <div class="aw-searchwrap">
+        <span class="aw-search">
+          <svg class="i s" viewBox="0 0 24 24"><use href="#i-search"/></svg>
+          Search connections… ⌘K
+        </span>
+      </div>
+      <div class="aw-actions">
+        <span class="aw-newbtn"><svg class="i s" viewBox="0 0 24 24"><use href="#i-plus"/></svg>New Connection</span>
+        <svg class="i" viewBox="0 0 24 24" style="color:var(--aw-text2)"><use href="#i-sun"/></svg>
+      </div>
+    </div>
+
+    <!-- tab strip -->
+    <div class="aw-tabbar">
+      <span class="aw-tab" data-goto="dashboard"><svg class="i s" viewBox="0 0 24 24"><use href="#i-dash"/></svg>Dashboard</span>
+      <span class="aw-tab on" data-goto="terminal"><svg class="i s" viewBox="0 0 24 24"><use href="#i-term"/></svg>prod-web-01<i class="dot"></i></span>
+      <span class="aw-tab" data-goto="database"><svg class="i s" viewBox="0 0 24 24"><use href="#i-db"/></svg>db-primary<i class="dot"></i></span>
+      <span class="aw-tab" data-goto="k8s"><svg class="i s" viewBox="0 0 24 24"><use href="#i-boxes"/></svg>k8s · staging<i class="dot" style="background:#8b5cf6"></i></span>
+      <span class="aw-tab" data-goto="sftp"><svg class="i s" viewBox="0 0 24 24"><use href="#i-folder"/></svg>prod-web-01 · sftp</span>
+      <span class="aw-tabplus"><svg class="i s" viewBox="0 0 24 24"><use href="#i-plus"/></svg></span>
+    </div>
+
+    <!-- sidebar + main -->
+    <div class="aw-body">
+      <aside class="aw-side">
+        <span class="aw-sidesearch"><svg class="i s" viewBox="0 0 24 24"><use href="#i-search"/></svg>Search… ⌘K</span>
+        <div class="aw-seg" id="aw-seg">
+          <span class="on" data-list="type"><svg class="i s" viewBox="0 0 24 24"><use href="#i-list"/></svg>Type</span>
+          <span data-list="project"><svg class="i s" viewBox="0 0 24 24"><use href="#i-folder"/></svg>Project</span>
+        </div>
+        <nav class="aw-nav">
+          <div class="aw-item" data-goto="dashboard" id="aw-nav-dash"><svg class="i" viewBox="0 0 24 24"><use href="#i-dash"/></svg>Dashboard</div>
+          <div class="aw-item"><svg class="i" viewBox="0 0 24 24"><use href="#i-list"/></svg>Connections</div>
+          <div class="aw-item"><svg class="i" viewBox="0 0 24 24"><use href="#i-cable"/></svg>Tunnels</div>
+          <div class="aw-item"><svg class="i" viewBox="0 0 24 24"><use href="#i-termsq"/></svg>Run Command</div>
+          <div class="aw-item"><svg class="i" viewBox="0 0 24 24"><use href="#i-term"/></svg>Local Terminal</div>
+
+          <div id="aw-list-type">
+            <div class="aw-sechead">Favorites <svg class="i" viewBox="0 0 24 24"><use href="#i-star"/></svg></div>
+            <div class="aw-conn" data-goto="terminal"><svg class="i s" viewBox="0 0 24 24"><use href="#i-term"/></svg>prod-web-01<i class="dot"></i></div>
+            <div class="aw-conn" data-goto="database"><svg class="i s" viewBox="0 0 24 24"><use href="#i-db"/></svg>db-primary<i class="dot"></i></div>
+            <div class="aw-sechead">SSH</div>
+            <div class="aw-conn" data-goto="terminal"><svg class="i s" viewBox="0 0 24 24"><use href="#i-term"/></svg>prod-web-01<i class="dot"></i></div>
+            <div class="aw-conn"><svg class="i s" viewBox="0 0 24 24"><use href="#i-term"/></svg>prod-web-02</div>
+            <div class="aw-conn"><svg class="i s" viewBox="0 0 24 24"><use href="#i-term"/></svg>bastion-eu</div>
+            <div class="aw-conn"><svg class="i s" viewBox="0 0 24 24"><use href="#i-term"/></svg>staging-api</div>
+            <div class="aw-sechead">SFTP</div>
+            <div class="aw-conn" data-goto="sftp"><svg class="i s" viewBox="0 0 24 24"><use href="#i-folder"/></svg>prod-web-01<i class="dot"></i></div>
+            <div class="aw-sechead">Databases</div>
+            <div class="aw-conn" data-goto="database"><svg class="i s" viewBox="0 0 24 24"><use href="#i-db"/></svg>db-primary<i class="dot"></i></div>
+            <div class="aw-sechead">Kubernetes</div>
+            <div class="aw-conn" data-goto="k8s"><svg class="i s" viewBox="0 0 24 24"><use href="#i-boxes"/></svg>staging</div>
+          </div>
+
+          <div id="aw-list-project" hidden>
+            <div class="aw-pgroup"><i style="background:#3b5ccc"></i>production<span class="ct">4</span></div>
+            <div class="aw-conn" data-goto="terminal"><svg class="i s" viewBox="0 0 24 24"><use href="#i-term"/></svg>prod-web-01<i class="dot"></i></div>
+            <div class="aw-conn"><svg class="i s" viewBox="0 0 24 24"><use href="#i-term"/></svg>prod-web-02</div>
+            <div class="aw-conn" data-goto="database"><svg class="i s" viewBox="0 0 24 24"><use href="#i-db"/></svg>db-primary<i class="dot"></i></div>
+            <div class="aw-conn"><svg class="i s" viewBox="0 0 24 24"><use href="#i-term"/></svg>bastion-eu</div>
+            <div class="aw-pgroup"><i style="background:#8b5cf6"></i>staging<span class="ct">2</span></div>
+            <div class="aw-conn"><svg class="i s" viewBox="0 0 24 24"><use href="#i-term"/></svg>staging-api</div>
+            <div class="aw-conn" data-goto="k8s"><svg class="i s" viewBox="0 0 24 24"><use href="#i-boxes"/></svg>staging</div>
+          </div>
+        </nav>
+        <div class="aw-sidefoot">
+          <div class="aw-item"><svg class="i" viewBox="0 0 24 24"><use href="#i-gear"/></svg>Settings</div>
+        </div>
+      </aside>
+
+      <div class="aw-main">
+
+        <!-- terminal view -->
+        <div class="aw-view" data-view="terminal">
+          <div class="aw-hosthead">
+            <i class="aw-statdot"></i>
+            <span class="aw-host">deploy<em>@</em>prod-web-01</span>
+            <span class="aw-elapsed" id="aw-elapsed">00:12:47</span>
+            <span class="aw-flex"></span>
+            <span class="aw-metric">CPU <em class="spark" id="aw-spark">▂▂▃▅▃</em> <b id="aw-cpu">23%</b></span>
+            <i class="aw-vr"></i>
+            <span class="aw-metric">MEM <b id="aw-mem">2.1 GB</b> <em>/ 7.8 GB</em></span>
+            <i class="aw-vr"></i>
+            <span class="aw-toggle"><svg class="i" viewBox="0 0 24 24"><use href="#i-radio"/></svg>Broadcast</span>
+            <span class="aw-toggle on">⚡ Snippets</span>
+            <span class="aw-toggle"><svg class="i" viewBox="0 0 24 24"><use href="#i-folder"/></svg>Files</span>
+            <span class="aw-toggle"><svg class="i" viewBox="0 0 24 24"><use href="#i-cols"/></svg>Split</span>
+          </div>
+          <div class="aw-term" id="term-body"></div>
+        </div>
+
+        <!-- dashboard view -->
+        <div class="aw-view" data-view="dashboard" hidden>
+          <div class="aw-hosthead">
+            <span class="aw-viewtitle">Servers</span>
+            <span class="aw-viewsub">6 configured · 5 reachable · 3 connected</span>
+            <span class="aw-flex"></span>
+            <span class="aw-toggle on">Grid</span>
+            <span class="aw-toggle">List</span>
+            <span class="aw-toggle">Compact</span>
+          </div>
+          <div class="aw-dash">
+            <div class="aw-dghead"><i style="background:#3b5ccc"></i>production</div>
+            <div class="aw-cards">
+              <div class="aw-card" data-goto="terminal"><span class="bar" style="background:#3b5ccc"></span><div><div class="nm"><i></i>prod-web-01</div><div class="sub" id="aw-card-web1">cpu 23% · mem 27%</div></div></div>
+              <div class="aw-card"><span class="bar" style="background:#3b5ccc"></span><div><div class="nm"><i></i>prod-web-02</div><div class="sub" id="aw-card-web2">cpu 11% · mem 33%</div></div></div>
+              <div class="aw-card" data-goto="database"><span class="bar" style="background:#10b981"></span><div><div class="nm"><i></i>db-primary</div><div class="sub" id="aw-card-db">cpu 42% · mem 61%</div></div></div>
+              <div class="aw-card"><span class="bar" style="background:#f59e0b"></span><div><div class="nm"><i style="background:#10b981"></i>bastion-eu</div><div class="sub">12ms</div></div></div>
+            </div>
+            <div class="aw-dghead"><i style="background:#8b5cf6"></i>staging</div>
+            <div class="aw-cards">
+              <div class="aw-card"><span class="bar" style="background:#8b5cf6"></span><div><div class="nm"><i style="background:#6e7681"></i>staging-api</div><div class="sub">38ms</div></div></div>
+              <div class="aw-card" data-goto="k8s"><span class="bar" style="background:#ec4899"></span><div><div class="nm"><i style="background:#8b5cf6"></i>staging · k8s</div><div class="sub">9 pods · healthy</div></div></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- database view (mirrors DatabaseExplorer) -->
+        <div class="aw-view" data-view="database" hidden>
+          <div class="aw-split">
+            <aside class="aw-dbside">
+              <div class="aw-dbhead"><svg class="i s" viewBox="0 0 24 24" style="color:#3b5ccc"><use href="#i-db"/></svg><b>noxapp</b><svg class="i s" viewBox="0 0 24 24"><use href="#i-refresh"/></svg></div>
+              <div class="aw-dbfilter"><svg class="i s" viewBox="0 0 24 24"><use href="#i-search"/></svg>Filter tables…</div>
+              <div class="aw-dblabel">Tables (6)</div>
+              <div class="aw-dbtables">
+                <div class="aw-dbtable on"><svg class="i s" viewBox="0 0 24 24" style="color:#3b5ccc"><use href="#i-chevd"/></svg><svg class="i s" viewBox="0 0 24 24" style="color:#3b5ccc"><use href="#i-table"/></svg>users</div>
+                <div class="aw-dbcol"><svg class="i s" viewBox="0 0 24 24"><use href="#i-hash"/></svg>id<span class="ty" style="color:#ffab70">int8</span></div>
+                <div class="aw-dbcol"><svg class="i s" viewBox="0 0 24 24"><use href="#i-hash"/></svg>email<span class="ty" style="color:#7ee787">text</span></div>
+                <div class="aw-dbcol"><svg class="i s" viewBox="0 0 24 24"><use href="#i-hash"/></svg>created_at<span class="ty" style="color:#79c0ff">timestamptz</span></div>
+                <div class="aw-dbtable"><svg class="i s" viewBox="0 0 24 24"><use href="#i-chevr"/></svg><svg class="i s" viewBox="0 0 24 24" style="color:#8b5cf6"><use href="#i-table"/></svg>orders</div>
+                <div class="aw-dbtable"><svg class="i s" viewBox="0 0 24 24"><use href="#i-chevr"/></svg><svg class="i s" viewBox="0 0 24 24" style="color:#8b5cf6"><use href="#i-table"/></svg>products</div>
+                <div class="aw-dbtable"><svg class="i s" viewBox="0 0 24 24"><use href="#i-chevr"/></svg><svg class="i s" viewBox="0 0 24 24" style="color:#8b5cf6"><use href="#i-table"/></svg>sessions</div>
+                <div class="aw-dbtable"><svg class="i s" viewBox="0 0 24 24"><use href="#i-chevr"/></svg><svg class="i s" viewBox="0 0 24 24" style="color:#8b5cf6"><use href="#i-table"/></svg>invoices</div>
+                <div class="aw-dbtable"><svg class="i s" viewBox="0 0 24 24"><use href="#i-chevr"/></svg><svg class="i s" viewBox="0 0 24 24" style="color:#8b5cf6"><use href="#i-table"/></svg>audit_log</div>
+              </div>
+              <div class="aw-dbfoot"><svg class="i s" viewBox="0 0 24 24" style="color:#10b981"><use href="#i-zap"/></svg>PostgreSQL · db-primary:5432</div>
+            </aside>
+            <div class="aw-vmain">
+              <div class="aw-toolrow">
+                <span class="aw-runbtn"><svg class="i s" viewBox="0 0 24 24"><use href="#i-play"/></svg>Run</span>
+                <span class="aw-tbtn"><svg class="i s" viewBox="0 0 24 24"><use href="#i-activity"/></svg>Explain</span>
+                <i class="aw-vr"></i>
+                <span class="aw-tbtn"><svg class="i s" viewBox="0 0 24 24"><use href="#i-eye"/></svg>Watch</span>
+                <span class="aw-tbsel">5s</span>
+                <span class="aw-kbd">⌘+Enter</span>
+                <i class="aw-vr"></i>
+                <span class="aw-tbtn"><svg class="i s" viewBox="0 0 24 24"><use href="#i-pin"/></svg>Save</span>
+                <span class="aw-flex"></span>
+                <span class="aw-tbtn"><svg class="i s" viewBox="0 0 24 24"><use href="#i-rotccw"/></svg>Clear</span>
+              </div>
+              <div class="aw-sqledit"><span class="k">SELECT</span> u.id, u.email, count(o.id) <span class="k">AS</span> orders
+<span class="k">FROM</span> users u <span class="k">JOIN</span> orders o <span class="k">ON</span> o.user_id = u.id
+<span class="k">WHERE</span> o.created_at &gt; now() - interval <span class="s">'7 days'</span>
+<span class="k">GROUP BY</span> u.id <span class="k">ORDER BY</span> orders <span class="k">DESC</span> <span class="k">LIMIT</span> <span class="n">50</span>;</div>
+              <div class="aw-paneltabs">
+                <span class="on">Results<b>50</b></span><span>Explain</span><span>History<b>12</b></span><span>Saved<b>4</b></span>
+                <span class="aw-flex"></span>
+                <span class="meta">3 cols · 12ms</span>
+                <svg class="i s" viewBox="0 0 24 24"><use href="#i-copy"/></svg>
+                <svg class="i s" viewBox="0 0 24 24"><use href="#i-dl"/></svg>
+              </div>
+              <div class="aw-tablewrap">
+                <table class="aw-dbgrid">
+                  <tr><th class="rn">#</th><th>id</th><th>email</th><th>orders</th></tr>
+                  <tr><td class="rn">1</td><td>8841</td><td>mira@castell.io</td><td>14</td></tr>
+                  <tr><td class="rn">2</td><td>8623</td><td>jon@harlow.dev</td><td>11</td></tr>
+                  <tr><td class="rn">3</td><td>8512</td><td>ana@quintero.co</td><td>9</td></tr>
+                  <tr><td class="rn">4</td><td>8390</td><td>sam@ferris.net</td><td>8</td></tr>
+                  <tr><td class="rn">5</td><td>8217</td><td>kei@tanaka.app</td><td>7</td></tr>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- k8s view (mirrors K8sDashboard) -->
+        <div class="aw-view" data-view="k8s" hidden>
+          <div class="aw-k8sbar">
+            <span class="aw-k8sfilter"><svg class="i s" viewBox="0 0 24 24"><use href="#i-search"/></svg>Filter pods…</span>
+            <svg class="i" viewBox="0 0 24 24" style="color:var(--aw-text2)"><use href="#i-refresh"/></svg>
+          </div>
+          <div class="aw-split">
+            <aside class="aw-k8sside">
+              <div class="aw-k8sid">
+                <span class="cube"><svg class="i s" viewBox="0 0 24 24" style="color:#fff"><use href="#i-boxes"/></svg></span>
+                <div class="min"><b>staging</b><span class="cs"><i></i>Connected</span></div>
+              </div>
+              <div class="aw-k8sns">default<span>▾</span></div>
+              <nav class="aw-k8snav">
+                <div class="aw-k8sitem"><svg class="i s" viewBox="0 0 24 24"><use href="#i-activity"/></svg>Events</div>
+                <div class="aw-k8ssec">Workloads <svg class="i s" viewBox="0 0 24 24"><use href="#i-chevd"/></svg></div>
+                <div class="aw-k8sitem on"><i class="dot"></i>Pods<b>6</b></div>
+                <div class="aw-k8sitem"><i class="dot"></i>Deployments</div>
+                <div class="aw-k8sitem"><i class="dot"></i>StatefulSets</div>
+                <div class="aw-k8sitem"><i class="dot"></i>DaemonSets</div>
+                <div class="aw-k8sitem"><i class="dot"></i>Jobs</div>
+                <div class="aw-k8ssec">Network <svg class="i s" viewBox="0 0 24 24"><use href="#i-chevd"/></svg></div>
+                <div class="aw-k8sitem"><i class="dot"></i>Services</div>
+                <div class="aw-k8sitem"><i class="dot"></i>Ingresses</div>
+                <div class="aw-k8ssec">Config <svg class="i s" viewBox="0 0 24 24"><use href="#i-chevr"/></svg></div>
+              </nav>
+              <div class="aw-k8spf">
+                <div class="lbl">Port Forwards</div>
+                <div class="pf">:8080 → api:8080<svg class="i s" viewBox="0 0 24 24" style="color:#ef4444"><use href="#i-minus"/></svg></div>
+              </div>
+            </aside>
+            <div class="aw-vmain">
+              <div class="aw-k8shead"><h4>Pods</h4><p>Namespace: default · 6 pods</p></div>
+              <div class="aw-tablewrap">
+                <table class="aw-k8stable">
+                  <tr><th>Name</th><th>Ready</th><th>Status</th><th>Restarts</th><th>Age</th><th class="r">Actions</th></tr>
+                  <tr><td class="nm"><i class="pbar" style="background:#10b981"></i>api-7d9f6c44-2xkql</td><td>1/1</td><td><span class="kbadge" style="color:#10b981;background:rgba(16,185,129,0.09)"><i style="background:#10b981"></i>Running</span></td><td>0</td><td class="age">12d</td><td class="r"><span class="acts"><svg class="i s" viewBox="0 0 24 24"><use href="#i-filetext"/></svg><svg class="i s" viewBox="0 0 24 24"><use href="#i-term"/></svg><svg class="i s" viewBox="0 0 24 24"><use href="#i-extlink"/></svg><svg class="i s" viewBox="0 0 24 24" style="color:#ef4444"><use href="#i-trash"/></svg></span></td></tr>
+                  <tr><td class="nm"><i class="pbar" style="background:#10b981"></i>api-7d9f6c44-9mztr</td><td>1/1</td><td><span class="kbadge" style="color:#10b981;background:rgba(16,185,129,0.09)"><i style="background:#10b981"></i>Running</span></td><td>0</td><td class="age">12d</td><td class="r"><span class="acts"><svg class="i s" viewBox="0 0 24 24"><use href="#i-filetext"/></svg><svg class="i s" viewBox="0 0 24 24"><use href="#i-term"/></svg><svg class="i s" viewBox="0 0 24 24"><use href="#i-extlink"/></svg><svg class="i s" viewBox="0 0 24 24" style="color:#ef4444"><use href="#i-trash"/></svg></span></td></tr>
+                  <tr><td class="nm"><i class="pbar" style="background:#10b981"></i>worker-5b8dd47-ltzzv</td><td>1/1</td><td><span class="kbadge" style="color:#10b981;background:rgba(16,185,129,0.09)"><i style="background:#10b981"></i>Running</span></td><td style="color:#f59e0b">2</td><td class="age">4d</td><td class="r"><span class="acts"><svg class="i s" viewBox="0 0 24 24"><use href="#i-filetext"/></svg><svg class="i s" viewBox="0 0 24 24"><use href="#i-term"/></svg><svg class="i s" viewBox="0 0 24 24"><use href="#i-extlink"/></svg><svg class="i s" viewBox="0 0 24 24" style="color:#ef4444"><use href="#i-trash"/></svg></span></td></tr>
+                  <tr><td class="nm"><i class="pbar" style="background:#10b981"></i>worker-5b8dd47-pq2c8</td><td>1/1</td><td><span class="kbadge" style="color:#10b981;background:rgba(16,185,129,0.09)"><i style="background:#10b981"></i>Running</span></td><td>0</td><td class="age">4d</td><td class="r"><span class="acts"><svg class="i s" viewBox="0 0 24 24"><use href="#i-filetext"/></svg><svg class="i s" viewBox="0 0 24 24"><use href="#i-term"/></svg><svg class="i s" viewBox="0 0 24 24"><use href="#i-extlink"/></svg><svg class="i s" viewBox="0 0 24 24" style="color:#ef4444"><use href="#i-trash"/></svg></span></td></tr>
+                  <tr><td class="nm"><i class="pbar" style="background:#f59e0b"></i>queue-6f4b59-x7jw4</td><td>0/1</td><td><span class="kbadge" style="color:#f59e0b;background:rgba(245,158,11,0.09)"><i style="background:#f59e0b"></i>Pending</span></td><td>0</td><td class="age">2m</td><td class="r"><span class="acts"><svg class="i s" viewBox="0 0 24 24"><use href="#i-filetext"/></svg><svg class="i s" viewBox="0 0 24 24"><use href="#i-term"/></svg><svg class="i s" viewBox="0 0 24 24"><use href="#i-extlink"/></svg><svg class="i s" viewBox="0 0 24 24" style="color:#ef4444"><use href="#i-trash"/></svg></span></td></tr>
+                  <tr><td class="nm"><i class="pbar" style="background:#10b981"></i>redis-0</td><td>1/1</td><td><span class="kbadge" style="color:#10b981;background:rgba(16,185,129,0.09)"><i style="background:#10b981"></i>Running</span></td><td>0</td><td class="age">30d</td><td class="r"><span class="acts"><svg class="i s" viewBox="0 0 24 24"><use href="#i-filetext"/></svg><svg class="i s" viewBox="0 0 24 24"><use href="#i-term"/></svg><svg class="i s" viewBox="0 0 24 24"><use href="#i-extlink"/></svg><svg class="i s" viewBox="0 0 24 24" style="color:#ef4444"><use href="#i-trash"/></svg></span></td></tr>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- sftp view (mirrors SftpBrowser) -->
+        <div class="aw-view" data-view="sftp" hidden>
+          <div class="aw-sftpbar">
+            <span class="aw-tbtn" style="color:#3b5ccc">Upload <svg class="i s" viewBox="0 0 24 24"><use href="#i-arrr"/></svg></span>
+            <i class="aw-vr"></i>
+            <span class="aw-tbtn" style="color:#3b5ccc"><svg class="i s" viewBox="0 0 24 24"><use href="#i-arrl"/></svg> Download</span>
+            <i class="aw-vr"></i>
+            <span class="aw-tbtn"><svg class="i s" viewBox="0 0 24 24"><use href="#i-compare"/></svg>Diff</span>
+          </div>
+          <div class="aw-split">
+            <div class="aw-pane">
+              <div class="aw-panehead focused"><svg class="i s" viewBox="0 0 24 24" style="color:#3b5ccc"><use href="#i-hdd"/></svg><b>Local</b><svg class="i s" viewBox="0 0 24 24"><use href="#i-refresh"/></svg><svg class="i s" viewBox="0 0 24 24"><use href="#i-eye"/></svg></div>
+              <div class="aw-panepath"><svg class="i s" viewBox="0 0 24 24"><use href="#i-chevu"/></svg>/Users/sean/deploy</div>
+              <table class="aw-files">
+                <tr><th>Name</th><th class="r">Size</th><th>Modified</th></tr>
+                <tr><td class="dir"><svg class="i s" viewBox="0 0 24 24" style="color:#8b5cf6"><use href="#i-folder"/></svg>dist</td><td class="r">—</td><td class="dt">Jun 12 18:02</td></tr>
+                <tr><td class="dir"><svg class="i s" viewBox="0 0 24 24" style="color:#8b5cf6"><use href="#i-folder"/></svg>config</td><td class="r">—</td><td class="dt">Jun 10 09:14</td></tr>
+                <tr><td><svg class="i s" viewBox="0 0 24 24"><use href="#i-file"/></svg>docker-compose.yml</td><td class="r">1.2 KB</td><td class="dt">Jun 12 17:55</td></tr>
+                <tr class="sel"><td><svg class="i s" viewBox="0 0 24 24"><use href="#i-file"/></svg>release-v2.4.1.tar.gz</td><td class="r">48.3 MB</td><td class="dt">Jun 13 11:47</td></tr>
+                <tr><td><svg class="i s" viewBox="0 0 24 24"><use href="#i-file"/></svg>deploy.sh</td><td class="r">2.8 KB</td><td class="dt">Jun 9 16:30</td></tr>
+              </table>
+            </div>
+            <div class="aw-panediv"></div>
+            <div class="aw-pane">
+              <div class="aw-panehead"><svg class="i s" viewBox="0 0 24 24"><use href="#i-server"/></svg><b>prod-web-01</b><svg class="i s" viewBox="0 0 24 24"><use href="#i-folderplus"/></svg><svg class="i s" viewBox="0 0 24 24"><use href="#i-refresh"/></svg><svg class="i s" viewBox="0 0 24 24"><use href="#i-eye"/></svg></div>
+              <div class="aw-panepath"><svg class="i s" viewBox="0 0 24 24"><use href="#i-chevu"/></svg>/srv/app/releases</div>
+              <table class="aw-files">
+                <tr><th>Name</th><th class="r">Size</th><th>Modified</th></tr>
+                <tr><td class="dir"><svg class="i s" viewBox="0 0 24 24" style="color:#8b5cf6"><use href="#i-folder"/></svg>v2.4.0</td><td class="r">—</td><td class="dt">Jun 1 10:22</td></tr>
+                <tr><td class="dir"><svg class="i s" viewBox="0 0 24 24" style="color:#8b5cf6"><use href="#i-folder"/></svg>v2.3.9</td><td class="r">—</td><td class="dt">May 24 08:15</td></tr>
+                <tr><td><svg class="i s" viewBox="0 0 24 24"><use href="#i-file"/></svg>current → v2.4.0</td><td class="r">—</td><td class="dt">Jun 1 10:24</td></tr>
+                <tr><td><svg class="i s" viewBox="0 0 24 24"><use href="#i-file"/></svg>.env.production</td><td class="r">412 B</td><td class="dt">May 30 12:01</td></tr>
+              </table>
+            </div>
+          </div>
+          <div class="aw-sftpstatus">
+            <span class="up"><svg class="i s" viewBox="0 0 24 24" style="color:#3b5ccc"><use href="#i-arrr"/></svg>release-v2.4.1.tar.gz</span>
+            <span class="aw-tfbar"><i id="aw-tf-fill" style="width:73%"></i></span>
+            <span id="aw-tf-pct">73%</span>
+            <span class="aw-flex"></span>
+            <span>5 items</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- status bar -->
+    <div class="aw-status">
+      <i class="aw-sdot"></i> All connections healthy
+      <span class="sep">|</span>
+      <span>7 connections configured · 4 active sessions</span>
+      <span class="aw-flex"></span>
+      <span class="grn"><svg class="i" viewBox="0 0 24 24"><use href="#i-cable"/></svg>1 tunnel active</span>
+      <span class="grn"><svg class="i" viewBox="0 0 24 24"><use href="#i-shield"/></svg><span>Credentials encrypted</span></span>
+    </div>
+  </div>
+</div>
+
+<!-- icon sprites for the app mockup -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <g id="i-search"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.2" y2="16.2"/></g>
+    <g id="i-plus"><path d="M12 5v14M5 12h14"/></g>
+    <g id="i-sun"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></g>
+    <g id="i-dash"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></g>
+    <g id="i-term"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></g>
+    <g id="i-termsq"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="m8 9 3 3-3 3"/><line x1="13" y1="15" x2="16" y2="15"/></g>
+    <g id="i-db"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></g>
+    <g id="i-boxes"><rect x="3" y="13" width="8" height="8" rx="1"/><rect x="13" y="13" width="8" height="8" rx="1"/><rect x="8" y="3" width="8" height="8" rx="1"/></g>
+    <g id="i-list"><line x1="9" y1="6" x2="21" y2="6"/><line x1="9" y1="12" x2="21" y2="12"/><line x1="9" y1="18" x2="21" y2="18"/><circle cx="4.5" cy="6" r="0.5"/><circle cx="4.5" cy="12" r="0.5"/><circle cx="4.5" cy="18" r="0.5"/></g>
+    <g id="i-folder"><path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z"/></g>
+    <g id="i-cable"><path d="M6 9V6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v3"/><path d="M14 15v3a1 1 0 0 0 1 1h2a1 1 0 0 0 1-1v-3"/><path d="M8 9v2a4 4 0 0 0 4 4 4 4 0 0 1 4-4V9"/></g>
+    <g id="i-star"><path d="m12 3 2.7 5.6 6.1.8-4.5 4.2 1.1 6-5.4-3-5.4 3 1.1-6L3.2 9.4l6.1-.8Z"/></g>
+    <g id="i-gear"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.6 4.6l2.1 2.1M17.3 17.3l2.1 2.1M4.6 19.4l2.1-2.1M17.3 6.7l2.1-2.1"/></g>
+    <g id="i-radio"><circle cx="12" cy="12" r="2"/><path d="M7.8 16.2a6 6 0 0 1 0-8.4M16.2 7.8a6 6 0 0 1 0 8.4"/></g>
+    <g id="i-cols"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="12" y1="3" x2="12" y2="21"/></g>
+    <g id="i-shield"><path d="M12 22s8-3 8-10V5l-8-3-8 3v7c0 7 8 10 8 10Z"/></g>
+    <g id="i-refresh"><path d="M21 12a9 9 0 1 1-2.6-6.4"/><path d="M21 3v6h-6"/></g>
+    <g id="i-chevr"><polyline points="9 6 15 12 9 18"/></g>
+    <g id="i-chevd"><polyline points="6 9 12 15 18 9"/></g>
+    <g id="i-chevu"><polyline points="6 15 12 9 18 15"/></g>
+    <g id="i-table"><rect x="3" y="4" width="18" height="16" rx="2"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="10" y1="10" x2="10" y2="20"/></g>
+    <g id="i-hash"><line x1="4" y1="9" x2="20" y2="9"/><line x1="4" y1="15" x2="20" y2="15"/><line x1="10" y1="3" x2="8" y2="21"/><line x1="16" y1="3" x2="14" y2="21"/></g>
+    <g id="i-zap"><path d="M13 2 4 14h6l-1 8 9-12h-6l1-8Z"/></g>
+    <g id="i-play"><path d="M6 4l14 8-14 8Z"/></g>
+    <g id="i-activity"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></g>
+    <g id="i-eye"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></g>
+    <g id="i-pin"><path d="M12 17v5"/><path d="M9 11V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v6l2 1.5V15H7v-2.5L9 11Z"/></g>
+    <g id="i-rotccw"><path d="M3 12a9 9 0 1 0 2.6-6.4"/><path d="M3 3v6h6"/></g>
+    <g id="i-copy"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></g>
+    <g id="i-dl"><path d="M12 3v12m0 0 4-4m-4 4-4-4"/><path d="M4 21h16"/></g>
+    <g id="i-filetext"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8l-5-5Z"/><path d="M14 3v5h5"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="15" y2="17"/></g>
+    <g id="i-extlink"><path d="M15 3h6v6"/><path d="M21 3 10 14"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></g>
+    <g id="i-trash"><path d="M3 6h18"/><path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2"/><path d="m19 6-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></g>
+    <g id="i-hdd"><line x1="22" y1="12" x2="2" y2="12"/><path d="M5.5 5h13l3 7v5a2 2 0 0 1-2 2h-15a2 2 0 0 1-2-2v-5l3-7Z"/><line x1="6" y1="16" x2="6.01" y2="16"/><line x1="10" y1="16" x2="10.01" y2="16"/></g>
+    <g id="i-server"><rect x="2" y="3" width="20" height="7" rx="2"/><rect x="2" y="14" width="20" height="7" rx="2"/><line x1="6" y1="6.5" x2="6.01" y2="6.5"/><line x1="6" y1="17.5" x2="6.01" y2="17.5"/></g>
+    <g id="i-folderplus"><path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z"/><line x1="12" y1="11" x2="12" y2="16"/><line x1="9.5" y1="13.5" x2="14.5" y2="13.5"/></g>
+    <g id="i-file"><path d="M14 2H7a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7l-5-5Z"/><path d="M14 2v5h5"/></g>
+    <g id="i-arrr"><path d="M5 12h14m0 0-5-5m5 5-5 5"/></g>
+    <g id="i-arrl"><path d="M19 12H5m0 0 5-5m-5 5 5 5"/></g>
+    <g id="i-compare"><path d="M10 18H7a4 4 0 0 1-4-4V6"/><path d="m6 9-3-3 3-3"/><path d="M14 6h3a4 4 0 0 1 4 4v8"/><path d="m18 15 3 3-3 3"/></g>
+    <g id="i-minus"><line x1="5" y1="12" x2="19" y2="12"/></g>
+  </defs>
+</svg>
+
+<!-- ===================== TICKER ===================== -->
+<div class="ticker-wrap" aria-hidden="true">
+  <div class="ticker" id="ticker"></div>
+</div>
+
+<!-- ===================== FEATURES ===================== -->
+<section id="features">
+  <div class="wrap">
+    <div class="reveal">
+      <div class="kicker">features</div>
+      <h2>Your whole fleet, without leaving the keyboard.</h2>
+      <p class="section-sub">Everything rides over plain SSH — no agents to install, no daemons to babysit on the remote side.</p>
+    </div>
+
+    <div class="feat-grid">
+      <div class="feat reveal">
+        <div class="feat-icon"><svg viewBox="0 0 24 24"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg></div>
+        <h3>SSH terminal</h3>
+        <p>Tabbed sessions with per-host colors, favorites, and project groups. Split into four panes with keystroke broadcast. Import hosts straight from <code>~/.ssh/config</code>.</p>
+      </div>
+      <div class="feat reveal">
+        <div class="feat-icon"><svg viewBox="0 0 24 24"><path d="M12 3v3m0 12v3M5.6 5.6l2.1 2.1m8.6 8.6 2.1 2.1M3 12h3m12 0h3M5.6 18.4l2.1-2.1m8.6-8.6 2.1-2.1"/></svg></div>
+        <h3>Jump hosts, chained</h3>
+        <p>Reach servers behind a bastion with ProxyJump — chains resolve automatically, exactly like your <code>ssh_config</code> already does.</p>
+      </div>
+      <div class="feat reveal">
+        <div class="feat-icon"><svg viewBox="0 0 24 24"><path d="M3 12h4l3-9 4 18 3-9h4"/></svg></div>
+        <h3>Live metrics</h3>
+        <p>CPU, memory, disk, and load streamed over the connection you already have, right in the session header.</p>
+      </div>
+      <div class="feat reveal">
+        <div class="feat-icon"><svg viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/></svg></div>
+        <h3>Tunnels &amp; SOCKS5</h3>
+        <p>Local and remote port forwarding plus a SOCKS5 proxy over any saved connection. One-click start/stop, live status in the status bar.</p>
+      </div>
+      <div class="feat wide reveal">
+        <div class="feat-icon"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg></div>
+        <h3>Mission-control dashboard</h3>
+        <p>Reachability, CPU sparklines, memory, disk, load, and uptime for every server at once — with alerts when CPU pins or a disk fills up. Then run one command across the fleet and compare outputs and exit codes side by side.</p>
+      </div>
+      <div class="feat reveal">
+        <div class="feat-icon"><svg viewBox="0 0 24 24"><path d="M4 16c0-1 .6-2 2-2h12c1.4 0 2 1 2 2s-.6 2-2 2H6c-1.4 0-2-1-2-2Z"/><path d="M6 14V9h3v5M11 14V6h3v8M16 14v-4h3v4"/></svg></div>
+        <h3>Docker — no agent</h3>
+        <p>Containers, images, live stats, and streaming logs on any host with the docker CLI, all over plain SSH. Start, stop, restart, remove.</p>
+      </div>
+      <div class="feat reveal">
+        <div class="feat-icon"><svg viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z"/></svg></div>
+        <h3>SFTP, beside your shell</h3>
+        <p>A standalone browser or a drawer attached to the live session. Upload, download, rename, chmod, and edit files inline with CodeMirror.</p>
+      </div>
+      <div class="feat reveal">
+        <div class="feat-icon"><svg viewBox="0 0 24 24"><ellipse cx="12" cy="5.5" rx="8" ry="2.5"/><path d="M4 5.5v6c0 1.4 3.6 2.5 8 2.5s8-1.1 8-2.5v-6"/><path d="M4 11.5v6c0 1.4 3.6 2.5 8 2.5s8-1.1 8-2.5v-6"/></svg></div>
+        <h3>Databases &amp; Redis</h3>
+        <p>Postgres, MySQL, and MariaDB with a schema browser, query history, and EXPLAIN. Redis with a key browser and a guarded CLI — destructive commands are blocked.</p>
+      </div>
+      <div class="feat reveal">
+        <div class="feat-icon"><svg viewBox="0 0 24 24"><path d="M12 2l8.5 4.1 2.1 9.2-5.9 7.4H7.3l-5.9-7.4 2.1-9.2L12 2Z"/><circle cx="12" cy="12" r="3"/></svg></div>
+        <h3>Kubernetes</h3>
+        <p>Multi-context dashboard for workloads, services, config, nodes, and events. Streamed pod logs, exec, port-forward, scale, and restart.</p>
+      </div>
+    </div>
+
+    <div class="shortcuts reveal">
+      <span class="shortcut"><kbd>⌘K</kbd> command palette</span>
+      <span class="shortcut"><kbd>⌘T</kbd> new connection</span>
+      <span class="shortcut"><kbd>⌘F</kbd> search scrollback</span>
+      <span class="shortcut"><kbd>⌘1…9</kbd> jump to tab</span>
+      <span class="shortcut"><kbd>⌃Tab</kbd> cycle tabs</span>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== SECURITY ===================== -->
+<section id="security" style="background: linear-gradient(180deg, transparent, rgba(49,42,125,0.1) 50%, transparent);">
+  <div class="wrap">
+    <div class="reveal">
+      <div class="kicker">security</div>
+      <h2>Paranoid by design.</h2>
+      <p class="section-sub">The UI is treated as untrusted. Your secrets never touch a config file.</p>
+    </div>
+    <div class="sec-strip">
+      <div class="sec-item reveal">
+        <svg viewBox="0 0 24 24"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
+        <div><b>OS keychain only</b><span>Credentials live in the system keychain — macOS Keychain, Windows Credential Manager, or libsecret — never in config files.</span></div>
+      </div>
+      <div class="sec-item reveal">
+        <svg viewBox="0 0 24 24"><path d="M12 2 4 6v6c0 5 3.4 8.6 8 10 4.6-1.4 8-5 8-10V6l-8-4Z"/><path d="M9 12l2 2 4-4"/></svg>
+        <div><b>Sandboxed renderer</b><span>Context isolation everywhere. Every IPC handler validates its input, and the main process treats the UI as untrusted.</span></div>
+      </div>
+      <div class="sec-item reveal">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v4l2.5 2.5"/></svg>
+        <div><b>Lock screen</b><span>Optional Touch ID, PIN, or password with auto-lock when you step away.</span></div>
+      </div>
+      <div class="sec-item reveal">
+        <svg viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8l-5-5Z"/><path d="M14 3v5h5"/></svg>
+        <div><b>Allowlisted file access</b><span>SSH keys and kubeconfigs are only readable from allowlisted directories.</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== INSTALL ===================== -->
+<section id="install">
+  <div class="wrap">
+    <div class="reveal">
+      <div class="kicker">install</div>
+      <h2>Up and running in a minute.</h2>
+      <p class="section-sub">Grab a build from the releases page, or compile it yourself — it's your code now.</p>
+    </div>
+    <div class="install-grid">
+      <div class="platforms reveal">
+        <a class="platform" href="https://github.com/Meanski/noxed/releases" target="_blank" rel="noopener">
+          <svg viewBox="0 0 24 24"><path d="M18.7 12.6c0-2 1.7-3 1.7-3-1-1.4-2.4-1.6-2.9-1.6-1.2-.1-2.4.7-3 .7-.7 0-1.6-.7-2.7-.7-1.4 0-2.6.8-3.3 2-1.4 2.5-.4 6.1 1 8.1.7 1 1.5 2.1 2.5 2 1-.1 1.4-.6 2.6-.6s1.6.6 2.6.6c1.1 0 1.8-1 2.5-2 .8-1.1 1.1-2.2 1.1-2.3 0 0-2.1-.8-2.1-3.2ZM16.7 5.7c.5-.7.9-1.6.8-2.6-.8 0-1.8.6-2.4 1.3-.5.6-1 1.6-.8 2.5.9.1 1.8-.5 2.4-1.2Z"/></svg>
+          <div><b>macOS</b><span>.dmg · .zip</span></div>
+          <span class="arrow">→</span>
+        </a>
+        <a class="platform" href="https://github.com/Meanski/noxed/releases" target="_blank" rel="noopener">
+          <svg viewBox="0 0 24 24"><path d="M3 5.5 10.5 4.4v7.1H3V5.5ZM3 12.5h7.5v7.1L3 18.5v-6ZM11.5 4.2 21 3v8.5h-9.5V4.2ZM11.5 12.5H21V21l-9.5-1.3v-7.2Z"/></svg>
+          <div><b>Windows</b><span>NSIS installer</span></div>
+          <span class="arrow">→</span>
+        </a>
+        <a class="platform" href="https://github.com/Meanski/noxed/releases" target="_blank" rel="noopener">
+          <svg viewBox="0 0 24 24"><path d="M12 2c-2.2 0-3.6 1.8-3.6 4 0 1.5.2 2.6-.5 4-1 1.8-2.6 3.4-2.6 6 0 1 .2 1.9.6 2.7.4-.5 1-.8 1.8-.8.5-1.5 1.8-1.5 2.4-3.6.4.2 1.2.4 1.9.4s1.5-.2 1.9-.4c.6 2.1 1.9 2.1 2.4 3.6.8 0 1.4.3 1.8.8.4-.8.6-1.7.6-2.7 0-2.6-1.6-4.2-2.6-6-.7-1.4-.5-2.5-.5-4 0-2.2-1.4-4-3.6-4Zm-2 7a1 1 0 1 1 0-2 1 1 0 0 1 0 2Zm4 0a1 1 0 1 1 0-2 1 1 0 0 1 0 2Z"/><path d="M7 19.5c-.8 0-1.4.7-1.4 1.4 0 .6.5 1.1 1.4 1.1h2.8c.6 0 1.2-.5 1.2-1.2 0-.5-.3-.9-.8-1.3-.9-.7-1.7-1.3-3.2 0ZM17 19.5c-1.5-1.3-2.3-.7-3.2 0-.5.4-.8.8-.8 1.3 0 .7.6 1.2 1.2 1.2H17c.9 0 1.4-.5 1.4-1.1 0-.7-.6-1.4-1.4-1.4Z"/></svg>
+          <div><b>Linux</b><span>AppImage · .deb</span></div>
+          <span class="arrow">→</span>
+        </a>
+      </div>
+      <div class="reveal">
+        <div class="codeblock">
+          <div class="codeblock-head">
+            <span>build from source</span>
+            <button class="copy-btn" id="copy-btn" type="button">
+              <span id="copy-label">Copy</span>
+            </button>
+          </div>
+          <pre id="build-cmd"><span class="p">$</span> git clone https://github.com/Meanski/noxed.git
+<span class="p">$</span> cd noxed
+<span class="p">$</span> npm install
+<span class="p">$</span> npm run dist   <span class="c"># installers land in dist/</span></pre>
+        </div>
+        <p class="install-note">
+          Needs Node.js 20+. macOS builds aren't notarized yet — if the app is reported
+          as damaged, run <code>xattr -cr /Applications/noxed.app</code>.
+          On Linux, install a keyring service (e.g. <code>libsecret-1-0</code>).
+        </p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== OPEN SOURCE ===================== -->
+<section class="oss">
+  <div class="oss-glow" aria-hidden="true"></div>
+  <div class="wrap reveal">
+    <svg class="oss-star" viewBox="0 0 256 256" aria-hidden="true">
+      <path d="M128 24 C138 96 162 120 232 128 C162 136 138 160 128 232 C118 160 94 136 24 128 C94 120 118 96 128 24 Z"
+        fill="none" stroke="url(#star-grad)" stroke-width="6"/>
+      <defs>
+        <linearGradient id="star-grad" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stop-color="#c4b5fd"/><stop offset="1" stop-color="#4c6ef5"/>
+        </linearGradient>
+      </defs>
+    </svg>
+    <h2>Free forever. <span style="background:linear-gradient(100deg,#c4b5fd,#4c6ef5);-webkit-background-clip:text;background-clip:text;color:transparent;">Yours forever.</span></h2>
+    <p>noxed is MIT-licensed and built in the open. No accounts, no subscriptions, no telemetry to a server you didn't ask for. Read the code, file an issue, send a patch.</p>
+    <div class="hero-ctas">
+      <a class="btn btn-primary" href="https://github.com/Meanski/noxed" target="_blank" rel="noopener">
+        <svg viewBox="0 0 16 16"><path d="M8 .25a.75.75 0 0 1 .67.42l1.88 3.8 4.2.62a.75.75 0 0 1 .42 1.28l-3.04 2.96.72 4.18a.75.75 0 0 1-1.09.79L8 12.35l-3.76 1.97a.75.75 0 0 1-1.09-.79l.72-4.18L.83 6.37a.75.75 0 0 1 .42-1.28l4.2-.61L7.33.67A.75.75 0 0 1 8 .25Z"/></svg>
+        Star the repo
+      </a>
+      <a class="btn btn-ghost" href="https://github.com/Meanski/noxed/blob/main/LICENSE" target="_blank" rel="noopener">Read the license</a>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== FOOTER ===================== -->
+<footer>
+  <div class="foot-brand">
+    <svg viewBox="0 0 256 256" aria-hidden="true">
+      <defs><clipPath id="sq2"><rect width="256" height="256" rx="58"/></clipPath></defs>
+      <g clip-path="url(#sq2)">
+        <path d="M0 0 L148 0 Q138 64 128 128 Q64 118 0 108 Z" fill="#A78BFA"/>
+        <path d="M148 0 L256 0 L256 148 Q192 138 128 128 Q138 64 148 0 Z" fill="#6D28D9"/>
+        <path d="M256 148 L256 256 L108 256 Q118 192 128 128 Q192 138 256 148 Z" fill="#312A7D"/>
+        <path d="M108 256 L0 256 L0 108 Q64 118 128 128 Q118 192 108 256 Z" fill="#4C6EF5"/>
+      </g>
+      <path d="M128 44 C136 100 156 120 212 128 C156 136 136 156 128 212 C120 156 100 136 44 128 C100 120 120 100 128 44 Z" fill="#FFF" transform="rotate(14 128 128)"/>
+    </svg>
+    noxed
+  </div>
+  <nav>
+    <a href="https://github.com/Meanski/noxed" target="_blank" rel="noopener">GitHub</a>
+    <a href="https://github.com/Meanski/noxed/releases" target="_blank" rel="noopener">Releases</a>
+    <a href="https://github.com/Meanski/noxed/issues" target="_blank" rel="noopener">Issues</a>
+    <a href="https://github.com/Meanski/noxed/blob/main/LICENSE" target="_blank" rel="noopener">MIT License</a>
+  </nav>
+  <span>Dreamed up by Sean Woodliffe · © 2026</span>
+</footer>
+
+<!-- ===================== SCRIPTS ===================== -->
+<script type="importmap">
+{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.165.0/build/three.module.js" } }
+</script>
+
+<script type="module">
+import * as THREE from "three";
+
+const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+/* ============ three.js hero: globe of nodes + connection arcs ============ */
+const canvas = document.getElementById("scene");
+const hero = canvas.parentElement;
+
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 100);
+camera.position.set(0, 0.4, 7.2);
+
+const VIOLET = new THREE.Color("#a78bfa");
+const INDIGO = new THREE.Color("#4c6ef5");
+const DEEP   = new THREE.Color("#6d28d9");
+
+const world = new THREE.Group();
+scene.add(world);
+
+/* --- starfield --- */
+{
+  const N = 1600;
+  const pos = new Float32Array(N * 3);
+  const col = new Float32Array(N * 3);
+  for (let i = 0; i < N; i++) {
+    const r = 16 + Math.random() * 26;
+    const t = Math.random() * Math.PI * 2;
+    const p = Math.acos(2 * Math.random() - 1);
+    pos[i * 3] = r * Math.sin(p) * Math.cos(t);
+    pos[i * 3 + 1] = r * Math.sin(p) * Math.sin(t);
+    pos[i * 3 + 2] = r * Math.cos(p);
+    const c = Math.random() < 0.25 ? VIOLET : new THREE.Color("#8b86b3");
+    const f = 0.35 + Math.random() * 0.65;
+    col[i * 3] = c.r * f; col[i * 3 + 1] = c.g * f; col[i * 3 + 2] = c.b * f;
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+  g.setAttribute("color", new THREE.BufferAttribute(col, 3));
+  const m = new THREE.PointsMaterial({
+    size: 0.055, vertexColors: true, transparent: true, opacity: 0.8,
+    blending: THREE.AdditiveBlending, depthWrite: false,
+  });
+  scene.add(new THREE.Points(g, m));
+}
+
+/* --- node sphere (the fleet) --- */
+const GLOBE_R = 2.35;
+const NODES = 560;
+const nodePositions = [];
+{
+  const pos = new Float32Array(NODES * 3);
+  const col = new Float32Array(NODES * 3);
+  const phi = Math.PI * (3 - Math.sqrt(5)); // golden angle
+  for (let i = 0; i < NODES; i++) {
+    const y = 1 - (i / (NODES - 1)) * 2;
+    const rad = Math.sqrt(1 - y * y);
+    const th = phi * i;
+    const v = new THREE.Vector3(Math.cos(th) * rad, y, Math.sin(th) * rad).multiplyScalar(GLOBE_R);
+    nodePositions.push(v);
+    pos[i * 3] = v.x; pos[i * 3 + 1] = v.y; pos[i * 3 + 2] = v.z;
+    const c = VIOLET.clone().lerp(INDIGO, Math.random());
+    const f = 0.5 + Math.random() * 0.5;
+    col[i * 3] = c.r * f; col[i * 3 + 1] = c.g * f; col[i * 3 + 2] = c.b * f;
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+  g.setAttribute("color", new THREE.BufferAttribute(col, 3));
+  const m = new THREE.PointsMaterial({
+    size: 0.05, vertexColors: true, transparent: true, opacity: 0.95,
+    blending: THREE.AdditiveBlending, depthWrite: false,
+  });
+  world.add(new THREE.Points(g, m));
+
+  // faint wireframe shell behind the points
+  const shell = new THREE.Mesh(
+    new THREE.IcosahedronGeometry(GLOBE_R * 0.995, 3),
+    new THREE.MeshBasicMaterial({ color: DEEP, wireframe: true, transparent: true, opacity: 0.05 })
+  );
+  world.add(shell);
+}
+
+/* --- soft glow sprite behind the globe --- */
+{
+  const cnv = document.createElement("canvas");
+  cnv.width = cnv.height = 256;
+  const ctx = cnv.getContext("2d");
+  const grad = ctx.createRadialGradient(128, 128, 0, 128, 128, 128);
+  grad.addColorStop(0, "rgba(109, 40, 217, 0.55)");
+  grad.addColorStop(0.45, "rgba(76, 110, 245, 0.18)");
+  grad.addColorStop(1, "rgba(0, 0, 0, 0)");
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, 256, 256);
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: new THREE.CanvasTexture(cnv),
+    blending: THREE.AdditiveBlending, depthWrite: false, transparent: true,
+  }));
+  sprite.scale.setScalar(11);
+  sprite.position.z = -1.5;
+  scene.add(sprite);
+}
+
+/* --- connection arcs: draw in, hold, fade out --- */
+const ARC_SEGMENTS = 64;
+const MAX_ARCS = 12;
+const arcs = [];
+
+function spawnArc() {
+  const a = nodePositions[(Math.random() * NODES) | 0];
+  let b = nodePositions[(Math.random() * NODES) | 0];
+  for (let tries = 0; tries < 8 && a.distanceTo(b) < GLOBE_R * 0.8; tries++) {
+    b = nodePositions[(Math.random() * NODES) | 0];
+  }
+  const mid = a.clone().add(b).multiplyScalar(0.5);
+  const lift = 1 + (a.distanceTo(b) / (GLOBE_R * 2)) * 0.55;
+  mid.setLength(GLOBE_R * lift);
+  const curve = new THREE.QuadraticBezierCurve3(a, mid, b);
+  const pts = curve.getPoints(ARC_SEGMENTS);
+
+  const g = new THREE.BufferGeometry().setFromPoints(pts);
+  const m = new THREE.LineBasicMaterial({
+    color: Math.random() < 0.5 ? VIOLET : INDIGO,
+    transparent: true, opacity: 0.85,
+    blending: THREE.AdditiveBlending, depthWrite: false,
+  });
+  const line = new THREE.Line(g, m);
+  g.setDrawRange(0, 0);
+  world.add(line);
+
+  // pulse at the leading edge of the arc
+  const head = new THREE.Mesh(
+    new THREE.SphereGeometry(0.035, 8, 8),
+    new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.9 })
+  );
+  world.add(head);
+
+  arcs.push({ line, head, curve, t: 0, life: 2.2 + Math.random() * 1.6, phase: "draw" });
+}
+
+function updateArcs(dt) {
+  if (arcs.length < MAX_ARCS && Math.random() < dt * 3.2) spawnArc();
+  for (let i = arcs.length - 1; i >= 0; i--) {
+    const arc = arcs[i];
+    arc.t += dt;
+    if (arc.phase === "draw") {
+      const p = Math.min(arc.t / 1.1, 1);
+      const eased = 1 - Math.pow(1 - p, 3);
+      arc.line.geometry.setDrawRange(0, Math.floor(eased * ARC_SEGMENTS) + 1);
+      arc.head.position.copy(arc.curve.getPoint(eased));
+      if (p >= 1) { arc.phase = "hold"; arc.t = 0; arc.head.material.opacity = 0; }
+    } else if (arc.phase === "hold") {
+      if (arc.t >= arc.life) { arc.phase = "fade"; arc.t = 0; }
+    } else {
+      const p = Math.min(arc.t / 0.9, 1);
+      arc.line.material.opacity = 0.85 * (1 - p);
+      if (p >= 1) {
+        world.remove(arc.line, arc.head);
+        arc.line.geometry.dispose(); arc.line.material.dispose();
+        arc.head.geometry.dispose(); arc.head.material.dispose();
+        arcs.splice(i, 1);
+      }
+    }
+  }
+}
+
+/* --- interaction + loop --- */
+let mouseX = 0, mouseY = 0;
+window.addEventListener("pointermove", (e) => {
+  mouseX = (e.clientX / window.innerWidth) * 2 - 1;
+  mouseY = (e.clientY / window.innerHeight) * 2 - 1;
+}, { passive: true });
+
+function resize() {
+  const w = hero.clientWidth, h = hero.clientHeight;
+  renderer.setSize(w, h, false);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+}
+window.addEventListener("resize", resize);
+resize();
+
+const clock = new THREE.Clock();
+let running = true;
+document.addEventListener("visibilitychange", () => {
+  running = !document.hidden;
+  if (running) { clock.getDelta(); tick(); }
+});
+
+function tick() {
+  if (!running) return;
+  const dt = Math.min(clock.getDelta(), 0.05);
+  world.rotation.y += dt * 0.07;
+  world.rotation.x = 0.18 + mouseY * 0.05;
+  camera.position.x += (mouseX * 0.45 - camera.position.x) * 0.04;
+  camera.lookAt(0, 0, 0);
+  updateArcs(dt);
+  renderer.render(scene, camera);
+  if (!reduceMotion) requestAnimationFrame(tick);
+}
+if (reduceMotion) {
+  // render a single static frame with a few arcs already drawn
+  for (let i = 0; i < 6; i++) spawnArc();
+  arcs.forEach((a) => { a.line.geometry.setDrawRange(0, ARC_SEGMENTS + 1); a.head.material.opacity = 0; });
+  renderer.render(scene, camera);
+} else {
+  tick();
+}
+
+/* ============ typed kicker: cycle real commands ============ */
+(() => {
+  const el = document.getElementById("hero-typed");
+  if (!el) return;
+  const CMDS = [
+    "ssh prod-web-01",
+    "psql -h db-primary",
+    "redis-cli -h cache-eu-01",
+    "kubectl get pods --context staging",
+    "docker stats",
+    "sftp bastion-eu",
+  ];
+  if (reduceMotion) { el.textContent = CMDS[0]; return; }
+  let ci = 0, pos = 0, deleting = false;
+  function step() {
+    const cmd = CMDS[ci];
+    pos += deleting ? -1 : 1;
+    el.textContent = cmd.slice(0, pos);
+    if (!deleting && pos === cmd.length) { deleting = true; return setTimeout(step, 2100); }
+    if (deleting && pos === 0) { deleting = false; ci = (ci + 1) % CMDS.length; return setTimeout(step, 350); }
+    setTimeout(step, deleting ? 24 : 48 + Math.random() * 40);
+  }
+  step();
+})();
+</script>
+
+<script>
+/* ============ nav scroll state ============ */
+const nav = document.getElementById("nav");
+addEventListener("scroll", () => nav.classList.toggle("scrolled", scrollY > 24), { passive: true });
+
+/* ============ reveal on scroll ============ */
+const io = new IntersectionObserver((entries) => {
+  for (const e of entries) if (e.isIntersecting) { e.target.classList.add("in"); io.unobserve(e.target); }
+}, { threshold: 0.12, rootMargin: "0px 0px -40px 0px" });
+document.querySelectorAll(".reveal").forEach((el) => io.observe(el));
+
+/* ============ tech ticker ============ */
+const TECHS = ["OpenSSH", "SFTP", "PostgreSQL", "MySQL", "MariaDB", "Redis", "Docker", "Kubernetes", "ProxyJump", "SOCKS5", "Port forwarding", "xterm.js", "Touch ID", "~/.ssh/config"];
+document.getElementById("ticker").innerHTML =
+  [...TECHS, ...TECHS].map((t) => `<span>${t}</span>`).join("");
+
+/* ============ copy button ============ */
+document.getElementById("copy-btn").addEventListener("click", async () => {
+  const text = document.getElementById("build-cmd").innerText.replace(/^\$ /gm, "").replace(/\s*#.*$/gm, "");
+  try { await navigator.clipboard.writeText(text); } catch { /* clipboard unavailable */ }
+  const label = document.getElementById("copy-label");
+  label.textContent = "Copied!";
+  setTimeout(() => (label.textContent = "Copy"), 1600);
+});
+
+/* ============ animated app-window terminal ============ */
+(() => {
+  const body = document.getElementById("term-body");
+  const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const P = '<span class="tp">deploy@prod-web-01</span><span class="td">:</span><span class="tb">~</span><span class="td">$</span> ';
+
+  const SCRIPT = [
+    { type: "cmd", text: "uptime" },
+    { html: '<span class="td"> 12:04:03 up 247 days,  3:42,  1 user,  load average: 0.42, 0.38, 0.35</span>', delay: 650 },
+    { html: "&nbsp;", delay: 180 },
+    { type: "cmd", text: "docker ps" },
+    { html: '<span class="td">CONTAINER ID   IMAGE         STATUS        PORTS                 NAMES</span>', delay: 220 },
+    { html: '<span class="td">3f9c2b81a2de   </span><span class="tb">app:v2.4.1</span><span class="td">    Up 12 days    0.0.0.0:8080→8080     </span><span class="tc">api</span>', delay: 150 },
+    { html: '<span class="td">9d11c07fe1b3   </span><span class="tb">app:v2.4.1</span><span class="td">    Up 12 days                          </span><span class="tc">worker</span>', delay: 150 },
+    { html: '<span class="td">c44a9f02d7aa   </span><span class="tb">redis:7</span><span class="td">       Up 12 days    6379/tcp              </span><span class="tc">redis</span>', delay: 700 },
+    { html: "&nbsp;", delay: 180 },
+    { type: "cmd", text: "tail -f /var/log/app/api.log" },
+    { html: '<span class="td">12:04:18 </span><span class="tp">INFO</span><span class="td">  http   GET /v2/orders 200 12ms</span>', delay: 420 },
+    { html: '<span class="td">12:04:19 </span><span class="tp">INFO</span><span class="td">  http   GET /v2/orders/8841 200 8ms</span>', delay: 380 },
+    { html: '<span class="td">12:04:21 </span><span class="tw">WARN</span><span class="td">  queue  retry job=email-4412 attempt=2</span>', delay: 460 },
+    { html: '<span class="td">12:04:22 </span><span class="tp">INFO</span><span class="td">  http   POST /v2/checkout 201 44ms</span>', delay: 3200 },
+  ];
+
+  if (reduce) {
+    body.innerHTML = SCRIPT.map((s) =>
+      `<div class="ln">${s.type === "cmd" ? P + '<span class="tc">' + s.text + "</span>" : s.html}</div>`
+    ).join("");
+  } else {
+    const cursor = '<span class="cursor"></span>';
+    let i = 0;
+    function nextStep() {
+      if (i >= SCRIPT.length) {
+        setTimeout(() => { body.innerHTML = ""; i = 0; nextStep(); }, 400);
+        return;
+      }
+      const step = SCRIPT[i++];
+      const ln = document.createElement("div");
+      ln.className = "ln";
+      body.appendChild(ln);
+
+      if (step.type === "cmd") {
+        let ci = 0;
+        const typeChar = () => {
+          ln.innerHTML = P + '<span class="tc">' + step.text.slice(0, ci) + "</span>" + cursor;
+          if (ci++ < step.text.length) setTimeout(typeChar, 28 + Math.random() * 46);
+          else {
+            ln.innerHTML = P + '<span class="tc">' + step.text + "</span>";
+            setTimeout(nextStep, 350);
+          }
+        };
+        typeChar();
+      } else {
+        ln.innerHTML = step.html;
+        setTimeout(nextStep, step.delay);
+      }
+    }
+    nextStep();
+  }
+
+  /* host header: session clock, drifting CPU/MEM, sparkline */
+  if (!reduce) {
+    let secs = 12 * 60 + 47;
+    const pad = (n) => String(n).padStart(2, "0");
+    setInterval(() => {
+      secs++;
+      document.getElementById("aw-elapsed").textContent =
+        `${pad(Math.floor(secs / 3600))}:${pad(Math.floor(secs / 60) % 60)}:${pad(secs % 60)}`;
+    }, 1000);
+
+    const BARS = "▁▂▃▄▅▆▇";
+    const hist = [22, 24, 31, 45, 33];
+    let cpu = 23, mem = 2.1;
+    setInterval(() => {
+      cpu = Math.max(8, Math.min(72, cpu + (Math.random() - 0.5) * 14));
+      mem = Math.max(1.8, Math.min(3.4, mem + (Math.random() - 0.5) * 0.3));
+      hist.push(cpu); hist.shift();
+      document.getElementById("aw-cpu").textContent = Math.round(cpu) + "%";
+      document.getElementById("aw-mem").textContent = mem.toFixed(1) + " GB";
+      document.getElementById("aw-spark").textContent =
+        hist.map((v) => BARS[Math.min(BARS.length - 1, Math.floor((v / 75) * BARS.length))]).join("");
+    }, 2000);
+  }
+})();
+
+/* ============ interactive app window ============ */
+(() => {
+  const views = document.querySelectorAll(".aw-view");
+  const tabs = document.querySelectorAll(".aw-tab[data-goto]");
+  const navDash = document.getElementById("aw-nav-dash");
+
+  function activate(v) {
+    views.forEach((x) => (x.hidden = x.dataset.view !== v));
+    tabs.forEach((t) => t.classList.toggle("on", t.dataset.goto === v));
+    navDash.classList.toggle("on", v === "dashboard");
+  }
+  document.querySelectorAll("[data-goto]").forEach((el) =>
+    el.addEventListener("click", () => activate(el.dataset.goto))
+  );
+
+  const seg = document.getElementById("aw-seg");
+  const lists = {
+    type: document.getElementById("aw-list-type"),
+    project: document.getElementById("aw-list-project"),
+  };
+  seg.querySelectorAll("span").forEach((b) =>
+    b.addEventListener("click", () => {
+      seg.querySelectorAll("span").forEach((x) => x.classList.toggle("on", x === b));
+      lists.type.hidden = b.dataset.list !== "type";
+      lists.project.hidden = b.dataset.list !== "project";
+    })
+  );
+
+  /* auto-rotate the tabs so visitors discover they're clickable;
+     stops for good on the first click, pauses on hover / off-screen */
+  const appwin = document.querySelector(".appwin");
+  if (!matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    const ORDER = ["terminal", "dashboard", "database", "k8s", "sftp"];
+    const DWELL = { terminal: 7000, dashboard: 4200, database: 4200, k8s: 4200, sftp: 4200 };
+    let idx = 0, visible = false, hovering = false, stopped = false, timer = null;
+
+    function schedule(delay) { clearTimeout(timer); timer = setTimeout(step, delay); }
+    function step() {
+      if (stopped) return;
+      if (!visible || hovering || document.hidden) { schedule(1200); return; }
+      idx = (idx + 1) % ORDER.length;
+      activate(ORDER[idx]);
+      schedule(DWELL[ORDER[idx]]);
+    }
+    new IntersectionObserver((entries) => { visible = entries[0].isIntersecting; }, { threshold: 0.4 }).observe(appwin);
+    appwin.addEventListener("pointerenter", () => (hovering = true));
+    appwin.addEventListener("pointerleave", () => (hovering = false));
+    appwin.addEventListener("pointerdown", () => { stopped = true; clearTimeout(timer); }, true);
+    schedule(DWELL.terminal);
+  }
+
+  /* dashboard cards drift like the header metrics */
+  if (!matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    const live = [
+      { el: document.getElementById("aw-card-web1"), cpu: 23, mem: 27 },
+      { el: document.getElementById("aw-card-web2"), cpu: 11, mem: 33 },
+      { el: document.getElementById("aw-card-db"), cpu: 42, mem: 61 },
+    ];
+    setInterval(() => {
+      live.forEach((c) => {
+        c.cpu = Math.max(4, Math.min(78, c.cpu + (Math.random() - 0.5) * 10));
+        c.mem = Math.max(15, Math.min(82, c.mem + (Math.random() - 0.5) * 4));
+        c.el.textContent = `cpu ${Math.round(c.cpu)}% \u00b7 mem ${Math.round(c.mem)}%`;
+      });
+    }, 2000);
+  }
+})();
+
+/* ============ sftp transfer drift ============ */
+(() => {
+  if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  const fill = document.getElementById("aw-tf-fill");
+  const pct = document.getElementById("aw-tf-pct");
+  let p = 73;
+  setInterval(() => {
+    p += 2 + Math.random() * 5;
+    if (p >= 100) p = 8;
+    fill.style.width = p + "%";
+    pct.textContent = Math.round(p) + "%";
+  }, 1200);
+})();
+</script>
+
+</body>
+</html>

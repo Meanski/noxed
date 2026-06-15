@@ -1,0 +1,108 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── Design tokens ─────────────────────────────────────────────────────────── */
+:root {
+  --nox-bg:       #F8F9FB;
+  --nox-shell:    #FFFFFF;
+  --nox-sidebar:  #F1F3F6;
+  --nox-border:   #E5E7EB;
+  --nox-surface:  #FFFFFF;
+  --nox-text:     #1A1D26;
+  --nox-text-2:   #6B7280;
+  --nox-text-3:   #9CA3AF;
+  --nox-hover:    rgba(229,231,235,0.6);
+  --nox-active:   #EBF0FF;
+  --nox-active-t: #3B5CCC;
+
+  /* Syntax highlighting (CodeEditor) */
+  --nox-syn-keyword:  #9333EA;
+  --nox-syn-string:   #16803C;
+  --nox-syn-number:   #B45309;
+  --nox-syn-comment:  #9CA3AF;
+  --nox-syn-property: #1D4ED8;
+  --nox-syn-function: #6D28D9;
+  --nox-syn-type:     #0E7490;
+  --nox-syn-constant: #BE185D;
+}
+
+html.dark {
+  --nox-bg:       #0D1117;
+  --nox-shell:    #161B22;
+  --nox-sidebar:  #0D1117;
+  --nox-border:   #30363D;
+  --nox-surface:  #21262D;
+  --nox-text:     #E6EDF3;
+  --nox-text-2:   #8B949E;
+  --nox-text-3:   #6E7681;
+  --nox-hover:    rgba(48,54,61,0.7);
+  --nox-active:   #1C2D5E;
+  --nox-active-t: #79A0FF;
+
+  /* Syntax highlighting (CodeEditor) */
+  --nox-syn-keyword:  #C792EA;
+  --nox-syn-string:   #7EE787;
+  --nox-syn-number:   #FFAB70;
+  --nox-syn-comment:  #6E7681;
+  --nox-syn-property: #79C0FF;
+  --nox-syn-function: #D2A8FF;
+  --nox-syn-type:     #56D4DD;
+  --nox-syn-constant: #FF7B72;
+}
+
+@layer base {
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html, body, #root {
+    height: 100%;
+    overflow: hidden;
+    background: transparent;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--nox-text);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    font-feature-settings: "cv02", "cv03", "ss01";
+    text-rendering: optimizeLegibility;
+  }
+
+  ::selection {
+    background: rgba(59,92,204,0.25);
+    color: #1A1D26;
+  }
+
+  ::-webkit-scrollbar { width: 5px; height: 5px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb {
+    background: rgba(0,0,0,0.12);
+    border-radius: 3px;
+  }
+  ::-webkit-scrollbar-thumb:hover { background: rgba(0,0,0,0.22); }
+  ::-webkit-scrollbar-corner { background: transparent; }
+
+  input, button, textarea, select { font-family: inherit; color: inherit; }
+  button { cursor: default; }
+}
+
+@layer utilities {
+  .no-drag { -webkit-app-region: no-drag; }
+  .drag    { -webkit-app-region: drag; }
+}
+
+/* xterm — fill container and style scrollbar */
+.xterm { height: 100%; }
+.xterm-viewport::-webkit-scrollbar { width: 5px; }
+.xterm-viewport::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,0.08);
+  border-radius: 3px;
+}
+
+/* Dark theme scroll (inside terminal views) */
+.dark-scroll::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,0.08);
+}
+.dark-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(255,255,255,0.15);
+}

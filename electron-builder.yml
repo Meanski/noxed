@@ -1,0 +1,33 @@
+appId: app.noxed
+productName: noxed
+directories:
+  buildResources: build
+  output: dist
+files:
+  - out/**
+  - '!**/{.vscode,.claude}/**'
+  - '!src/**'
+  - '!electron.vite.config.ts'
+  - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json,vitest.config.ts}'
+  - '!*.tsbuildinfo'
+  - '!{AGENTS.md,README.md,logo.svg}'
+# spawn-helper must exist as a real executable file on disk — it cannot run
+# from inside the asar archive
+asarUnpack:
+  - node_modules/node-pty/**
+mac:
+  category: public.app-category.developer-tools
+  icon: build/icon.png
+  target:
+    - dmg
+    - zip
+win:
+  icon: build/icon.png
+  target:
+    - nsis
+linux:
+  icon: build/icon.png
+  category: Development
+  target:
+    - AppImage
+    - deb
