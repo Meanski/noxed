@@ -34,7 +34,11 @@ jobs:
         run: npm ci
 
       - name: Build installers
-        run: npm run dist
+        # electron-builder auto-publishes on a tag; disable that and let the
+        # upload step below own the release so it doesn't need GH_TOKEN here.
+        run: |
+          npm run build
+          npx electron-builder --publish never
         env:
           # Release builds are intentionally unsigned/un-notarized for now.
           CSC_IDENTITY_AUTO_DISCOVERY: false

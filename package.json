@@ -3,7 +3,10 @@
   "version": "0.1.0",
   "description": "SSH session manager, SFTP client, and Kubernetes dashboard",
   "main": "./out/main/index.js",
-  "author": "Sean Woodliffe",
+  "author": {
+    "name": "Sean Woodliffe",
+    "email": "me@meanski.net"
+  },
   "license": "MIT",
   "private": true,
   "engines": {
