@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 
 contextBridge.exposeInMainWorld('api', {
+  platform: process.platform,
   // Sessions
   sessions: {
     list: () => ipcRenderer.invoke('sessions:list'),

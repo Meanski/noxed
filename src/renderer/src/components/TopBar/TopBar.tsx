@@ -3,6 +3,11 @@ import { useAppStore } from '../../store'
 
 const nodrag: React.CSSProperties = { WebkitAppRegion: 'no-drag' } as any
 
+// macOS uses a hidden-inset title bar with traffic lights overlaid top-left,
+// so the logo needs clearance for them. Other platforms have a normal title
+// bar above this row and need no such offset.
+const isMac = window.api?.platform === 'darwin'
+
 export default function TopBar() {
   const { setShowCommandPalette, setShowAddConnection, isDarkMode, toggleDarkMode, openDashboardTab } = useAppStore()
 
@@ -18,7 +23,7 @@ export default function TopBar() {
       {/* Traffic light clearance + logo */}
       <div
         className="flex items-center flex-shrink-0"
-        style={{ width: 220, paddingLeft: 80, paddingRight: 16, borderRight: '1px solid var(--nox-border)' }}
+        style={{ width: 220, paddingLeft: isMac ? 80 : 16, paddingRight: 16, borderRight: '1px solid var(--nox-border)' }}
       >
         <button
           onClick={openDashboardTab}

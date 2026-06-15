@@ -413,7 +413,7 @@ export default function Dashboard() {
 /* ── Empty state ─────────────────────────────────────────────────────────── */
 function EmptyDashboard({ onAdd }: { onAdd: () => void }) {
   return (
-    <div className="h-full flex items-center justify-center" style={{ background: 'var(--nox-bg)' }}>
+    <div className="h-full w-full flex items-center justify-center" style={{ background: 'var(--nox-bg)' }}>
       <div className="text-center max-w-sm">
         <div className="mx-auto mb-6 w-24 h-24 flex items-center justify-center">
           <svg width="96" height="96" viewBox="0 0 96 96" fill="none" style={{ color: 'var(--nox-border)' }}>

@@ -19,6 +19,7 @@ declare global {
   }
   interface Window {
     api: {
+      platform: NodeJS.Platform
       sessions: {
         list: () => Promise<any[]>
         create: (data: any) => Promise<any>

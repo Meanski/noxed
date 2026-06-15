@@ -1,6 +1,6 @@
 {
   "name": "noxed",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "SSH session manager, SFTP client, and Kubernetes dashboard",
   "main": "./out/main/index.js",
   "author": {
