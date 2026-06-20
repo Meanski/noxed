@@ -69,24 +69,37 @@ jobs:
           if (-not $asset) { throw "Could not find a Windows CodeSignTool asset in the latest SSL.com release" }
           Invoke-WebRequest -Uri $asset.browser_download_url -OutFile CodeSignTool.zip
           Expand-Archive -Path CodeSignTool.zip -DestinationPath CodeSignTool
-          $toolDir = Get-ChildItem -Path CodeSignTool -Directory | Select-Object -First 1
-          $toolPath = Join-Path $toolDir.FullName "CodeSignTool.bat"
 
-          $signedDir = "dist\signed"
+          # The SSL.com zip is built on macOS and ships a __MACOSX resource-fork
+          # folder, so don't assume the first directory is the tool. Find the
+          # real CodeSignTool.bat by name and run it from its own dir so the
+          # relative jar/ and conf/ lookups resolve.
+          $batFile = Get-ChildItem -Path CodeSignTool -Recurse -Filter CodeSignTool.bat |
+            Where-Object { $_.FullName -notmatch '__MACOSX' } | Select-Object -First 1
+          if (-not $batFile) { throw "CodeSignTool.bat not found after extraction" }
+          $toolHome = $batFile.Directory.FullName
+
+          $signedDir = Join-Path (Get-Location).Path "dist\signed"
           New-Item -ItemType Directory -Force -Path $signedDir | Out-Null
 
           $exes = Get-ChildItem -Path dist -Filter *.exe
           if (-not $exes) { throw "No .exe found in dist to sign" }
-          $exes | ForEach-Object {
-            & $toolPath sign `
-              -username="$env:SSL_USERNAME" `
-              -password="$env:SSL_PASSWORD" `
-              -credential_id="$env:SSL_CREDENTIAL_ID" `
-              -totp_secret="$env:SSL_TOTP_SECRET" `
-              -input_file_path="$($_.FullName)" `
-              -output_dir_path="$signedDir"
-            if ($LASTEXITCODE -ne 0) { throw "CodeSignTool failed signing $($_.Name)" }
-            Copy-Item -Path (Join-Path $signedDir $_.Name) -Destination $_.FullName -Force
+
+          Push-Location $toolHome
+          try {
+            $exes | ForEach-Object {
+              & $batFile.FullName sign `
+                -username="$env:SSL_USERNAME" `
+                -password="$env:SSL_PASSWORD" `
+                -credential_id="$env:SSL_CREDENTIAL_ID" `
+                -totp_secret="$env:SSL_TOTP_SECRET" `
+                -input_file_path="$($_.FullName)" `
+                -output_dir_path="$signedDir"
+              if ($LASTEXITCODE -ne 0) { throw "CodeSignTool failed signing $($_.Name)" }
+              Copy-Item -Path (Join-Path $signedDir $_.Name) -Destination $_.FullName -Force
+            }
+          } finally {
+            Pop-Location
           }
 
       - name: Attach artifacts to release
