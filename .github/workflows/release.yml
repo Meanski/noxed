@@ -44,24 +44,33 @@ jobs:
           echo "$APPLE_API_KEY_BASE64" | base64 --decode > "$HOME/private_keys/AuthKey.p8"
           echo "APPLE_API_KEY=$HOME/private_keys/AuthKey.p8" >> "$GITHUB_ENV"
 
-      - name: Build installers
-        # electron-builder auto-publishes on a tag; disable that and let the
-        # upload step below own the release so it doesn't need GH_TOKEN here.
+      # Two build steps: the macOS one carries the Developer ID + notarization
+      # env; the Windows/Linux one must NOT define CSC_LINK at all, because
+      # electron-builder treats an empty-but-defined CSC_LINK as a file path and
+      # fails ("Env WIN_CSC_LINK is not correct"). Windows is signed afterwards
+      # via SSL.com; Linux stays unsigned.
+      - name: Build installers (macOS, signed + notarized)
+        if: runner.os == 'macOS'
         run: |
           npm run build
           npx electron-builder --publish never
         env:
-          # macOS: sign with the Developer ID Application cert and notarize.
-          # Windows is signed separately below via SSL.com; Linux stays unsigned.
-          # CSC_LINK is scoped to macOS so it never reaches the Windows runner,
-          # where electron-builder would try to sign the .exe with the Mac cert.
-          CSC_LINK: ${{ runner.os == 'macOS' && secrets.MAC_CSC_LINK || '' }}
-          CSC_KEY_PASSWORD: ${{ runner.os == 'macOS' && secrets.MAC_CSC_KEY_PASSWORD || '' }}
-          CSC_IDENTITY_AUTO_DISCOVERY: ${{ runner.os == 'macOS' && 'true' || 'false' }}
-          # Notarization (macOS only; inert on other runners). APPLE_API_KEY is
-          # exported via GITHUB_ENV in the prep step above.
+          CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+          CSC_IDENTITY_AUTO_DISCOVERY: true
+          # APPLE_API_KEY (path to .p8) is exported via GITHUB_ENV in the prep step.
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+
+      - name: Build installers (Windows/Linux)
+        if: runner.os != 'macOS'
+        run: |
+          npm run build
+          npx electron-builder --publish never
+        env:
+          # No code signing here. Windows is signed below via SSL.com; Linux is
+          # unsigned. Must stay false and leave CSC_LINK undefined.
+          CSC_IDENTITY_AUTO_DISCOVERY: false
 
       - name: Set up Java (for CodeSignTool)
         if: runner.os == 'Windows'
