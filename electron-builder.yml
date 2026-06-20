@@ -18,6 +18,21 @@ asarUnpack:
 mac:
   category: public.app-category.developer-tools
   icon: build/icon.png
+  # Sign with Developer ID + notarize so Gatekeeper opens the app without the
+  # "unidentified developer" / "damaged" warnings. Hardened runtime is required
+  # for notarization; entitlements relax it just enough for Electron + node-pty.
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+  notarize: true
+  # macOS 15+ blocks connections to LAN hosts (192.168.x.x, etc.) unless the app
+  # holds Local Network permission. Without this usage string the system never
+  # presents the prompt and silently fails the connect with EHOSTUNREACH.
+  extendInfo:
+    NSLocalNetworkUsageDescription: >-
+      noxed connects to SSH, RDP, database, and Kubernetes hosts on your local
+      network.
   target:
     - dmg
     - zip
