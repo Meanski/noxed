@@ -209,8 +209,12 @@ int main(int argc, char* argv[])
 #ifdef _WIN32
 	/* Windows opens stdout in text mode, which translates every \n to \r\n and
 	 * would corrupt our binary frame stream (silent pixel desync). Force binary
-	 * before any frame is written. */
-	_setmode(_fileno(stdout), _O_BINARY);
+	 * before any frame is written; bail out if it fails rather than ship garbage. */
+	if (_setmode(_fileno(stdout), _O_BINARY) == -1)
+	{
+		fprintf(stderr, "[sidecar] failed to set stdout to binary mode\n");
+		return 1;
+	}
 #endif
 
 	if (argc < 4 || argc > 6)

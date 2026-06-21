@@ -63,6 +63,9 @@ exports.default = async function verifySidecar(context) {
       console.log('[verify-sidecar] Windows RDP sidecar is self-contained ✓')
     } catch (err) {
       if (err.message && err.message.startsWith('[verify-sidecar]')) throw err
+      // Only swallow the error when dumpbin genuinely isn't on PATH; any other
+      // failure (e.g. dumpbin ran and errored) is real and must fail the build.
+      if (err.code !== 'ENOENT') throw err
       console.log('[verify-sidecar] Windows RDP sidecar present (dumpbin unavailable, skipped dep scan) ✓')
     }
     return
