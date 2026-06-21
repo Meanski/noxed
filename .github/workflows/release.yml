@@ -33,6 +33,27 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # The RDP feature ships a native FreeRDP sidecar bundled into the macOS
+      # app (via extraResources). Build it statically so it runs on a clean Mac
+      # with no Homebrew. The runner is arm64, matching the app's distribution
+      # arch. Cached so FreeRDP isn't recompiled on every release.
+      - name: Cache static FreeRDP
+        if: runner.os == 'macOS'
+        uses: actions/cache@v4
+        with:
+          path: |
+            native/rdp-spike/.freerdp-src
+            native/rdp-spike/.freerdp-static
+          key: freerdp-static-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('native/rdp-spike/build-freerdp-static.sh') }}
+
+      - name: Build RDP sidecar (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew install cmake ninja
+          cd native/rdp-spike
+          ./build-freerdp-static.sh
+          make rdp-sidecar-static
+
       # Notarization uses an App Store Connect API key. electron-builder reads
       # APPLE_API_KEY as a path to the .p8, so materialize it from the secret.
       - name: Prepare App Store Connect API key

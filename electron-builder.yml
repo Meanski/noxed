@@ -15,6 +15,9 @@ files:
 # from inside the asar archive
 asarUnpack:
   - node_modules/node-pty/**
+# Fail the build if the bundled RDP sidecar isn't self-contained (still links
+# Homebrew dylibs) — prevents shipping a binary that won't run on a clean machine.
+afterPack: ./scripts/verify-sidecar.js
 mac:
   category: public.app-category.developer-tools
   icon: build/icon.png
@@ -33,6 +36,12 @@ mac:
     NSLocalNetworkUsageDescription: >-
       noxed connects to SSH, RDP, database, and Kubernetes hosts on your local
       network.
+  # Ship the self-contained RDP sidecar (built via native/rdp-spike: run
+  # build-freerdp-static.sh then `make rdp-sidecar-static`) into the app bundle.
+  # Lands at Contents/Resources/rdp-sidecar — see sidecarPath() in ipc/rdp.ts.
+  extraResources:
+    - from: native/rdp-spike/rdp-sidecar
+      to: rdp-sidecar
   target:
     - dmg
     - zip

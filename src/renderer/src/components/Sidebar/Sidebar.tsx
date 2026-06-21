@@ -288,7 +288,9 @@ export default function Sidebar() {
           onOpenDocker={(ctxMenu.session.type ?? 'ssh') === 'ssh'
             ? () => { openDockerTab(ctxMenu.session!); setCtxMenu(null) }
             : undefined}
-          onOpenRdp={() => { openRdpTab(ctxMenu.session!); setCtxMenu(null) }}
+          onOpenRdp={window.api.platform === 'darwin'
+            ? () => { openRdpTab(ctxMenu.session!); setCtxMenu(null) }
+            : undefined}
           onColorChange={c => handleColorChange(ctxMenu.session!, c)}
           onFavorite={() => handleToggleFavorite(ctxMenu.session!)}
           onMoveToProject={g => handleMoveToProject(ctxMenu.session!, g)}

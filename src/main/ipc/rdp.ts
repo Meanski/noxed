@@ -37,9 +37,11 @@ const MAX_RESYNC_LOGS = 5
 
 function sidecarPath(): string {
   // In dev, run the binary straight out of the spike folder. In a packaged app
-  // it would ship under resources/ — not wired up yet (spike).
-  const devPath = join(process.cwd(), 'native', 'rdp-spike', 'rdp-sidecar')
-  const prodPath = join(process.resourcesPath ?? '', 'rdp-sidecar')
+  // it ships under Contents/Resources via electron-builder `extraResources`
+  // (see electron-builder.yml). Windows uses a .exe suffix.
+  const name = process.platform === 'win32' ? 'rdp-sidecar.exe' : 'rdp-sidecar'
+  const devPath = join(process.cwd(), 'native', 'rdp-spike', name)
+  const prodPath = join(process.resourcesPath ?? '', name)
   if (is.dev && existsSync(devPath)) return devPath
   return existsSync(prodPath) ? prodPath : devPath
 }

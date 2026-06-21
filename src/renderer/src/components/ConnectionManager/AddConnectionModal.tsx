@@ -556,10 +556,13 @@ function TypeSelector({ selected, onSelect }: {
   selected: ConnectionType
   onSelect: (t: ConnectionType) => void
 }) {
+  // RDP needs the bundled FreeRDP sidecar, which currently ships on macOS only.
+  // Hide the type elsewhere so we never offer a connection that can't run.
+  const options = TYPE_OPTIONS.filter(o => o.type !== 'rdp' || window.api.platform === 'darwin')
   return (
     <div className="px-6 py-4">
       <div className="grid grid-cols-2 gap-3">
-        {TYPE_OPTIONS.map(opt => (
+        {options.map(opt => (
           <button
             key={opt.type}
             onClick={() => onSelect(opt.type)}
