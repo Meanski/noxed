@@ -12,8 +12,8 @@ import { NotFoundError, OwnershipError, ValidationError, ConnectionError, toMess
 // canvas. Same shape as localTerminal.ts spawning node-pty, but the payload is
 // binary pixels instead of terminal text.
 //
-// SPIKE STATUS: output-only (read-only desktop). Input injection and a bundled,
-// signed sidecar binary for packaged builds are the next milestones.
+// Input (mouse/keyboard) is streamed back to the sidecar over stdin via the
+// rdp:input channel. Live resize re-negotiation is still a TODO.
 
 interface RdpSession {
   proc: ChildProcessWithoutNullStreams
@@ -172,9 +172,10 @@ export function registerRdpHandlers(): void {
       { stdio: ['pipe', 'pipe', 'pipe'] },
     )
 
-    // Write password to stdin instead of passing as command-line argument
+    // Write password to stdin instead of passing as command-line argument.
+    // Keep stdin OPEN afterwards: input events (rdp:input) are streamed to the
+    // sidecar over the same pipe as fixed 8-byte messages.
     proc.stdin.write(password + '\n')
-    proc.stdin.end()
 
     const id = randomUUID()
     const entry: RdpSession = { proc, sender: event.sender, buffer: Buffer.alloc(0), resyncs: 0 }
@@ -221,4 +222,36 @@ export function registerRdpHandlers(): void {
     requireSession(event, rawId)
     disposeSession(rawId as string)
   })
+
+  // Input injection: fire-and-forget for low latency. The renderer sends decoded
+  // input (mouse PTR_FLAGS / keyboard KBD_FLAGS already computed) and we forward
+  // it to the sidecar as a fixed 8-byte little-endian message matching InputMsg
+  // in sidecar.c: u8 type, u8 pad, u16 flags, u16 a, u16 b.
+  ipcMain.on(
+    'rdp:input',
+    (event, rawId: unknown, type: unknown, flags: unknown, a: unknown, b: unknown) => {
+      if (typeof rawId !== 'string') return
+      const entry = sessions.get(rawId)
+      if (!entry || entry.sender.id !== event.sender.id) return
+      if (
+        typeof type !== 'number' ||
+        typeof flags !== 'number' ||
+        typeof a !== 'number' ||
+        typeof b !== 'number'
+      )
+        return
+      const stdin = entry.proc.stdin
+      if (!stdin.writable) return
+      const msg = Buffer.alloc(8)
+      msg.writeUInt8(type & 0xff, 0)
+      msg.writeUInt16LE(flags & 0xffff, 2)
+      msg.writeUInt16LE(a & 0xffff, 4)
+      msg.writeUInt16LE(b & 0xffff, 6)
+      try {
+        stdin.write(msg)
+      } catch {
+        // session tearing down; ignore
+      }
+    },
+  )
 }

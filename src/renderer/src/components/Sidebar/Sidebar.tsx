@@ -7,6 +7,7 @@ import {
 import { useAppStore, Session, groupColor } from '../../store'
 import K8sIcon from '../K8sIcon'
 import { ServerContextMenu, MenuItem, useMenuBehavior, COLORS } from '../ServerContextMenu'
+import { rdpSupported } from '../../lib/platform'
 
 // Sorts a session list by a saved id order; unknown ids keep their position at the end.
 function applySavedOrder(list: Session[], order?: string[]): Session[] {
@@ -245,7 +246,7 @@ export default function Sidebar() {
               />
             )}
 
-            {rdpSessions.length > 0 && window.api.platform === 'darwin' && (
+            {rdpSessions.length > 0 && rdpSupported && (
               <DraggableSection
                 label="Remote Desktop"
                 sessions={applyOrder('rdp', rdpSessions)}
@@ -288,7 +289,7 @@ export default function Sidebar() {
           onOpenDocker={(ctxMenu.session.type ?? 'ssh') === 'ssh'
             ? () => { openDockerTab(ctxMenu.session!); setCtxMenu(null) }
             : undefined}
-          onOpenRdp={window.api.platform === 'darwin' && (ctxMenu.session?.type ?? 'ssh') === 'rdp'
+          onOpenRdp={rdpSupported && (ctxMenu.session?.type ?? 'ssh') === 'rdp'
             ? () => { openRdpTab(ctxMenu.session!); setCtxMenu(null) }
             : undefined}
           onColorChange={c => handleColorChange(ctxMenu.session!, c)}

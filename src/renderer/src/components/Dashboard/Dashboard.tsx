@@ -5,6 +5,7 @@ import {
 } from 'lucide-react'
 import { useAppStore, Session } from '../../store'
 import { groupColor } from '../../lib/colors'
+import { rdpSupported } from '../../lib/platform'
 import { CompactServerCard, HealthCard, ServerListRow } from './ServerViews'
 import { ServerContextMenu } from '../ServerContextMenu'
 
@@ -403,7 +404,7 @@ export default function Dashboard() {
           onOpenDocker={(ctxMenu.session.type ?? 'ssh') === 'ssh'
             ? () => { openDockerTab(ctxMenu.session); setCtxMenu(null) }
             : undefined}
-          onOpenRdp={window.api.platform === 'darwin' && ctxMenu.session?.type === 'rdp'
+          onOpenRdp={rdpSupported && ctxMenu.session?.type === 'rdp'
             ? () => { openRdpTab(ctxMenu.session); setCtxMenu(null) }
             : undefined}
           onColorChange={c => handleColorChange(ctxMenu.session, c)}

@@ -54,6 +54,34 @@ jobs:
           ./build-freerdp-static.sh
           make rdp-sidecar-static
 
+      # Windows ships the same sidecar, built static via vcpkg so it carries no
+      # loose DLLs. Cache the vcpkg-built FreeRDP so it isn't recompiled every run.
+      - name: Cache vcpkg FreeRDP (Windows)
+        if: runner.os == 'Windows'
+        uses: actions/cache@v4
+        with:
+          path: |
+            C:/vcpkg/installed
+            C:/vcpkg/packages
+          # The vcpkg install depends only on the triplet, not on our CMakeLists,
+          # so key on a manual marker (bump to force a rebuild) rather than file
+          # hashes — otherwise every CMake tweak recompiles FreeRDP (~9 min).
+          key: vcpkg-freerdp-x64-windows-static-v1
+
+      - name: Build RDP sidecar (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          & "$env:VCPKG_INSTALLATION_ROOT\vcpkg.exe" install freerdp:x64-windows-static
+          cmake -S native/rdp-spike -B native/rdp-spike/build `
+            -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT\scripts\buildsystems\vcpkg.cmake" `
+            -DVCPKG_TARGET_TRIPLET=x64-windows-static `
+            -DCMAKE_BUILD_TYPE=Release
+          cmake --build native/rdp-spike/build --config Release
+          $exe = Get-ChildItem -Recurse -Filter rdp-sidecar.exe native/rdp-spike/build | Select-Object -First 1
+          if (-not $exe) { throw "rdp-sidecar.exe not produced by the build" }
+          Copy-Item $exe.FullName native/rdp-spike/rdp-sidecar.exe -Force
+
       # Notarization uses an App Store Connect API key. electron-builder reads
       # APPLE_API_KEY as a path to the .p8, so materialize it from the secret.
       - name: Prepare App Store Connect API key
@@ -151,7 +179,27 @@ jobs:
             Pop-Location
           }
 
+      # Always expose the built installers on the run itself so branch/dispatch
+      # builds are downloadable for testing without cutting a release. Grab them
+      # from the run's "Artifacts" section (Actions tab → this run).
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: noxed-${{ matrix.os }}
+          path: |
+            dist/*.dmg
+            dist/*.zip
+            dist/*.exe
+            dist/*.AppImage
+            dist/*.deb
+            native/rdp-spike/rdp-sidecar.exe
+          if-no-files-found: ignore
+          retention-days: 7
+
+      # Only publish on a real tag push. workflow_dispatch on a branch still runs
+      # the full build (useful for verifying the sidecars) but skips publishing.
       - name: Attach artifacts to release
+        if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
           files: |

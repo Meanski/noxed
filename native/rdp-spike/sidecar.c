@@ -32,11 +32,19 @@
 #include <stdlib.h>
 #include <string.h>
 
+#ifdef _WIN32
+#include <winsock2.h>
+#include <io.h>
+#include <fcntl.h>
+#endif
+
 #include <freerdp/freerdp.h>
 #include <freerdp/client.h>
 #include <freerdp/gdi/gdi.h>
 #include <freerdp/codec/color.h>
+#include <freerdp/input.h>
 #include <winpr/synch.h>
+#include <winpr/thread.h>
 #include <winpr/wlog.h>
 
 typedef struct
@@ -45,6 +53,106 @@ typedef struct
 	BYTE* packed; /* scratch buffer for stride-stripped BGRA */
 	size_t packedCap;
 } SidecarContext;
+
+/*
+ * Input injection. The parent process (src/main/ipc/rdp.ts) writes fixed 8-byte
+ * little-endian messages to our stdin; a reader thread pushes them onto a small
+ * ring queue and signals g_inputEvent, which the main event loop waits on
+ * alongside FreeRDP's own handles. The loop drains the queue and calls the
+ * FreeRDP input functions on the main thread (the transport isn't thread-safe).
+ *
+ * Wire message (8 bytes):
+ *   u8  type     1=mouse, 2=scancode key, 3=unicode key
+ *   u8  _pad
+ *   u16 flags    PTR_FLAGS_* (mouse) or KBD_FLAGS_* (keyboard)
+ *   u16 a        mouse x, or key code (scancode / unicode unit)
+ *   u16 b        mouse y (0 for keys)
+ *
+ * Keeping the sidecar generic — it just forwards flags/codes — means all the
+ * key-mapping lives in the renderer where it's easy to iterate.
+ */
+typedef struct
+{
+	UINT8 type;
+	UINT16 flags;
+	UINT16 a;
+	UINT16 b;
+} InputMsg;
+
+#define INPUT_QUEUE_CAP 512
+static CRITICAL_SECTION g_inputLock;
+static InputMsg g_inputQueue[INPUT_QUEUE_CAP];
+static int g_inputHead = 0;
+static int g_inputTail = 0;
+static HANDLE g_inputEvent = NULL;
+
+static UINT16 read_u16_le(const UINT8* p)
+{
+	return (UINT16)(p[0] | ((UINT16)p[1] << 8));
+}
+
+static DWORD WINAPI input_reader_thread(LPVOID arg)
+{
+	(void)arg;
+	UINT8 buf[8];
+	for (;;)
+	{
+		/* Block until a full 8-byte message is available; stop on EOF/short read
+		 * (parent closed stdin, i.e. the session is going away). */
+		if (fread(buf, 1, sizeof(buf), stdin) != sizeof(buf))
+			break;
+
+		InputMsg msg;
+		msg.type = buf[0];
+		msg.flags = read_u16_le(buf + 2);
+		msg.a = read_u16_le(buf + 4);
+		msg.b = read_u16_le(buf + 6);
+
+		EnterCriticalSection(&g_inputLock);
+		int next = (g_inputTail + 1) % INPUT_QUEUE_CAP;
+		if (next != g_inputHead) /* drop if full rather than block the reader */
+		{
+			g_inputQueue[g_inputTail] = msg;
+			g_inputTail = next;
+		}
+		LeaveCriticalSection(&g_inputLock);
+		SetEvent(g_inputEvent);
+	}
+	return 0;
+}
+
+static void drain_input(rdpContext* context)
+{
+	rdpInput* input = context->input;
+	for (;;)
+	{
+		InputMsg msg;
+		EnterCriticalSection(&g_inputLock);
+		if (g_inputHead == g_inputTail)
+		{
+			LeaveCriticalSection(&g_inputLock);
+			break;
+		}
+		msg = g_inputQueue[g_inputHead];
+		g_inputHead = (g_inputHead + 1) % INPUT_QUEUE_CAP;
+		LeaveCriticalSection(&g_inputLock);
+
+		switch (msg.type)
+		{
+			case 1:
+				freerdp_input_send_mouse_event(input, msg.flags, msg.a, msg.b);
+				break;
+			case 2:
+				freerdp_input_send_keyboard_event(input, msg.flags, (UINT8)msg.a);
+				break;
+			case 3:
+				freerdp_input_send_unicode_keyboard_event(input, msg.flags, msg.a);
+				break;
+			default:
+				break;
+		}
+	}
+}
 
 static void write_u32_le(BYTE* p, UINT32 v)
 {
@@ -201,6 +309,23 @@ static int sidecar_entry(RDP_CLIENT_ENTRY_POINTS* pEntryPoints)
 
 int main(int argc, char* argv[])
 {
+#ifdef _WIN32
+	/* Windows opens stdout in text mode, which translates every \n to \r\n and
+	 * would corrupt our binary frame stream (silent pixel desync). Force binary
+	 * before any frame is written; bail out if it fails rather than ship garbage. */
+	if (_setmode(_fileno(stdout), _O_BINARY) == -1)
+	{
+		fprintf(stderr, "[sidecar] failed to set stdout to binary mode\n");
+		return 1;
+	}
+	/* stdin carries binary 8-byte input messages; text mode would mangle them. */
+	if (_setmode(_fileno(stdin), _O_BINARY) == -1)
+	{
+		fprintf(stderr, "[sidecar] failed to set stdin to binary mode\n");
+		return 1;
+	}
+#endif
+
 	if (argc < 4 || argc > 6)
 	{
 		fprintf(stderr, "usage: %s <host> <port> <user> [width] [height]\n", argv[0]);
@@ -220,9 +345,10 @@ int main(int argc, char* argv[])
 		fprintf(stderr, "[sidecar] failed to read password from stdin\n");
 		return 2;
 	}
-	/* Remove trailing newline */
+	/* Remove trailing newline (and CR, in case stdin is binary on Windows) */
 	size_t len = strlen(pass);
-	if (len > 0 && pass[len - 1] == '\n') pass[len - 1] = '\0';
+	while (len > 0 && (pass[len - 1] == '\n' || pass[len - 1] == '\r'))
+		pass[--len] = '\0';
 
 	quiet_wlog_to_stderr();
 
@@ -236,12 +362,31 @@ int main(int argc, char* argv[])
 		return 1;
 	}
 
+#ifdef _WIN32
+	/* Winsock must be initialized before any name resolution / socket call.
+	 * FreeRDP's own Windows client does this in its global init; without it
+	 * getaddrinfo fails and freerdp_connect reports DNS_NAME_NOT_FOUND even for
+	 * a perfectly valid host. */
+	WSADATA wsaData;
+	if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0)
+	{
+		fprintf(stderr, "[sidecar] WSAStartup failed\n");
+		freerdp_client_context_free(context);
+		return 1;
+	}
+#endif
+
 	rdpSettings* settings = context->settings;
 	freerdp_settings_set_string(settings, FreeRDP_ServerHostname, host);
 	freerdp_settings_set_uint32(settings, FreeRDP_ServerPort, port);
 	freerdp_settings_set_string(settings, FreeRDP_Username, user);
 	freerdp_settings_set_string(settings, FreeRDP_Password, pass);
-	freerdp_settings_set_bool(settings, FreeRDP_IgnoreCertificate, FALSE);
+	/* Internal RDP hosts almost always present a self-signed certificate (mstsc
+	 * just prompts the user to trust it). This is a view-only tool, so accept the
+	 * cert automatically rather than failing the TLS handshake with
+	 * ERRCONNECT_TLS_CONNECT_FAILED (0x00020008). */
+	freerdp_settings_set_bool(settings, FreeRDP_IgnoreCertificate, TRUE);
+	freerdp_settings_set_bool(settings, FreeRDP_AutoAcceptCertificate, TRUE);
 	freerdp_settings_set_uint32(settings, FreeRDP_DesktopWidth, width);
 	freerdp_settings_set_uint32(settings, FreeRDP_DesktopHeight, height);
 	freerdp_settings_set_uint32(settings, FreeRDP_ColorDepth, 32);
@@ -256,10 +401,22 @@ int main(int argc, char* argv[])
 		goto cleanup;
 	}
 
+	/* Start the stdin input reader now that we're connected. The auto-reset
+	 * event wakes the main loop whenever input arrives so it can be flushed to
+	 * the (single-threaded) FreeRDP transport. */
+	InitializeCriticalSection(&g_inputLock);
+	g_inputEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
+	HANDLE readerThread = NULL;
+	if (g_inputEvent)
+		readerThread = CreateThread(NULL, 0, input_reader_thread, NULL, 0, NULL);
+	else
+		fprintf(stderr, "[sidecar] input disabled: failed to create event\n");
+
 	while (!freerdp_shall_disconnect_context(context))
 	{
 		HANDLE handles[64];
-		DWORD count = freerdp_get_event_handles(context, handles, 64);
+		/* Reserve one slot for the input event. */
+		DWORD count = freerdp_get_event_handles(context, handles, 63);
 		if (count == 0)
 		{
 			fprintf(stderr, "[sidecar] failed to get event handles\n");
@@ -267,7 +424,11 @@ int main(int argc, char* argv[])
 			break;
 		}
 
-		DWORD status = WaitForMultipleObjects(count, handles, FALSE, INFINITE);
+		DWORD total = count;
+		if (g_inputEvent)
+			handles[total++] = g_inputEvent;
+
+		DWORD status = WaitForMultipleObjects(total, handles, FALSE, INFINITE);
 		if (status == WAIT_FAILED)
 		{
 			fprintf(stderr, "[sidecar] wait failed\n");
@@ -275,13 +436,21 @@ int main(int argc, char* argv[])
 			break;
 		}
 
+		if (g_inputEvent)
+			drain_input(context);
+
 		if (!freerdp_check_event_handles(context))
 			break;
 	}
 
 	freerdp_disconnect(instance);
+	if (readerThread)
+		CloseHandle(readerThread);
 
 cleanup:
 	freerdp_client_context_free(context);
+#ifdef _WIN32
+	WSACleanup();
+#endif
 	return rc;
 }
