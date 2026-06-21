@@ -33,6 +33,7 @@
 #include <string.h>
 
 #ifdef _WIN32
+#include <winsock2.h>
 #include <io.h>
 #include <fcntl.h>
 #endif
@@ -252,6 +253,20 @@ int main(int argc, char* argv[])
 		return 1;
 	}
 
+#ifdef _WIN32
+	/* Winsock must be initialized before any name resolution / socket call.
+	 * FreeRDP's own Windows client does this in its global init; without it
+	 * getaddrinfo fails and freerdp_connect reports DNS_NAME_NOT_FOUND even for
+	 * a perfectly valid host. */
+	WSADATA wsaData;
+	if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0)
+	{
+		fprintf(stderr, "[sidecar] WSAStartup failed\n");
+		freerdp_client_context_free(context);
+		return 1;
+	}
+#endif
+
 	rdpSettings* settings = context->settings;
 	freerdp_settings_set_string(settings, FreeRDP_ServerHostname, host);
 	freerdp_settings_set_uint32(settings, FreeRDP_ServerPort, port);
@@ -299,5 +314,8 @@ int main(int argc, char* argv[])
 
 cleanup:
 	freerdp_client_context_free(context);
+#ifdef _WIN32
+	WSACleanup();
+#endif
 	return rc;
 }
