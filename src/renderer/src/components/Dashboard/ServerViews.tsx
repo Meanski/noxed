@@ -1,4 +1,4 @@
-import { Box, Database, HardDrive, Plug, Server } from 'lucide-react'
+import { Box, Database, HardDrive, Plug, Server, Monitor } from 'lucide-react'
 import { Session, ServerMetrics } from '../../store'
 import { formatBytesLong, formatUptime, sparkline } from '../../lib/format'
 import { metricColor } from '../../lib/colors'
@@ -8,6 +8,12 @@ import { metricColor } from '../../lib/colors'
 export function reachabilityInfo(isConnected: boolean): { label: string; color: string } {
   if (isConnected) return { label: 'Connected', color: '#10B981' }
   return { label: 'Disconnected', color: 'var(--nox-text-3)' }
+}
+
+// Only SSH/untyped hosts report CPU/RAM (via polling). Other types render as
+// launch cards, so we never show them a "waiting for metrics" placeholder.
+function isMetricCapable(type?: string): boolean {
+  return !type || type === 'ssh'
 }
 
 interface ServerViewProps {
@@ -44,6 +50,7 @@ export function HealthCard({
   const memTotal = metrics?.memTotal ?? 1
   const memPct = Math.round((memUsed / memTotal) * 100)
   const hasLiveData = isConnected && !!metrics?.available
+  const metricCapable = isMetricCapable(session.type)
   const reachability = reachabilityInfo(isConnected)
 
   return (
@@ -128,13 +135,13 @@ export function HealthCard({
                 </div>
               )}
             </div>
-          ) : isConnected ? (
+          ) : isConnected && metricCapable ? (
             <div className="space-y-2 animate-pulse">
               <MetricBar label="CPU" value={0} color={color} sublabel="..." />
               <MetricBar label="MEM" value={0} color={color} sublabel="waiting for metrics" />
             </div>
           ) : (
-            <OfflineStatus />
+            <StatusBox metricCapable={metricCapable} isConnected={isConnected} />
           )}
         </div>
       </div>
@@ -145,6 +152,7 @@ export function HealthCard({
 export function CompactServerCard({ session, metrics, isConnected, onConnect, onContextMenu }: ServerViewProps) {
   const color = session.color ?? '#3B5CCC'
   const reach = reachabilityInfo(isConnected)
+  const metricCapable = isMetricCapable(session.type)
   const live = isConnected && metrics?.available
   const memPct = live && metrics!.memTotal > 0 ? Math.round((metrics!.memUsed / metrics!.memTotal) * 100) : 0
 
@@ -169,7 +177,7 @@ export function CompactServerCard({ session, metrics, isConnected, onConnect, on
           {live
             ? `cpu ${metrics!.cpu}% · mem ${memPct}%`
             : isConnected
-              ? 'waiting for metrics'
+              ? (metricCapable ? 'waiting for metrics' : 'Connected')
               : reach.label}
         </span>
       </div>
@@ -229,14 +237,19 @@ export function ServerListRow({ session, metrics, isConnected, onConnect, onCont
   )
 }
 
-function OfflineStatus() {
+function StatusBox({ metricCapable, isConnected }: { metricCapable: boolean; isConnected: boolean }) {
+  const text = isConnected
+    ? 'Connected — click to open'
+    : metricCapable
+      ? 'Connect to start live metrics'
+      : 'Click to open'
   return (
     <div
       className="flex items-center justify-between gap-3 rounded-md px-2.5"
       style={{ background: 'var(--nox-bg)', border: '1px dashed var(--nox-border)', height: 46 }}
     >
       <p className="font-['Inter'] text-[10.5px] truncate" style={{ color: 'var(--nox-text-3)' }}>
-        Connect to start live metrics
+        {text}
       </p>
     </div>
   )
@@ -286,6 +299,7 @@ function ConnectionTypeIcon({ type }: { type?: string }) {
     case 'redis': return <HardDrive {...s} style={{ color: '#EF4444' }} />
     case 'kubernetes': return <Box {...s} style={{ color: '#326CE5' }} />
     case 'sftp': return <Server {...s} style={{ color: '#8B5CF6' }} />
+    case 'rdp': return <Monitor {...s} style={{ color: '#06B6D4' }} />
     default: return <Server {...s} style={{ color: '#10B981' }} />
   }
 }

@@ -5,3 +5,8 @@ dist/
 *.log
 .DS_Store
 .claude/settings.local.json
+
+# Compiled RDP sidecar/spike binaries — built locally via native/rdp-spike/Makefile
+native/rdp-spike/rdp-sidecar
+native/rdp-spike/rdp-spike
+native/rdp-spike/*.ppm

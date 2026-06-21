@@ -13,6 +13,7 @@ import TunnelsView from './Tunnels/TunnelsView'
 import DockerDashboard from './Docker/DockerDashboard'
 import RunnerView from './Runner/RunnerView'
 import LocalTerminalView from './Terminal/LocalTerminalView'
+import RdpView from './RDP/RdpView'
 
 // ── Error boundary — prevents a crashed tab from taking down the whole app ──
 class TabErrorBoundary extends React.Component<
@@ -226,6 +227,16 @@ export default function MainContent() {
             <div key={tab.id} style={style}>
               <TabErrorBoundary>
                 <LocalTerminalView tab={tab} />
+              </TabErrorBoundary>
+            </div>
+          )
+        }
+
+        if (tab.view === 'rdp') {
+          return (
+            <div key={tab.id} style={style}>
+              <TabErrorBoundary>
+                <RdpView tab={tab} />
               </TabErrorBoundary>
             </div>
           )

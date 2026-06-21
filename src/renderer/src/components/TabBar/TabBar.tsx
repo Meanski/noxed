@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { LayoutDashboard, List, Settings, Terminal, Boxes, Database, FolderOpen, X, Layers, Plus, FileCode } from 'lucide-react'
+import { LayoutDashboard, List, Settings, Terminal, Boxes, Database, FolderOpen, X, Layers, Plus, FileCode, Monitor } from 'lucide-react'
 import { useAppStore, Tab } from '../../store'
 
 export default function TabBar() {
@@ -130,6 +130,7 @@ function tabIcon(view: Tab['view'], active: boolean) {
     case 'database': return <Database size={size} style={{ color: active ? '#10B981' : 'var(--nox-text-2)' }} />
     case 'sftp': return <FolderOpen size={size} style={{ color: active ? '#EC4899' : 'var(--nox-text-2)' }} />
     case 'redis': return <Layers size={size} style={{ color: active ? '#DC382D' : 'var(--nox-text-2)' }} />
+    case 'rdp': return <Monitor size={size} style={{ color: active ? '#06B6D4' : 'var(--nox-text-2)' }} />
     case 'editor': return <FileCode size={size} style={{ color: active ? '#F59E0B' : 'var(--nox-text-2)' }} />
     case 'docker': return <Boxes size={size} style={{ color: active ? '#2496ED' : 'var(--nox-text-2)' }} />
     case 'local-term': return <Terminal size={size} style={{ color: active ? '#10B981' : 'var(--nox-text-2)' }} />

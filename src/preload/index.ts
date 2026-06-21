@@ -287,6 +287,24 @@ contextBridge.exposeInMainWorld('api', {
     command: (id: string, cmd: string) => ipcRenderer.invoke('redis:command', id, cmd),
   },
 
+  // RDP (FreeRDP sidecar — read-only desktop frames to a canvas)
+  rdp: {
+    connect: (config: { host: string; port?: number; username: string; password: string; width?: number; height?: number }) =>
+      ipcRenderer.invoke('rdp:connect', config),
+    disconnect: (id: string) => ipcRenderer.invoke('rdp:disconnect', id),
+    onFrame: (cb: (id: string, width: number, height: number, pixels: Uint8Array) => void) => {
+      const handler = (_e: any, id: string, width: number, height: number, pixels: Uint8Array) =>
+        cb(id, width, height, pixels)
+      ipcRenderer.on('rdp:frame', handler)
+      return () => ipcRenderer.off('rdp:frame', handler)
+    },
+    onClose: (cb: (id: string, error: string | null) => void) => {
+      const handler = (_e: any, id: string, error: string | null) => cb(id, error)
+      ipcRenderer.on('rdp:closed', handler)
+      return () => ipcRenderer.off('rdp:closed', handler)
+    },
+  },
+
   tabs: {
     onCycle: (cb: (dir: 'next' | 'prev') => void) => {
       const handler = (_e: any, dir: 'next' | 'prev') => cb(dir)
