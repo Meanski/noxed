@@ -12,6 +12,7 @@ type Status = 'connecting' | 'connected' | 'error' | 'closed'
 
 export default function RdpView({ tab }: { tab: Tab }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
   const sessions = useAppStore((s) => s.sessions)
   const [status, setStatus] = useState<Status>('connecting')
   const [message, setMessage] = useState<string>('')
@@ -59,14 +60,22 @@ export default function RdpView({ tab }: { tab: Tab }) {
       try {
         const { password } = await window.api.sessions.getCredentials(session.id)
         if (disposed) return
+        // Negotiate the desktop at the current pane size so it fills the window
+        // instead of rendering at a fixed small resolution. RDP widths/heights
+        // must be even; clamp to a sane minimum. (No live re-negotiation yet —
+        // resizing after connect just scales the canvas via object-fit.)
+        const el = containerRef.current
+        const even = (n: number) => n - (n % 2)
+        const width = el && el.clientWidth > 0 ? Math.max(640, even(el.clientWidth)) : 1280
+        const height = el && el.clientHeight > 0 ? Math.max(480, even(el.clientHeight)) : 800
         const id = await window.api.rdp.connect({
           host: session.host,
           // RDP connections store 3389; fall back for non-RDP hosts opened ad hoc.
           port: session.port || 3389,
           username: session.username,
           password: password ?? '',
-          width: 1280,
-          height: 800,
+          width,
+          height,
         })
         if (disposed) {
           // Component was unmounted while connect was in progress
@@ -93,6 +102,7 @@ export default function RdpView({ tab }: { tab: Tab }) {
 
   return (
     <div
+      ref={containerRef}
       className="flex flex-col h-full w-full items-center justify-center overflow-hidden"
       style={{ background: '#000' }}
     >
@@ -117,8 +127,8 @@ export default function RdpView({ tab }: { tab: Tab }) {
         ref={canvasRef}
         style={{
           display: status === 'connected' ? 'block' : 'none',
-          maxWidth: '100%',
-          maxHeight: '100%',
+          width: '100%',
+          height: '100%',
           objectFit: 'contain',
         }}
       />
