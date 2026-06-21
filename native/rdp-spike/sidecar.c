@@ -272,7 +272,12 @@ int main(int argc, char* argv[])
 	freerdp_settings_set_uint32(settings, FreeRDP_ServerPort, port);
 	freerdp_settings_set_string(settings, FreeRDP_Username, user);
 	freerdp_settings_set_string(settings, FreeRDP_Password, pass);
-	freerdp_settings_set_bool(settings, FreeRDP_IgnoreCertificate, FALSE);
+	/* Internal RDP hosts almost always present a self-signed certificate (mstsc
+	 * just prompts the user to trust it). This is a view-only tool, so accept the
+	 * cert automatically rather than failing the TLS handshake with
+	 * ERRCONNECT_TLS_CONNECT_FAILED (0x00020008). */
+	freerdp_settings_set_bool(settings, FreeRDP_IgnoreCertificate, TRUE);
+	freerdp_settings_set_bool(settings, FreeRDP_AutoAcceptCertificate, TRUE);
 	freerdp_settings_set_uint32(settings, FreeRDP_DesktopWidth, width);
 	freerdp_settings_set_uint32(settings, FreeRDP_DesktopHeight, height);
 	freerdp_settings_set_uint32(settings, FreeRDP_ColorDepth, 32);
