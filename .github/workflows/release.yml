@@ -49,7 +49,7 @@ jobs:
       - name: Build RDP sidecar (macOS)
         if: runner.os == 'macOS'
         run: |
-          brew install cmake ninja
+          brew install cmake ninja jansson openssl@3
           cd native/rdp-spike
           ./build-freerdp-static.sh
           make rdp-sidecar-static
