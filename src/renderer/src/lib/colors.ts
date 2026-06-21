@@ -24,6 +24,7 @@ export function connectionColor(type: ConnectionType): string {
     database: '#10B981',
     kubernetes: '#8B5CF6',
     redis: '#DC382D',
+    rdp: '#06B6D4',
   }
   return map[type] ?? '#6B7280'
 }

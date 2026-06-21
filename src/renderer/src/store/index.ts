@@ -2,7 +2,7 @@ import { create } from 'zustand'
 
 // ── Connection types ──────────────────────────────────────────────────────────
 
-export type ConnectionType = 'ssh' | 'sftp' | 'database' | 'kubernetes' | 'redis'
+export type ConnectionType = 'ssh' | 'sftp' | 'database' | 'kubernetes' | 'redis' | 'rdp'
 
 export interface Connection {
   id: string
@@ -71,7 +71,7 @@ export interface Session {
 
 export type TabView =
   | 'terminal' | 'sftp' | 'k8s' | 'database' | 'redis' | 'editor' | 'docker' | 'local-term'
-  | 'dashboard' | 'connections' | 'settings' | 'tunnels' | 'runner'
+  | 'dashboard' | 'connections' | 'settings' | 'tunnels' | 'runner' | 'rdp'
 export type ConnectionStatus = 'idle' | 'connecting' | 'connected' | 'error'
 
 export interface EditorFile {
@@ -155,6 +155,7 @@ interface AppState {
   openEditorTab: (opts: { path: string; source: 'remote' | 'local'; session?: Session; streamId?: string }) => void
   openK8sTab: (context: string) => void
   openDockerTab: (session: Session) => void
+  openRdpTab: (session: Session) => void
   openDashboardTab: () => void
   openConnectionsTab: () => void
   openSettingsTab: () => void
@@ -247,13 +248,15 @@ export const useAppStore = create<AppState>((set) => ({
       const isK8s = session.type === 'kubernetes'
       const isSftp = session.type === 'sftp'
       const isDb = session.type === 'database'
-      const view: TabView = isK8s ? 'k8s' : isSftp ? 'sftp' : isDb ? 'database' : 'terminal'
+      const isRdp = session.type === 'rdp'
+      const isRedis = session.type === 'redis'
+      const view: TabView = isK8s ? 'k8s' : isSftp ? 'sftp' : isDb ? 'database' : isRdp ? 'rdp' : isRedis ? 'redis' : 'terminal'
       const tab: Tab = {
         id: `tab-${++tabCounter}`,
         sessionId: session.id,
-        label: session.label || session.host,
+        label: isRdp ? `RDP · ${session.label || session.host}` : session.label || session.host,
         view,
-        status: isK8s ? 'connected' : 'idle',
+        status: isK8s || isRdp ? 'connected' : 'idle',
         filesOpen: false,
         k8sContext: isK8s ? session.contextName : undefined,
         kubeconfigPath: isK8s ? session.kubeconfigPath : undefined,
@@ -326,6 +329,21 @@ export const useAppStore = create<AppState>((set) => ({
         sessionId: session.id,
         label: `Docker · ${session.label || session.host}`,
         view: 'docker',
+        status: 'connected',
+        filesOpen: false,
+      }
+      return { tabs: [...s.tabs, tab], activeTabId: tab.id, focusedPaneId: null }
+    }),
+
+  openRdpTab: (session) =>
+    set((s) => {
+      const existing = s.tabs.find((t) => t.sessionId === session.id && t.view === 'rdp')
+      if (existing) return { activeTabId: existing.id, focusedPaneId: null }
+      const tab: Tab = {
+        id: `tab-${++tabCounter}`,
+        sessionId: session.id,
+        label: `RDP · ${session.label || session.host}`,
+        view: 'rdp',
         status: 'connected',
         filesOpen: false,
       }

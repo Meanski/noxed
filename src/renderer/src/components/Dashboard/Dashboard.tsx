@@ -21,6 +21,7 @@ export default function Dashboard() {
   const tabs = useAppStore(s => s.tabs)
   const openTab = useAppStore(s => s.openTab)
   const openDockerTab = useAppStore(s => s.openDockerTab)
+  const openRdpTab = useAppStore(s => s.openRdpTab)
   const setShowAddConnection = useAppStore(s => s.setShowAddConnection)
   const setEditingConnectionId = useAppStore(s => s.setEditingConnectionId)
   const updateSession = useAppStore(s => s.updateSession)
@@ -95,9 +96,12 @@ export default function Dashboard() {
     })
   }
 
-  const sshSessions = sessions.filter(s => !s.type || s.type === 'ssh')
+  // The Dashboard lists every connection type. SSH/untyped hosts show live
+  // CPU/RAM from polling; other types (RDP, DB, Redis, K8s, SFTP) render as
+  // launch cards without metrics.
+  const dashboardSessions = sessions
   const connectedTabIds = new Set(tabs.filter(t => t.status === 'connected').map(t => t.sessionId))
-  const connectedSshCount = sshSessions.filter(s => connectedTabIds.has(s.id)).length
+  const connectedCount = dashboardSessions.filter(s => connectedTabIds.has(s.id)).length
   // Server health is derived from established tabs/metrics so saved hosts are
   // never touched in the background before the user connects.
   useEffect(() => {
@@ -117,7 +121,7 @@ export default function Dashboard() {
     }
   }, [])
 
-  const rawGroups = sshSessions.reduce<Record<string, Session[]>>((acc, s) => {
+  const rawGroups = dashboardSessions.reduce<Record<string, Session[]>>((acc, s) => {
     const g = s.group ?? 'Ungrouped'
     if (!acc[g]) acc[g] = []
     acc[g].push(s)
@@ -148,7 +152,7 @@ export default function Dashboard() {
       }
       return next
     })
-  }, [sshSessions.length])
+  }, [dashboardSessions.length])
 
   const orderedGroups = orderedGroupNames
     .map(g => ({
@@ -204,7 +208,7 @@ export default function Dashboard() {
               Dashboard
             </h1>
             <p className="font-['Inter'] text-[12px] mt-0.5" style={{ color: 'var(--nox-text-2)' }}>
-              {sshSessions.length} server{sshSessions.length !== 1 ? 's' : ''} · {connectedSshCount} connected
+              {dashboardSessions.length} connection{dashboardSessions.length !== 1 ? 's' : ''} · {connectedCount} connected
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -229,17 +233,17 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {sshSessions.length === 0 ? (
+        {dashboardSessions.length === 0 ? (
           <div className="rounded-xl p-8 text-center" style={{ background: 'var(--nox-shell)', border: '1px solid var(--nox-border)' }}>
             <Server className="w-7 h-7 mx-auto mb-3" style={{ color: 'var(--nox-text-3)' }} />
             <p className="font-['Inter'] text-[13px] mb-3" style={{ color: 'var(--nox-text-2)' }}>
-              Add SSH connections to monitor server health
+              Add a connection to get started
             </p>
             <button
               onClick={() => setShowAddConnection(true)}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md font-['Inter'] text-[12px] text-[#3B5CCC] border border-[#3B5CCC]/30 hover:bg-[#EBF0FF] transition-colors"
             >
-              <Plus className="w-3.5 h-3.5" /> Add SSH connection
+              <Plus className="w-3.5 h-3.5" /> Add connection
             </button>
           </div>
         ) : (
@@ -302,7 +306,7 @@ export default function Dashboard() {
                       </span>
                       <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: color }} />
                       <span className="font-['Inter'] text-[12px] flex-shrink-0" style={{ color: 'var(--nox-text-3)' }}>
-                        {groupSessions.length} server{groupSessions.length !== 1 ? 's' : ''}
+                        {groupSessions.length} connection{groupSessions.length !== 1 ? 's' : ''}
                       </span>
                       <span className="h-px flex-1 min-w-6" style={{ background: 'var(--nox-border)' }} />
                       <span className="font-['Inter'] text-[12px] flex-shrink-0" style={{ color: allHealthy ? '#10B981' : 'var(--nox-text-3)' }}>
@@ -398,6 +402,9 @@ export default function Dashboard() {
           onRename={() => editConnection(ctxMenu.session)}
           onOpenDocker={(ctxMenu.session.type ?? 'ssh') === 'ssh'
             ? () => { openDockerTab(ctxMenu.session); setCtxMenu(null) }
+            : undefined}
+          onOpenRdp={window.api.platform === 'darwin' && ctxMenu.session?.type === 'rdp'
+            ? () => { openRdpTab(ctxMenu.session); setCtxMenu(null) }
             : undefined}
           onColorChange={c => handleColorChange(ctxMenu.session, c)}
           onFavorite={() => handleToggleFavorite(ctxMenu.session)}

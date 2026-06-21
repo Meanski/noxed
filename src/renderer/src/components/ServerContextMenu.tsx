@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import {
-  Settings, Pencil, Boxes, Heart, FolderInput, Plus, ChevronRight, Palette, Trash2,
+  Settings, Pencil, Boxes, Monitor, Heart, FolderInput, Plus, ChevronRight, Palette, Trash2,
 } from 'lucide-react'
 import { useAppStore, Session, groupColor } from '../store'
 
@@ -53,7 +53,7 @@ export function MenuItem({ icon, label, onClick, danger, hasSubmenu }: {
   )
 }
 
-export function ServerContextMenu({ x, y, session, allGroups, onEdit, onRename, onColorChange, onFavorite, onMoveToProject, onDelete, onClose, onOpenDocker }: {
+export function ServerContextMenu({ x, y, session, allGroups, onEdit, onRename, onColorChange, onFavorite, onMoveToProject, onDelete, onClose, onOpenDocker, onOpenRdp }: {
   x: number; y: number; session: Session
   allGroups: string[]
   onEdit: () => void
@@ -64,6 +64,7 @@ export function ServerContextMenu({ x, y, session, allGroups, onEdit, onRename, 
   onDelete: () => void
   onClose: () => void
   onOpenDocker?: () => void
+  onOpenRdp?: () => void
 }) {
   const [showMoveMenu, setShowMoveMenu] = useState(false)
   const groupColors = useAppStore(s => s.groupColors)
@@ -97,6 +98,9 @@ export function ServerContextMenu({ x, y, session, allGroups, onEdit, onRename, 
       <MenuItem icon={<Pencil className="w-3.5 h-3.5" />} label="Rename" onClick={onRename} />
       {onOpenDocker && (
         <MenuItem icon={<Boxes className="w-3.5 h-3.5" />} label="Docker Dashboard" onClick={onOpenDocker} />
+      )}
+      {onOpenRdp && (
+        <MenuItem icon={<Monitor className="w-3.5 h-3.5" />} label="Open Remote Desktop" onClick={onOpenRdp} />
       )}
       <MenuItem
         icon={<Heart className="w-3.5 h-3.5" />}

@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import {
   LayoutDashboard, List, Star, Terminal, FolderOpen, Database,
   Settings, ChevronRight, Search, FolderKanban, Layers,
-  Plus, GripVertical, Cable, TerminalSquare,
+  Plus, GripVertical, Cable, TerminalSquare, Monitor,
 } from 'lucide-react'
 import { useAppStore, Session, groupColor } from '../../store'
 import K8sIcon from '../K8sIcon'
@@ -25,7 +25,7 @@ export default function Sidebar() {
   const {
     sessions, tabs, activeTabId,
     openTab, openDashboardTab, openConnectionsTab, openSettingsTab, openRedisTab,
-    openTunnelsTab, openRunnerTab, openDockerTab, openLocalTerminalTab,
+    openTunnelsTab, openRunnerTab, openDockerTab, openRdpTab, openLocalTerminalTab,
     sidebarView, setSidebarView,
     setShowCommandPalette,
     sectionOrder, setSectionOrder,
@@ -42,6 +42,7 @@ export default function Sidebar() {
   const dbSessions = sessions.filter(s => s.type === 'database')
   const redisSessions = sessions.filter(s => s.type === 'redis')
   const k8sSessions = sessions.filter(s => s.type === 'kubernetes')
+  const rdpSessions = sessions.filter(s => s.type === 'rdp')
   const favSessions = sessions.filter(s => s.isFavorite)
 
   const connectedIds = new Set(tabs.filter(t => t.status === 'connected').map(t => t.sessionId))
@@ -243,6 +244,20 @@ export default function Sidebar() {
                 onReorder={order => setSectionOrder('kubernetes', order)}
               />
             )}
+
+            {rdpSessions.length > 0 && window.api.platform === 'darwin' && (
+              <DraggableSection
+                label="Remote Desktop"
+                sessions={applyOrder('rdp', rdpSessions)}
+                connectedIds={connectedIds}
+                renamingId={renamingId}
+                onContextMenu={handleContextMenu}
+                onOpen={openSession}
+                onRename={handleRename}
+                onRenameCancel={() => setRenamingId(null)}
+                onReorder={order => setSectionOrder('rdp', order)}
+              />
+            )}
           </>
         ) : (
           <ProjectView
@@ -272,6 +287,9 @@ export default function Sidebar() {
           onRename={() => { setRenamingId(ctxMenu.session!.id); setCtxMenu(null) }}
           onOpenDocker={(ctxMenu.session.type ?? 'ssh') === 'ssh'
             ? () => { openDockerTab(ctxMenu.session!); setCtxMenu(null) }
+            : undefined}
+          onOpenRdp={window.api.platform === 'darwin' && (ctxMenu.session?.type ?? 'ssh') === 'rdp'
+            ? () => { openRdpTab(ctxMenu.session!); setCtxMenu(null) }
             : undefined}
           onColorChange={c => handleColorChange(ctxMenu.session!, c)}
           onFavorite={() => handleToggleFavorite(ctxMenu.session!)}
@@ -770,6 +788,7 @@ function ConnectionTypeIcon({ type, size = 12 }: { type?: string; size?: number 
     case 'database': return <Database size={size} style={{ color }} className="flex-shrink-0" />
     case 'kubernetes': return <K8sIcon size={size} color="var(--nox-text-3)" className="flex-shrink-0" />
     case 'redis': return <Layers size={size} style={{ color }} className="flex-shrink-0" />
+    case 'rdp': return <Monitor size={size} style={{ color }} className="flex-shrink-0" />
     default: return <Terminal size={size} style={{ color }} className="flex-shrink-0" />
   }
 }

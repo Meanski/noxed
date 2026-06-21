@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import {
   X, Terminal, FolderOpen, Database, Boxes, Check, ArrowRight,
-  ArrowLeft, Key, Lock, Eye, EyeOff, Wifi, Layers,
+  ArrowLeft, Key, Lock, Eye, EyeOff, Wifi, Layers, Monitor,
   FileCode2, RefreshCw, ChevronRight,
 } from 'lucide-react'
 import { useAppStore } from '../../store'
@@ -13,7 +13,7 @@ interface K8sContextEntry {
   source: 'default' | string  // 'default' or file path
 }
 
-type ConnectionType = 'ssh' | 'sftp' | 'database' | 'kubernetes' | 'redis'
+type ConnectionType = 'ssh' | 'sftp' | 'database' | 'kubernetes' | 'redis' | 'rdp'
 type Step = 'type' | 'config'
 
 interface Props {
@@ -28,6 +28,7 @@ const TYPE_OPTIONS: { type: ConnectionType; label: string; icon: any; desc: stri
   { type: 'database', label: 'Database', icon: Database, desc: 'Direct TCP connection to SQL databases', color: '#10B981' },
   { type: 'kubernetes', label: 'Kubernetes', icon: Boxes, desc: 'Cluster management with Helm & metrics', color: '#8B5CF6' },
   { type: 'redis', label: 'Redis', icon: Layers, desc: 'Key-value store browser and CLI', color: '#DC382D' },
+  { type: 'rdp', label: 'Remote Desktop', icon: Monitor, desc: 'Graphical Windows desktop over RDP', color: '#06B6D4' },
 ]
 
 export default function AddConnectionModal({ onClose }: Props) {
@@ -139,6 +140,7 @@ export default function AddConnectionModal({ onClose }: Props) {
       case 'sftp': return '22'
       case 'database': return form.dbType === 'postgresql' ? '5432' : form.dbType === 'mysql' ? '3306' : '5432'
       case 'redis': return '6379'
+      case 'rdp': return '3389'
       default: return '443'
     }
   }
@@ -181,6 +183,9 @@ export default function AddConnectionModal({ onClose }: Props) {
   const handleTypeSelect = (type: ConnectionType) => {
     setSelectedType(type)
     set('port', getDefaultPort(type))
+    if (type === 'rdp') {
+      set('authType', 'password')
+    }
     if (type === 'kubernetes' && k8sContexts.length === 0) {
       loadDefaultK8sContexts()
     }
@@ -212,6 +217,9 @@ export default function AddConnectionModal({ onClose }: Props) {
     if (selectedType === 'redis') {
       const db = parseInt(form.redisDb)
       if (!Number.isInteger(db) || db < 0 || db > 15) return 'DB index must be 0–15'
+    }
+    if (selectedType === 'rdp') {
+      if (!form.username.trim()) return 'Username is required'
     }
     return null
   }
@@ -511,7 +519,7 @@ export default function AddConnectionModal({ onClose }: Props) {
                 <ArrowLeft className="w-3.5 h-3.5" /> Back
               </button>
               <div className="flex items-center gap-2">
-                {selectedType !== 'kubernetes' && (
+                {selectedType !== 'kubernetes' && selectedType !== 'rdp' && (
                   <button
                     onClick={handleTest}
                     disabled={testing}
@@ -551,10 +559,13 @@ function TypeSelector({ selected, onSelect }: {
   selected: ConnectionType
   onSelect: (t: ConnectionType) => void
 }) {
+  // RDP needs the bundled FreeRDP sidecar, which currently ships on macOS only.
+  // Hide the type elsewhere so we never offer a connection that can't run.
+  const options = TYPE_OPTIONS.filter(o => o.type !== 'rdp' || window.api.platform === 'darwin')
   return (
     <div className="px-6 py-4">
       <div className="grid grid-cols-2 gap-3">
-        {TYPE_OPTIONS.map(opt => (
+        {options.map(opt => (
           <button
             key={opt.type}
             onClick={() => onSelect(opt.type)}
@@ -915,6 +926,38 @@ function ConfigForm({ type, form, set, error, testResult, isEditing, hasExisting
               <option value="verify-ca">Verify CA</option>
               <option value="verify-full">Verify Full</option>
             </FormSelect>
+          </FormField>
+        </>
+      )}
+
+      {type === 'rdp' && (
+        <>
+          <FormField label="Username">
+            <FormInput
+              placeholder="Administrator  (or DOMAIN\\user)"
+              value={form.username}
+              onChange={e => set('username', e.target.value)}
+            />
+          </FormField>
+          <FormField label="Password">
+            <div className="relative">
+              <FormInput
+                type={form.showPassword ? 'text' : 'password'}
+                placeholder={isEditing && hasExistingPassword ? '••••••••  (leave blank to keep)' : 'Enter password'}
+                value={form.password}
+                onChange={e => set('password', e.target.value)}
+              />
+              <button
+                type="button"
+                onClick={() => set('showPassword', !form.showPassword)}
+                className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded transition-colors"
+                style={{ color: 'var(--nox-text-3)' }}
+                onMouseEnter={e => { e.currentTarget.style.color = 'var(--nox-text-2)' }}
+                onMouseLeave={e => { e.currentTarget.style.color = 'var(--nox-text-3)' }}
+              >
+                {form.showPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+              </button>
+            </div>
           </FormField>
         </>
       )}

@@ -175,6 +175,12 @@ declare global {
         del: (id: string, ...keys: string[]) => Promise<void>
         command: (id: string, cmd: string) => Promise<any>
       }
+      rdp: {
+        connect: (config: { host: string; port?: number; username: string; password: string; width?: number; height?: number }) => Promise<string>
+        disconnect: (id: string) => Promise<void>
+        onFrame: (cb: (id: string, width: number, height: number, pixels: Uint8Array) => void) => () => void
+        onClose: (cb: (id: string, error: string | null) => void) => () => void
+      }
     }
   }
 }

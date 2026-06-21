@@ -27,6 +27,7 @@ import { registerKeychainHandlers } from './ipc/keychain'
 import { registerSettingsHandlers } from './ipc/settings'
 import { registerDatabaseHandlers, disposeDatabaseConnectionsForSender } from './ipc/database'
 import { registerLocalFsHandlers } from './ipc/localfs'
+import { registerRdpHandlers, disposeRdpSessionsForSender } from './ipc/rdp'
 import { isAllowedKeyPath } from './ipc/security'
 import { ValidationError } from './ipc/errors'
 
@@ -79,6 +80,7 @@ function createWindow(): void {
     disposeDockerSessionsForSender(senderId)
     disposeRunsForSender(senderId)
     disposeLocalPtysForSender(senderId)
+    disposeRdpSessionsForSender(senderId)
   })
 
   if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
@@ -133,6 +135,7 @@ app.whenReady().then(() => {
   registerRedisHandlers()
   registerDatabaseHandlers()
   registerLocalFsHandlers()
+  registerRdpHandlers()
 
   ipcMain.handle('fs:readFile', (_e, filePath: unknown) => {
     if (typeof filePath !== 'string') throw new ValidationError('Path is required')

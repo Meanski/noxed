@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import {
-  Filter, Search, Plus, Terminal, FolderOpen, Database, Boxes,
+  Filter, Search, Plus, Terminal, FolderOpen, Database, Boxes, Layers, Monitor,
   Plug, Pencil, Copy, Trash2, ChevronDown, ChevronUp, Check, FileDown,
 } from 'lucide-react'
 import { useAppStore, Session } from '../../store'
@@ -67,10 +67,10 @@ export default function ConnectionManager() {
   }
 
   const typeColor: Record<string, string> = {
-    ssh: '#3B5CCC', sftp: '#EC4899', database: '#10B981', kubernetes: '#8B5CF6',
+    ssh: '#3B5CCC', sftp: '#EC4899', database: '#10B981', kubernetes: '#8B5CF6', redis: '#DC382D', rdp: '#06B6D4',
   }
   const typeLabel: Record<string, string> = {
-    ssh: 'SSH', sftp: 'SFTP', database: 'Database', kubernetes: 'Kubernetes',
+    ssh: 'SSH', sftp: 'SFTP', database: 'Database', kubernetes: 'Kubernetes', redis: 'Redis', rdp: 'Remote Desktop',
   }
   const TypeIcon = ({ type, ...props }: { type?: string; [k: string]: any }) => {
     const t = type ?? 'ssh'
@@ -78,6 +78,8 @@ export default function ConnectionManager() {
       case 'sftp': return <FolderOpen {...props} />
       case 'database': return <Database {...props} />
       case 'kubernetes': return <Boxes {...props} />
+      case 'redis': return <Layers {...props} />
+      case 'rdp': return <Monitor {...props} />
       default: return <Terminal {...props} />
     }
   }
@@ -128,7 +130,7 @@ export default function ConnectionManager() {
                   >
                     Connection Type
                   </div>
-                  {(['ssh', 'sftp', 'database', 'kubernetes'] as FilterType[]).map(ft => (
+                  {(['ssh', 'sftp', 'database', 'kubernetes', 'redis', 'rdp'] as FilterType[]).map(ft => (
                     <label
                       key={ft}
                       className="flex items-center gap-2.5 px-3 py-2 cursor-pointer"
