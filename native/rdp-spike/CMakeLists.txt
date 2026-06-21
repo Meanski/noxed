@@ -34,6 +34,14 @@ set_target_properties(rdp-sidecar PROPERTIES OUTPUT_NAME rdp-sidecar)
 
 target_link_libraries(rdp-sidecar PRIVATE freerdp freerdp-client winpr)
 
+# FreeRDP's vcpkg config pulls in transitive static deps (e.g. cjson) referenced
+# by bare library name rather than a full path, so make the vcpkg static lib dir
+# searchable for the linker.
+if(DEFINED VCPKG_INSTALLED_DIR AND DEFINED VCPKG_TARGET_TRIPLET)
+  target_link_directories(rdp-sidecar PRIVATE
+    "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/lib")
+endif()
+
 if(WIN32)
   # Sockets + crypto/security backends FreeRDP/WinPR pull in on Windows.
   target_link_libraries(rdp-sidecar PRIVATE ws2_32 crypt32 secur32 winmm bcrypt)

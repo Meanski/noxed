@@ -63,7 +63,10 @@ jobs:
           path: |
             C:/vcpkg/installed
             C:/vcpkg/packages
-          key: vcpkg-freerdp-x64-windows-static-${{ hashFiles('native/rdp-spike/CMakeLists.txt') }}
+          # The vcpkg install depends only on the triplet, not on our CMakeLists,
+          # so key on a manual marker (bump to force a rebuild) rather than file
+          # hashes — otherwise every CMake tweak recompiles FreeRDP (~9 min).
+          key: vcpkg-freerdp-x64-windows-static-v1
 
       - name: Build RDP sidecar (Windows)
         if: runner.os == 'Windows'
