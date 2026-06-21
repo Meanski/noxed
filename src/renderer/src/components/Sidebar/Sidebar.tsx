@@ -245,7 +245,7 @@ export default function Sidebar() {
               />
             )}
 
-            {rdpSessions.length > 0 && (
+            {rdpSessions.length > 0 && window.api.platform === 'darwin' && (
               <DraggableSection
                 label="Remote Desktop"
                 sessions={applyOrder('rdp', rdpSessions)}
@@ -288,7 +288,7 @@ export default function Sidebar() {
           onOpenDocker={(ctxMenu.session.type ?? 'ssh') === 'ssh'
             ? () => { openDockerTab(ctxMenu.session!); setCtxMenu(null) }
             : undefined}
-          onOpenRdp={window.api.platform === 'darwin'
+          onOpenRdp={window.api.platform === 'darwin' && (ctxMenu.session?.type ?? 'ssh') === 'rdp'
             ? () => { openRdpTab(ctxMenu.session!); setCtxMenu(null) }
             : undefined}
           onColorChange={c => handleColorChange(ctxMenu.session!, c)}

@@ -25,6 +25,7 @@ export default function RdpView({ tab }: { tab: Tab }) {
     }
 
     let rdpId: string | null = null
+    let pendingId: string | null = null
     let disposed = false
     const offFns: Array<() => void> = []
 
@@ -48,7 +49,7 @@ export default function RdpView({ tab }: { tab: Tab }) {
     offFns.push(window.api.rdp.onFrame(paint))
     offFns.push(
       window.api.rdp.onClose((id, error) => {
-        if (id !== rdpId) return
+        if (id !== rdpId && id !== pendingId) return
         setStatus(error ? 'error' : 'closed')
         if (error) setMessage(error)
       }),
@@ -58,7 +59,7 @@ export default function RdpView({ tab }: { tab: Tab }) {
       try {
         const { password } = await window.api.sessions.getCredentials(session.id)
         if (disposed) return
-        rdpId = await window.api.rdp.connect({
+        const id = await window.api.rdp.connect({
           host: session.host,
           // RDP connections store 3389; fall back for non-RDP hosts opened ad hoc.
           port: session.port || 3389,
@@ -67,6 +68,13 @@ export default function RdpView({ tab }: { tab: Tab }) {
           width: 1280,
           height: 800,
         })
+        if (disposed) {
+          // Component was unmounted while connect was in progress
+          window.api.rdp.disconnect(id).catch(() => {})
+        } else {
+          rdpId = id
+          pendingId = null
+        }
       } catch (err) {
         if (!disposed) {
           setStatus('error')

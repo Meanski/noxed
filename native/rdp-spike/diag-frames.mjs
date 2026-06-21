@@ -44,7 +44,12 @@ while (off + 16 <= buf.length) {
   if (frame < 5 || dataLen !== expected) {
     console.log(`frame ${frame}: ${w}x${h} dataLen=${dataLen} [${tag}] @${off}`)
   }
-  off += 16 + dataLen
+  const nextOff = off + 16 + dataLen
+  if (nextOff > buf.length) {
+    console.log(`\n⚠️ WARNING: frame ${frame} extends beyond buffer end (${nextOff} > ${buf.length}), truncated`)
+    break
+  }
+  off = nextOff
   frame++
 }
 console.log(`\n✅ walked ${frame} frames cleanly, ended at offset ${off} (capture ${buf.length})`)

@@ -117,6 +117,16 @@ function drainFrames(id: string, entry: RdpSession): void {
     const height = entry.buffer.readUInt32LE(8)
     const dataLen = entry.buffer.readUInt32LE(12)
 
+    // Validate width/height are reasonable and dataLen matches
+    if (width === 0 || height === 0 || width > 7680 || height > 7680) {
+      if (!resyncToMagic(id, entry)) return
+      continue
+    }
+    if (dataLen !== width * height * 4) {
+      if (!resyncToMagic(id, entry)) return
+      continue
+    }
+
     if (dataLen > MAX_FRAME_BYTES) {
       // Almost certainly a false "NXF1" matched inside pixel data — skip past it.
       if (!resyncToMagic(id, entry)) return
@@ -158,9 +168,13 @@ export function registerRdpHandlers(): void {
 
     const proc = spawn(
       bin,
-      [host, String(port), username, password, String(width), String(height)],
+      [host, String(port), username, String(width), String(height)],
       { stdio: ['pipe', 'pipe', 'pipe'] },
     )
+
+    // Write password to stdin instead of passing as command-line argument
+    proc.stdin.write(password + '\n')
+    proc.stdin.end()
 
     const id = randomUUID()
     const entry: RdpSession = { proc, sender: event.sender, buffer: Buffer.alloc(0), resyncs: 0 }

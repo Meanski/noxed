@@ -21,6 +21,11 @@ echo ">> FreeRDP $FREERDP_TAG  arch=$ARCH  prefix=$PREFIX"
 
 if [ ! -d "$SRC/.git" ]; then
   git clone --depth 1 --branch "$FREERDP_TAG" https://github.com/FreeRDP/FreeRDP.git "$SRC"
+else
+  cd "$SRC"
+  git fetch origin
+  git checkout "$FREERDP_TAG"
+  cd "$HERE"
 fi
 
 cmake -S "$SRC" -B "$SRC/build-$ARCH" -GNinja \

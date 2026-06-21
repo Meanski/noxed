@@ -130,7 +130,7 @@ export default function ConnectionManager() {
                   >
                     Connection Type
                   </div>
-                  {(['ssh', 'sftp', 'database', 'kubernetes'] as FilterType[]).map(ft => (
+                  {(['ssh', 'sftp', 'database', 'kubernetes', 'redis', 'rdp'] as FilterType[]).map(ft => (
                     <label
                       key={ft}
                       className="flex items-center gap-2.5 px-3 py-2 cursor-pointer"

@@ -80,6 +80,21 @@ static BOOL emit_frame(SidecarContext* ctx, const BYTE* buf, UINT32 w, UINT32 h,
 {
 	const size_t rowBytes = (size_t)w * 4;
 	const size_t dataLen = rowBytes * h;
+	const size_t MAX_FRAME_SIZE = 67108864; /* 64 MiB */
+
+	/* Validate dataLen to prevent overflow and excessive allocation */
+	if (w > 0 && h > 0 && (rowBytes / 4) != w) {
+		fprintf(stderr, "[sidecar] overflow in rowBytes calculation\n");
+		return FALSE;
+	}
+	if (h > 0 && (dataLen / h) != rowBytes) {
+		fprintf(stderr, "[sidecar] overflow in dataLen calculation\n");
+		return FALSE;
+	}
+	if (dataLen > MAX_FRAME_SIZE) {
+		fprintf(stderr, "[sidecar] frame too large (%zu bytes > 64 MiB)\n", dataLen);
+		return FALSE;
+	}
 
 	if (ctx->packedCap < dataLen)
 	{
@@ -186,18 +201,28 @@ static int sidecar_entry(RDP_CLIENT_ENTRY_POINTS* pEntryPoints)
 
 int main(int argc, char* argv[])
 {
-	if (argc < 5 || argc > 7)
+	if (argc < 4 || argc > 6)
 	{
-		fprintf(stderr, "usage: %s <host> <port> <user> <password> [width] [height]\n", argv[0]);
+		fprintf(stderr, "usage: %s <host> <port> <user> [width] [height]\n", argv[0]);
+		fprintf(stderr, "password will be read from stdin\n");
 		return 2;
 	}
 
 	const char* host = argv[1];
 	const UINT32 port = (UINT32)strtoul(argv[2], NULL, 10);
 	const char* user = argv[3];
-	const char* pass = argv[4];
-	const UINT32 width = (argc >= 6) ? (UINT32)strtoul(argv[5], NULL, 10) : 1280;
-	const UINT32 height = (argc >= 7) ? (UINT32)strtoul(argv[6], NULL, 10) : 800;
+	const UINT32 width = (argc >= 5) ? (UINT32)strtoul(argv[4], NULL, 10) : 1280;
+	const UINT32 height = (argc >= 6) ? (UINT32)strtoul(argv[5], NULL, 10) : 800;
+
+	/* Read password from stdin to avoid exposing it in process list */
+	char pass[256];
+	if (!fgets(pass, sizeof(pass), stdin)) {
+		fprintf(stderr, "[sidecar] failed to read password from stdin\n");
+		return 2;
+	}
+	/* Remove trailing newline */
+	size_t len = strlen(pass);
+	if (len > 0 && pass[len - 1] == '\n') pass[len - 1] = '\0';
 
 	quiet_wlog_to_stderr();
 
@@ -216,7 +241,7 @@ int main(int argc, char* argv[])
 	freerdp_settings_set_uint32(settings, FreeRDP_ServerPort, port);
 	freerdp_settings_set_string(settings, FreeRDP_Username, user);
 	freerdp_settings_set_string(settings, FreeRDP_Password, pass);
-	freerdp_settings_set_bool(settings, FreeRDP_IgnoreCertificate, TRUE);
+	freerdp_settings_set_bool(settings, FreeRDP_IgnoreCertificate, FALSE);
 	freerdp_settings_set_uint32(settings, FreeRDP_DesktopWidth, width);
 	freerdp_settings_set_uint32(settings, FreeRDP_DesktopHeight, height);
 	freerdp_settings_set_uint32(settings, FreeRDP_ColorDepth, 32);

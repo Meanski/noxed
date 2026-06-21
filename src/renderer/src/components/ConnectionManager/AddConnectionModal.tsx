@@ -183,6 +183,9 @@ export default function AddConnectionModal({ onClose }: Props) {
   const handleTypeSelect = (type: ConnectionType) => {
     setSelectedType(type)
     set('port', getDefaultPort(type))
+    if (type === 'rdp') {
+      set('authType', 'password')
+    }
     if (type === 'kubernetes' && k8sContexts.length === 0) {
       loadDefaultK8sContexts()
     }
