@@ -32,6 +32,11 @@
 #include <stdlib.h>
 #include <string.h>
 
+#ifdef _WIN32
+#include <io.h>
+#include <fcntl.h>
+#endif
+
 #include <freerdp/freerdp.h>
 #include <freerdp/client.h>
 #include <freerdp/gdi/gdi.h>
@@ -201,6 +206,13 @@ static int sidecar_entry(RDP_CLIENT_ENTRY_POINTS* pEntryPoints)
 
 int main(int argc, char* argv[])
 {
+#ifdef _WIN32
+	/* Windows opens stdout in text mode, which translates every \n to \r\n and
+	 * would corrupt our binary frame stream (silent pixel desync). Force binary
+	 * before any frame is written. */
+	_setmode(_fileno(stdout), _O_BINARY);
+#endif
+
 	if (argc < 4 || argc > 6)
 	{
 		fprintf(stderr, "usage: %s <host> <port> <user> [width] [height]\n", argv[0]);

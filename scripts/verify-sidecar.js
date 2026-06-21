@@ -35,7 +35,40 @@ exports.default = async function verifySidecar(context) {
     return
   }
 
-  // Windows/Linux sidecars are a separate build (not yet produced); nothing to
-  // verify until extraResources ships them for those platforms.
+  if (platform === 'win32') {
+    // win.extraResources lands under <appOutDir>/resources/.
+    const sidecar = join(appOutDir, 'resources', 'rdp-sidecar.exe')
+    if (!existsSync(sidecar)) {
+      throw new Error(
+        `[verify-sidecar] RDP sidecar missing from package: ${sidecar}\n` +
+          `Build it first (vcpkg static FreeRDP): see native/rdp-spike/CMakeLists.txt`,
+      )
+    }
+    // The vcpkg x64-windows-static build + static CRT should leave no FreeRDP/
+    // OpenSSL/vcpkg DLL dependencies — only Windows system DLLs. Best-effort
+    // check via dumpbin; skip quietly if the VS toolchain isn't on PATH.
+    try {
+      const deps = execFileSync('dumpbin', ['/dependents', sidecar], { encoding: 'utf8' })
+      const leaked = deps
+        .split('\n')
+        .map((l) => l.trim())
+        .filter((l) => /\.dll$/i.test(l))
+        .filter((l) => /freerdp|winpr|libssl|libcrypto|zlib|vcruntime|msvcp/i.test(l))
+      if (leaked.length > 0) {
+        throw new Error(
+          `[verify-sidecar] RDP sidecar links non-redistributable DLLs:\n  ${leaked.join('\n  ')}\n` +
+            `Rebuild static: vcpkg install freerdp:x64-windows-static + the static CRT (see CMakeLists.txt).`,
+        )
+      }
+      console.log('[verify-sidecar] Windows RDP sidecar is self-contained ✓')
+    } catch (err) {
+      if (err.message && err.message.startsWith('[verify-sidecar]')) throw err
+      console.log('[verify-sidecar] Windows RDP sidecar present (dumpbin unavailable, skipped dep scan) ✓')
+    }
+    return
+  }
+
+  // Linux sidecar is a separate build (not yet produced); nothing to verify
+  // until extraResources ships it for that platform.
   console.log(`[verify-sidecar] no sidecar check for ${platform} (not bundled yet)`)
 }
