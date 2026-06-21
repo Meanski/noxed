@@ -179,6 +179,23 @@ jobs:
             Pop-Location
           }
 
+      # Always expose the built installers on the run itself so branch/dispatch
+      # builds are downloadable for testing without cutting a release. Grab them
+      # from the run's "Artifacts" section (Actions tab → this run).
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: noxed-${{ matrix.os }}
+          path: |
+            dist/*.dmg
+            dist/*.zip
+            dist/*.exe
+            dist/*.AppImage
+            dist/*.deb
+            native/rdp-spike/rdp-sidecar.exe
+          if-no-files-found: ignore
+          retention-days: 7
+
       # Only publish on a real tag push. workflow_dispatch on a branch still runs
       # the full build (useful for verifying the sidecars) but skips publishing.
       - name: Attach artifacts to release
