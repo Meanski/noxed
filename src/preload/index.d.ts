@@ -178,6 +178,7 @@ declare global {
       rdp: {
         connect: (config: { host: string; port?: number; username: string; password: string; width?: number; height?: number }) => Promise<string>
         disconnect: (id: string) => Promise<void>
+        input: (id: string, type: number, flags: number, a: number, b: number) => void
         onFrame: (cb: (id: string, width: number, height: number, pixels: Uint8Array) => void) => () => void
         onClose: (cb: (id: string, error: string | null) => void) => () => void
       }

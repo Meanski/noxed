@@ -292,6 +292,9 @@ contextBridge.exposeInMainWorld('api', {
     connect: (config: { host: string; port?: number; username: string; password: string; width?: number; height?: number }) =>
       ipcRenderer.invoke('rdp:connect', config),
     disconnect: (id: string) => ipcRenderer.invoke('rdp:disconnect', id),
+    // Fire-and-forget input. type: 1=mouse, 2=scancode key, 3=unicode key.
+    input: (id: string, type: number, flags: number, a: number, b: number) =>
+      ipcRenderer.send('rdp:input', id, type, flags, a, b),
     onFrame: (cb: (id: string, width: number, height: number, pixels: Uint8Array) => void) => {
       const handler = (_e: any, id: string, width: number, height: number, pixels: Uint8Array) =>
         cb(id, width, height, pixels)
