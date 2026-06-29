@@ -138,16 +138,12 @@ export default function App() {
     return () => offs.forEach(off => off())
   }, [])
 
-  // Notify when an auto-update has downloaded and is ready to install (it also
-  // installs on next quit). The Settings › About tab has the "Restart" button.
+  // Mirror auto-updater status into the store so the top-bar pill and Settings
+  // both react to it. The startup check is lightweight (manifest only) — nothing
+  // downloads until the user clicks the pill / "Download" in Settings.
   useEffect(() => {
     return window.api.updater.onStatus((status) => {
-      if (status.state === 'downloaded') {
-        useAppStore.getState().addNotification({
-          type: 'success',
-          message: `Update v${status.version} ready — restart from Settings › About to install`,
-        })
-      }
+      useAppStore.getState().setUpdateStatus(status)
     })
   }, [])
 

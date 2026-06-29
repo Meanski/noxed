@@ -3,7 +3,7 @@ import {
   Settings2, Shield, Terminal, Info, ShieldCheck, Trash2,
   AlertTriangle, Minus, Plus, ChevronRight, Eye, EyeOff,
   Fingerprint, Hash, KeyRound, ShieldOff, Upload, Download,
-  RefreshCw, CheckCircle2,
+  RefreshCw, CheckCircle2, RotateCw,
 } from 'lucide-react'
 import { useAppStore } from '../../store'
 
@@ -561,47 +561,18 @@ function TerminalSettings() {
 }
 
 /* ── About settings ──────────────────────────────────────────────────────── */
-type UpdaterStatus =
-  | { state: 'checking' }
-  | { state: 'available'; version: string }
-  | { state: 'not-available'; version: string }
-  | { state: 'downloading'; percent: number }
-  | { state: 'downloaded'; version: string }
-  | { state: 'error'; message: string }
-
 function AboutSettings() {
+  const status = useAppStore(s => s.updateStatus)
   const [version, setVersion] = useState('…')
-  const [status, setStatus] = useState<UpdaterStatus | null>(null)
-  const [checking, setChecking] = useState(false)
 
-  useEffect(() => {
-    window.api.updater.version().then(setVersion)
-    return window.api.updater.onStatus((s: UpdaterStatus) => {
-      setStatus(s)
-      // The check is "done" once we get any terminal-ish state back
-      if (s.state !== 'checking' && s.state !== 'available' && s.state !== 'downloading') {
-        setChecking(false)
-      }
-    })
-  }, [])
+  useEffect(() => { window.api.updater.version().then(setVersion) }, [])
 
-  const check = async () => {
-    setChecking(true)
-    setStatus({ state: 'checking' })
-    const res = await window.api.updater.check()
-    if (res && typeof res === 'object' && 'state' in res && res.state === 'error') {
-      setStatus(res as UpdaterStatus)
-      setChecking(false)
-    }
-  }
-
-  const busy = checking || status?.state === 'downloading' || status?.state === 'available'
-  const downloaded = status?.state === 'downloaded'
+  const busy = status?.state === 'checking' || status?.state === 'downloading'
 
   const statusText = (() => {
     switch (status?.state) {
       case 'checking': return 'Checking for updates…'
-      case 'available': return `Update found — downloading v${status.version}…`
+      case 'available': return `Version ${status.version} is available`
       case 'downloading': return `Downloading update… ${status.percent}%`
       case 'downloaded': return `Update v${status.version} is ready to install`
       case 'not-available': return "You're on the latest version"
@@ -613,8 +584,53 @@ function AboutSettings() {
   const statusColor =
     status?.state === 'error' ? '#EF4444'
     : status?.state === 'not-available' ? '#10B981'
-    : status?.state === 'downloaded' ? '#3B5CCC'
+    : status?.state === 'available' || status?.state === 'downloaded' ? '#3B5CCC'
     : 'var(--nox-text-2)'
+
+  // Primary action depends on where we are: download is opt-in, not automatic.
+  const action = (() => {
+    if (status?.state === 'downloaded') {
+      return (
+        <button
+          onClick={() => window.api.updater.quitAndInstall()}
+          className="flex items-center gap-1.5 rounded-md px-3 py-1.5 font-['Inter'] text-[12px] font-medium text-white transition-colors"
+          style={{ background: '#3B5CCC' }}
+          onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#2A4299' }}
+          onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = '#3B5CCC' }}
+        >
+          <RotateCw className="w-3.5 h-3.5" />
+          Restart &amp; Install
+        </button>
+      )
+    }
+    if (status?.state === 'available') {
+      return (
+        <button
+          onClick={() => window.api.updater.download()}
+          className="flex items-center gap-1.5 rounded-md px-3 py-1.5 font-['Inter'] text-[12px] font-medium text-white transition-colors"
+          style={{ background: '#10B981' }}
+          onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#059669' }}
+          onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = '#10B981' }}
+        >
+          <Download className="w-3.5 h-3.5" />
+          Download v{status.version}
+        </button>
+      )
+    }
+    return (
+      <button
+        onClick={() => window.api.updater.check()}
+        disabled={busy}
+        className="flex items-center gap-1.5 px-3 py-1.5 rounded-md font-['Inter'] text-[12px] transition-colors disabled:opacity-50"
+        style={{ border: '1px solid var(--nox-border)', color: 'var(--nox-text)' }}
+        onMouseEnter={e => { if (!busy) (e.currentTarget as HTMLElement).style.background = 'var(--nox-hover)' }}
+        onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent' }}
+      >
+        <RefreshCw className={`w-3.5 h-3.5 ${busy ? 'animate-spin' : ''}`} style={{ color: 'var(--nox-text-2)' }} />
+        Check for Updates
+      </button>
+    )
+  })()
 
   return (
     <div className="p-6 max-w-2xl">
@@ -636,31 +652,8 @@ function AboutSettings() {
             </span>
           </Row>
           <Divider />
-          <Row label="Updates" description="Check GitHub for a newer release and install it">
-            {downloaded ? (
-              <button
-                onClick={() => window.api.updater.quitAndInstall()}
-                className="flex items-center gap-1.5 rounded-md px-3 py-1.5 font-['Inter'] text-[12px] font-medium text-white transition-colors"
-                style={{ background: '#3B5CCC' }}
-                onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#2A4299' }}
-                onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = '#3B5CCC' }}
-              >
-                <Download className="w-3.5 h-3.5" />
-                Restart &amp; Install
-              </button>
-            ) : (
-              <button
-                onClick={check}
-                disabled={busy}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-md font-['Inter'] text-[12px] transition-colors disabled:opacity-50"
-                style={{ border: '1px solid var(--nox-border)', color: 'var(--nox-text)' }}
-                onMouseEnter={e => { if (!busy) (e.currentTarget as HTMLElement).style.background = 'var(--nox-hover)' }}
-                onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent' }}
-              >
-                <RefreshCw className={`w-3.5 h-3.5 ${busy ? 'animate-spin' : ''}`} style={{ color: 'var(--nox-text-2)' }} />
-                Check for Updates
-              </button>
-            )}
+          <Row label="Updates" description="Check GitHub for a newer release, then download and install it">
+            {action}
           </Row>
           {statusText && (
             <div className="flex items-center gap-2">

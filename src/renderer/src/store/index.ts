@@ -113,6 +113,16 @@ export interface ServerMetrics {
   cpuHistory?: number[]
 }
 
+// ── Auto-updater ──────────────────────────────────────────────────────────────
+
+export type UpdaterStatus =
+  | { state: 'checking' }
+  | { state: 'available'; version: string }
+  | { state: 'not-available'; version: string }
+  | { state: 'downloading'; percent: number }
+  | { state: 'downloaded'; version: string }
+  | { state: 'error'; message: string }
+
 // ── Notifications ─────────────────────────────────────────────────────────────
 
 export interface AppNotification {
@@ -145,6 +155,8 @@ interface AppState {
   groupColors: Record<string, string>
   // Pre-selected project group for the next "New Connection" modal
   pendingConnectionGroup: string | null
+  // Latest auto-updater status (null until the first check reports in)
+  updateStatus: UpdaterStatus | null
 
   setSessions: (sessions: Session[]) => void
   addSession: (session: Session) => void
@@ -182,6 +194,7 @@ interface AppState {
   setGroupColor: (group: string, color: string | null) => void
   setPendingConnectionGroup: (group: string | null) => void
   setBroadcastEnabled: (v: boolean) => void
+  setUpdateStatus: (status: UpdaterStatus | null) => void
   setServerMetrics: (sessionId: string, metrics: ServerMetrics) => void
   addNotification: (n: Omit<AppNotification, 'id' | 'createdAt'>) => void
   dismissNotification: (id: string) => void
@@ -235,6 +248,7 @@ export const useAppStore = create<AppState>((set) => ({
   focusedPaneId: null,
   groupColors: {},
   pendingConnectionGroup: null,
+  updateStatus: null,
 
   setSessions: (sessions) => set({ sessions }),
   addSession: (session) => set((s) => ({ sessions: [...s.sessions, session] })),
@@ -454,6 +468,7 @@ export const useAppStore = create<AppState>((set) => ({
       return { groupColors }
     }),
   setBroadcastEnabled: (v) => set({ broadcastEnabled: v }),
+  setUpdateStatus: (status) => set({ updateStatus: status }),
   setServerMetrics: (sessionId, metrics) =>
     set((s) => {
       const cpuHistory = [...(s.serverMetrics[sessionId]?.cpuHistory ?? []), metrics.cpu].slice(-30)

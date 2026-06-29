@@ -22,9 +22,11 @@ export function registerUpdaterHandlers(): void {
   if (wired) return
   wired = true
 
-  // Download in the background as soon as an update is found, and stage it so
-  // it installs on the next quit even if the user never clicks "Restart".
-  autoUpdater.autoDownload = true
+  // Check only — do NOT pull the (~100 MB) package automatically. The startup
+  // check just reads the tiny latest-mac.yml manifest and emits update-available
+  // with the version; the actual download happens when the user opts in via
+  // updater:download. Once downloaded, stage it to install on next quit.
+  autoUpdater.autoDownload = false
   autoUpdater.autoInstallOnAppQuit = true
 
   autoUpdater.on('checking-for-update', () => broadcast({ state: 'checking' }))
@@ -48,6 +50,17 @@ export function registerUpdaterHandlers(): void {
       return { ok: true }
     } catch (err: any) {
       const status: UpdaterStatus = { state: 'error', message: err?.message ?? 'Update check failed' }
+      broadcast(status)
+      return status
+    }
+  })
+
+  ipcMain.handle('updater:download', async () => {
+    try {
+      await autoUpdater.downloadUpdate()
+      return { ok: true }
+    } catch (err: any) {
+      const status: UpdaterStatus = { state: 'error', message: err?.message ?? 'Download failed' }
       broadcast(status)
       return status
     }

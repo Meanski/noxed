@@ -193,6 +193,7 @@ declare global {
       updater: {
         version: () => Promise<string>
         check: () => Promise<{ ok: true } | UpdaterStatus>
+        download: () => Promise<{ ok: true } | UpdaterStatus>
         quitAndInstall: () => Promise<void>
         onStatus: (cb: (status: UpdaterStatus) => void) => () => void
       }

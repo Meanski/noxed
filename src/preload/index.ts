@@ -327,6 +327,7 @@ contextBridge.exposeInMainWorld('api', {
   updater: {
     version: () => ipcRenderer.invoke('updater:version') as Promise<string>,
     check: () => ipcRenderer.invoke('updater:check'),
+    download: () => ipcRenderer.invoke('updater:download'),
     quitAndInstall: () => ipcRenderer.invoke('updater:quitAndInstall'),
     onStatus: (cb: (status: any) => void) => {
       const handler = (_e: any, status: any) => cb(status)

@@ -1,4 +1,4 @@
-import { Moon, Sun, Plus, Search } from 'lucide-react'
+import { Moon, Sun, Plus, Search, Download, RefreshCw, RotateCw } from 'lucide-react'
 import { useAppStore } from '../../store'
 
 const nodrag: React.CSSProperties = { WebkitAppRegion: 'no-drag' } as any
@@ -83,6 +83,8 @@ export default function TopBar() {
 
       {/* Actions */}
       <div className="flex items-center gap-2 pr-4 flex-shrink-0">
+        <UpdatePill />
+
         <button
           onClick={() => setShowAddConnection(true)}
           className="flex items-center gap-1.5 rounded-md px-3 py-1.5 font-['Inter'] text-[12px] font-medium text-white transition-colors"
@@ -115,4 +117,59 @@ export default function TopBar() {
       </div>
     </div>
   )
+}
+
+/* ── Update pill ─────────────────────────────────────────────────────────────
+   Persistent indicator driven by the startup (and manual) update check. The
+   check only reads the manifest; clicking "Update available" is what starts the
+   download. Stays put until acted on, so it can't be missed like a toast. */
+function UpdatePill() {
+  const status = useAppStore(s => s.updateStatus)
+  if (!status) return null
+
+  if (status.state === 'available') {
+    return (
+      <button
+        onClick={() => window.api.updater.download()}
+        title={`Version ${status.version} is available — click to download`}
+        className="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 font-['Inter'] text-[12px] font-medium text-white transition-colors"
+        style={{ ...nodrag, background: '#10B981' }}
+        onMouseEnter={e => { e.currentTarget.style.background = '#059669' }}
+        onMouseLeave={e => { e.currentTarget.style.background = '#10B981' }}
+      >
+        <Download className="w-3.5 h-3.5" />
+        Update available
+      </button>
+    )
+  }
+
+  if (status.state === 'downloading') {
+    return (
+      <div
+        className="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 font-['Inter'] text-[12px]"
+        style={{ ...nodrag, color: 'var(--nox-text-2)', border: '1px solid var(--nox-border)' }}
+      >
+        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+        Updating… {status.percent}%
+      </div>
+    )
+  }
+
+  if (status.state === 'downloaded') {
+    return (
+      <button
+        onClick={() => window.api.updater.quitAndInstall()}
+        title={`Version ${status.version} downloaded — restart to install`}
+        className="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 font-['Inter'] text-[12px] font-medium text-white transition-colors"
+        style={{ ...nodrag, background: '#3B5CCC' }}
+        onMouseEnter={e => { e.currentTarget.style.background = '#2A4299' }}
+        onMouseLeave={e => { e.currentTarget.style.background = '#3B5CCC' }}
+      >
+        <RotateCw className="w-3.5 h-3.5" />
+        Restart to update
+      </button>
+    )
+  }
+
+  return null
 }
