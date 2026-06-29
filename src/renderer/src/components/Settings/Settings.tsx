@@ -3,6 +3,7 @@ import {
   Settings2, Shield, Terminal, Info, ShieldCheck, Trash2,
   AlertTriangle, Minus, Plus, ChevronRight, Eye, EyeOff,
   Fingerprint, Hash, KeyRound, ShieldOff, Upload, Download,
+  RefreshCw, CheckCircle2,
 } from 'lucide-react'
 import { useAppStore } from '../../store'
 
@@ -560,7 +561,61 @@ function TerminalSettings() {
 }
 
 /* ── About settings ──────────────────────────────────────────────────────── */
+type UpdaterStatus =
+  | { state: 'checking' }
+  | { state: 'available'; version: string }
+  | { state: 'not-available'; version: string }
+  | { state: 'downloading'; percent: number }
+  | { state: 'downloaded'; version: string }
+  | { state: 'error'; message: string }
+
 function AboutSettings() {
+  const [version, setVersion] = useState('…')
+  const [status, setStatus] = useState<UpdaterStatus | null>(null)
+  const [checking, setChecking] = useState(false)
+
+  useEffect(() => {
+    window.api.updater.version().then(setVersion)
+    return window.api.updater.onStatus((s: UpdaterStatus) => {
+      setStatus(s)
+      // The check is "done" once we get any terminal-ish state back
+      if (s.state !== 'checking' && s.state !== 'available' && s.state !== 'downloading') {
+        setChecking(false)
+      }
+    })
+  }, [])
+
+  const check = async () => {
+    setChecking(true)
+    setStatus({ state: 'checking' })
+    const res = await window.api.updater.check()
+    if (res && typeof res === 'object' && 'state' in res && res.state === 'error') {
+      setStatus(res as UpdaterStatus)
+      setChecking(false)
+    }
+  }
+
+  const busy = checking || status?.state === 'downloading' || status?.state === 'available'
+  const downloaded = status?.state === 'downloaded'
+
+  const statusText = (() => {
+    switch (status?.state) {
+      case 'checking': return 'Checking for updates…'
+      case 'available': return `Update found — downloading v${status.version}…`
+      case 'downloading': return `Downloading update… ${status.percent}%`
+      case 'downloaded': return `Update v${status.version} is ready to install`
+      case 'not-available': return "You're on the latest version"
+      case 'error': return status.message
+      default: return null
+    }
+  })()
+
+  const statusColor =
+    status?.state === 'error' ? '#EF4444'
+    : status?.state === 'not-available' ? '#10B981'
+    : status?.state === 'downloaded' ? '#3B5CCC'
+    : 'var(--nox-text-2)'
+
   return (
     <div className="p-6 max-w-2xl">
       <div className="mb-6">
@@ -570,30 +625,65 @@ function AboutSettings() {
         </p>
       </div>
 
-      <div
-        className="rounded-md p-5 space-y-4"
-        style={{ background: 'var(--nox-shell)', border: '1px solid var(--nox-border)' }}
-      >
-        <Row label="Application">
-          <span className="font-['Inter'] text-[12.5px] font-medium" style={{ color: 'var(--nox-text)' }}>noxed</span>
-        </Row>
-        <Divider />
-        <Row label="Version">
-          <span
-            className="font-['JetBrains_Mono'] text-[12px] px-2.5 py-1 rounded"
-            style={{ color: 'var(--nox-text-2)', background: 'var(--nox-sidebar)' }}
-          >
-            1.0.0
-          </span>
-        </Row>
-        <Divider />
-        <Row label="Platform">
-          <span className="font-['Inter'] text-[12px]" style={{ color: 'var(--nox-text-2)' }}>Electron + React</span>
-        </Row>
-        <Divider />
-        <Row label="License">
-          <span className="font-['Inter'] text-[12px]" style={{ color: 'var(--nox-text-2)' }}>MIT</span>
-        </Row>
+      <div className="space-y-6">
+        <Card label="Software Update">
+          <Row label="Version" description="The version of noxed you're running">
+            <span
+              className="font-['JetBrains_Mono'] text-[12px] px-2.5 py-1 rounded"
+              style={{ color: 'var(--nox-text-2)', background: 'var(--nox-sidebar)' }}
+            >
+              {version}
+            </span>
+          </Row>
+          <Divider />
+          <Row label="Updates" description="Check GitHub for a newer release and install it">
+            {downloaded ? (
+              <button
+                onClick={() => window.api.updater.quitAndInstall()}
+                className="flex items-center gap-1.5 rounded-md px-3 py-1.5 font-['Inter'] text-[12px] font-medium text-white transition-colors"
+                style={{ background: '#3B5CCC' }}
+                onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#2A4299' }}
+                onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = '#3B5CCC' }}
+              >
+                <Download className="w-3.5 h-3.5" />
+                Restart &amp; Install
+              </button>
+            ) : (
+              <button
+                onClick={check}
+                disabled={busy}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-md font-['Inter'] text-[12px] transition-colors disabled:opacity-50"
+                style={{ border: '1px solid var(--nox-border)', color: 'var(--nox-text)' }}
+                onMouseEnter={e => { if (!busy) (e.currentTarget as HTMLElement).style.background = 'var(--nox-hover)' }}
+                onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent' }}
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${busy ? 'animate-spin' : ''}`} style={{ color: 'var(--nox-text-2)' }} />
+                Check for Updates
+              </button>
+            )}
+          </Row>
+          {statusText && (
+            <div className="flex items-center gap-2">
+              {status?.state === 'not-available' && <CheckCircle2 className="w-3.5 h-3.5 flex-shrink-0" style={{ color: '#10B981' }} />}
+              {status?.state === 'error' && <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" style={{ color: '#EF4444' }} />}
+              <p className="font-['Inter'] text-[11.5px]" style={{ color: statusColor }}>{statusText}</p>
+            </div>
+          )}
+        </Card>
+
+        <Card label="Application">
+          <Row label="Application">
+            <span className="font-['Inter'] text-[12.5px] font-medium" style={{ color: 'var(--nox-text)' }}>noxed</span>
+          </Row>
+          <Divider />
+          <Row label="Platform">
+            <span className="font-['Inter'] text-[12px]" style={{ color: 'var(--nox-text-2)' }}>Electron + React</span>
+          </Row>
+          <Divider />
+          <Row label="License">
+            <span className="font-['Inter'] text-[12px]" style={{ color: 'var(--nox-text-2)' }}>MIT</span>
+          </Row>
+        </Card>
       </div>
     </div>
   )

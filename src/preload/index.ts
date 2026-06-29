@@ -322,4 +322,16 @@ contextBridge.exposeInMainWorld('api', {
       return () => ipcRenderer.off(channel, handler)
     },
   },
+
+  // Auto-updater (electron-updater over GitHub Releases)
+  updater: {
+    version: () => ipcRenderer.invoke('updater:version') as Promise<string>,
+    check: () => ipcRenderer.invoke('updater:check'),
+    quitAndInstall: () => ipcRenderer.invoke('updater:quitAndInstall'),
+    onStatus: (cb: (status: any) => void) => {
+      const handler = (_e: any, status: any) => cb(status)
+      ipcRenderer.on('updater:status', handler)
+      return () => ipcRenderer.off('updater:status', handler)
+    },
+  },
 })

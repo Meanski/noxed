@@ -1,5 +1,13 @@
 appId: app.noxed
 productName: noxed
+# Auto-update: electron-updater reads this provider from the app-update.yml that
+# electron-builder bakes into the package, and checks GitHub Releases for newer
+# versions. The release workflow uploads the generated latest*.yml manifests
+# (and .blockmap files) alongside the installers so the updater can find them.
+publish:
+  provider: github
+  owner: Meanski
+  repo: noxed
 directories:
   buildResources: build
   output: dist

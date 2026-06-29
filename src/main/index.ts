@@ -31,6 +31,7 @@ import { registerRdpHandlers, disposeRdpSessionsForSender } from './ipc/rdp'
 import { isAllowedKeyPath } from './ipc/security'
 import { ValidationError } from './ipc/errors'
 import { buildAppMenu } from './menu'
+import { registerUpdaterHandlers, checkForUpdatesOnStartup } from './updater'
 
 function createWindow(): void {
   const win = new BrowserWindow({
@@ -141,6 +142,7 @@ app.whenReady().then(() => {
   registerDatabaseHandlers()
   registerLocalFsHandlers()
   registerRdpHandlers()
+  registerUpdaterHandlers()
 
   ipcMain.handle('fs:readFile', (_e, filePath: unknown) => {
     if (typeof filePath !== 'string') throw new ValidationError('Path is required')
@@ -150,6 +152,7 @@ app.whenReady().then(() => {
   })
 
   createWindow()
+  checkForUpdatesOnStartup()
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()

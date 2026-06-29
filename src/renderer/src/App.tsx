@@ -138,6 +138,19 @@ export default function App() {
     return () => offs.forEach(off => off())
   }, [])
 
+  // Notify when an auto-update has downloaded and is ready to install (it also
+  // installs on next quit). The Settings › About tab has the "Restart" button.
+  useEffect(() => {
+    return window.api.updater.onStatus((status) => {
+      if (status.state === 'downloaded') {
+        useAppStore.getState().addNotification({
+          type: 'success',
+          message: `Update v${status.version} ready — restart from Settings › About to install`,
+        })
+      }
+    })
+  }, [])
+
   return (
     <div className="flex flex-col h-full overflow-hidden select-none" style={{ background: 'var(--nox-bg)' }}>
       {isLocked && <UnlockScreen />}

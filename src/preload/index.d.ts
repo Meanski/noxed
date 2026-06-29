@@ -190,6 +190,20 @@ declare global {
           cb: () => void,
         ) => () => void
       }
+      updater: {
+        version: () => Promise<string>
+        check: () => Promise<{ ok: true } | UpdaterStatus>
+        quitAndInstall: () => Promise<void>
+        onStatus: (cb: (status: UpdaterStatus) => void) => () => void
+      }
     }
   }
 }
+
+type UpdaterStatus =
+  | { state: 'checking' }
+  | { state: 'available'; version: string }
+  | { state: 'not-available'; version: string }
+  | { state: 'downloading'; percent: number }
+  | { state: 'downloaded'; version: string }
+  | { state: 'error'; message: string }
