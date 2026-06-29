@@ -246,6 +246,38 @@ describe('Zustand Store', () => {
       expect(useAppStore.getState().tabs).toHaveLength(2)
     })
 
+    it('reorderTabs moves a tab to the target position', () => {
+      useAppStore.getState().openTab(makeSession({ id: 's1' }))
+      useAppStore.getState().openTab(makeSession({ id: 's2' }))
+      useAppStore.getState().openTab(makeSession({ id: 's3' }))
+      const [t1, t2, t3] = useAppStore.getState().tabs
+      // Drag the first tab onto the third
+      useAppStore.getState().reorderTabs(t1.id, t3.id)
+      expect(useAppStore.getState().tabs.map(t => t.id)).toEqual([t2.id, t3.id, t1.id])
+    })
+
+    it('reorderTabs keeps split panes attached to their parent', () => {
+      useAppStore.getState().openTab(makeSession({ id: 's1' }))
+      const parentId = useAppStore.getState().activeTabId!
+      useAppStore.getState().openTab(makeSession({ id: 's2' }))
+      const secondId = useAppStore.getState().activeTabId!
+      useAppStore.getState().splitTab(parentId, makeSession({ id: 's3' }))
+      useAppStore.getState().reorderTabs(parentId, secondId)
+      const { tabs } = useAppStore.getState()
+      const pane = tabs.find(t => t.paneOf === parentId)!
+      // Pane still references its parent and parent now sits after the second tab
+      expect(tabs.filter(t => !t.paneOf).map(t => t.id)).toEqual([secondId, parentId])
+      expect(pane.paneOf).toBe(parentId)
+    })
+
+    it('reorderTabs ignores moves involving the dashboard', () => {
+      useAppStore.getState().openDashboardTab()
+      useAppStore.getState().openTab(makeSession({ id: 's1' }))
+      const [dash, t1] = useAppStore.getState().tabs
+      useAppStore.getState().reorderTabs(dash.id, t1.id)
+      expect(useAppStore.getState().tabs.map(t => t.id)).toEqual([dash.id, t1.id])
+    })
+
     it('openRedisTab creates a redis tab', () => {
       const session = makeSession({ id: 'r1', type: 'redis' })
       useAppStore.getState().openRedisTab(session)

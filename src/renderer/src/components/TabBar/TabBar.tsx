@@ -3,9 +3,11 @@ import { LayoutDashboard, List, Settings, Terminal, Boxes, Database, FolderOpen,
 import { useAppStore, Tab } from '../../store'
 
 export default function TabBar() {
-  const { tabs, activeTabId, setActiveTab, closeTab, setShowAddConnection } = useAppStore()
+  const { tabs, activeTabId, setActiveTab, closeTab, reorderTabs, setShowCommandPalette } = useAppStore()
   const confirmCloseRef = useRef(true)
   const [pendingCloseId, setPendingCloseId] = useState<string | null>(null)
+  const [dragId, setDragId] = useState<string | null>(null)
+  const [dragOverId, setDragOverId] = useState<string | null>(null)
 
   useEffect(() => {
     window.api.settings.get().then((cfg: any) => {
@@ -37,19 +39,38 @@ export default function TabBar() {
         }}
       >
         <div className="flex items-stretch flex-1 min-w-0 no-drag overflow-x-hidden">
-          {tabs.filter(tab => !tab.paneOf).map(tab => (
-            <TabPill
-              key={tab.id}
-              tab={tab}
-              active={tab.id === activeTabId}
-              onActivate={() => setActiveTab(tab.id)}
-              onClose={e => handleClose(e, tab)}
-            />
-          ))}
+          {tabs.filter(tab => !tab.paneOf).map(tab => {
+            const draggable = tab.view !== 'dashboard'
+            return (
+              <TabPill
+                key={tab.id}
+                tab={tab}
+                active={tab.id === activeTabId}
+                draggable={draggable}
+                isDragging={dragId === tab.id}
+                isDropTarget={dragOverId === tab.id && dragId !== tab.id}
+                onActivate={() => setActiveTab(tab.id)}
+                onClose={e => handleClose(e, tab)}
+                onDragStart={() => setDragId(tab.id)}
+                onDragEnd={() => { setDragId(null); setDragOverId(null) }}
+                onDragOver={e => {
+                  // Dashboard is pinned — never a drop target
+                  if (!dragId || dragId === tab.id || tab.view === 'dashboard') return
+                  e.preventDefault()
+                  setDragOverId(tab.id)
+                }}
+                onDrop={() => {
+                  if (dragId && tab.view !== 'dashboard') reorderTabs(dragId, tab.id)
+                  setDragId(null)
+                  setDragOverId(null)
+                }}
+              />
+            )
+          })}
 
           <button
-            onClick={() => setShowAddConnection(true)}
-            title="New tab (⌘T)"
+            onClick={() => setShowCommandPalette(true)}
+            title="Open connection (⌘T)"
             className="flex items-center justify-center w-8 h-full flex-shrink-0 transition-colors"
             style={{ color: 'var(--nox-text-3)' }}
             onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = 'var(--nox-text)'; (e.currentTarget as HTMLElement).style.background = 'var(--nox-hover)' }}
@@ -61,8 +82,8 @@ export default function TabBar() {
 
         <div
           className="flex-1"
-          onDoubleClick={() => setShowAddConnection(true)}
-          title="Double-click to add connection"
+          onDoubleClick={() => setShowCommandPalette(true)}
+          title="Double-click to open a connection"
         />
       </div>
 
@@ -138,23 +159,37 @@ function tabIcon(view: Tab['view'], active: boolean) {
   }
 }
 
-function TabPill({ tab, active, onActivate, onClose }: {
+function TabPill({ tab, active, draggable, isDragging, isDropTarget, onActivate, onClose, onDragStart, onDragEnd, onDragOver, onDrop }: {
   tab: Tab
   active: boolean
+  draggable: boolean
+  isDragging: boolean
+  isDropTarget: boolean
   onActivate: () => void
   onClose: (e: React.MouseEvent) => void
+  onDragStart: () => void
+  onDragEnd: () => void
+  onDragOver: (e: React.DragEvent) => void
+  onDrop: () => void
 }) {
   return (
     <button
       onClick={onActivate}
+      draggable={draggable}
+      onDragStart={onDragStart}
+      onDragEnd={onDragEnd}
+      onDragOver={onDragOver}
+      onDrop={onDrop}
       className="group relative flex items-center gap-1.5 px-3 h-full text-xs flex-shrink-0 max-w-[200px] transition-colors"
       style={{
         color: active ? 'var(--nox-text)' : 'var(--nox-text-2)',
         background: active ? 'var(--nox-bg)' : 'transparent',
         borderRight: '1px solid var(--nox-border)',
+        borderLeft: isDropTarget ? '2px solid #3B5CCC' : '2px solid transparent',
         borderBottom: active ? '2px solid #3B5CCC' : '2px solid transparent',
         marginBottom: active ? -1 : 0,
         fontWeight: active ? 500 : 400,
+        opacity: isDragging ? 0.4 : 1,
       }}
       onMouseEnter={e => { if (!active) (e.currentTarget as HTMLElement).style.background = 'var(--nox-sidebar)' }}
       onMouseLeave={e => { if (!active) (e.currentTarget as HTMLElement).style.background = 'transparent' }}

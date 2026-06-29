@@ -69,24 +69,30 @@ export default function CommandPalette({ onClose }: Props) {
       session: s,
     }))
 
+    // Surfaced as the first option so ⌘T → Enter opens a local shell instantly
+    const localTerminalCmd: CommandItem = {
+      kind: 'command',
+      id: 'new-local-terminal',
+      label: 'New Local Terminal',
+      description: 'Open a shell on this machine',
+      shortcut: '⌘`',
+      Icon: IconTerminal,
+      action: () => { onClose(); openLocalTerminalTab() },
+    }
+    const quickItems: CommandItem[] =
+      !q || `${localTerminalCmd.label} ${localTerminalCmd.description} shell`.toLowerCase().includes(q)
+        ? [localTerminalCmd]
+        : []
+
     const allCommands: CommandItem[] = [
       {
         kind: 'command',
         id: 'new-ssh',
         label: 'New SSH Session',
         description: 'Add a new server connection',
-        shortcut: '⌘T',
+        shortcut: '⌘N',
         Icon: IconPlus,
         action: () => { onClose(); setShowAddSession(true) },
-      },
-      {
-        kind: 'command',
-        id: 'new-local-terminal',
-        label: 'New Local Terminal',
-        description: 'Open a shell on this machine',
-        shortcut: '⌃`',
-        Icon: IconTerminal,
-        action: () => { onClose(); openLocalTerminalTab() },
       },
       {
         kind: 'command',
@@ -130,7 +136,7 @@ export default function CommandPalette({ onClose }: Props) {
       return c.label.toLowerCase().includes(q) || (c.description || '').toLowerCase().includes(q)
     })
 
-    return [...sessionItems, ...matchedCommands]
+    return [...quickItems, ...sessionItems, ...matchedCommands]
   }, [query, sessions, connectedIds, connectingIds, onClose, setShowAddSession, openTunnelsTab, openRunnerTab, openDockerTab, openDashboardTab, openLocalTerminalTab])
 
   useEffect(() => setSelectedIdx(0), [items.length])
@@ -178,6 +184,8 @@ export default function CommandPalette({ onClose }: Props) {
 
   const sessionItems = items.filter((i): i is SessionItem => i.kind === 'session')
   const commandItems = items.filter((i): i is CommandItem => i.kind === 'command')
+  const quickItems = commandItems.filter((i) => i.id === 'new-local-terminal')
+  const otherCommandItems = commandItems.filter((i) => i.id !== 'new-local-terminal')
   const connectedItems = sessionItems.filter((i) => connectedIds.has(i.session.id))
   const idleItems = sessionItems.filter((i) => !connectedIds.has(i.session.id))
   const showSectionLabels = !query.trim()
@@ -228,6 +236,25 @@ export default function CommandPalette({ onClose }: Props) {
             </div>
           )}
 
+          {quickItems.length > 0 && (
+            <>
+              {showSectionLabels && <SectionLabel>Quick actions</SectionLabel>}
+              {quickItems.map((item) => {
+                const globalIdx = items.indexOf(item)
+                return (
+                  <CommandRow
+                    key={item.id}
+                    ref={globalIdx === selectedIdx ? selectedRef : undefined}
+                    item={item}
+                    selected={globalIdx === selectedIdx}
+                    onHover={() => setSelectedIdx(globalIdx)}
+                    onClick={() => activate(item)}
+                  />
+                )
+              })}
+            </>
+          )}
+
           {connectedItems.length > 0 && (
             <>
               {showSectionLabels && <SectionLabel>Active</SectionLabel>}
@@ -270,10 +297,10 @@ export default function CommandPalette({ onClose }: Props) {
             </>
           )}
 
-          {commandItems.length > 0 && (
+          {otherCommandItems.length > 0 && (
             <>
               {showSectionLabels && <SectionLabel>Commands</SectionLabel>}
-              {commandItems.map((item) => {
+              {otherCommandItems.map((item) => {
                 const globalIdx = items.indexOf(item)
                 return (
                   <CommandRow

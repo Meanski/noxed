@@ -181,6 +181,15 @@ declare global {
         onFrame: (cb: (id: string, width: number, height: number, pixels: Uint8Array) => void) => () => void
         onClose: (cb: (id: string, error: string | null) => void) => () => void
       }
+      tabs: {
+        onCycle: (cb: (dir: 'next' | 'prev') => void) => () => void
+      }
+      menu: {
+        on: (
+          action: 'new-connection' | 'open-connection' | 'new-local-terminal' | 'close-tab',
+          cb: () => void,
+        ) => () => void
+      }
     }
   }
 }

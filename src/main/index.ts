@@ -30,6 +30,7 @@ import { registerLocalFsHandlers } from './ipc/localfs'
 import { registerRdpHandlers, disposeRdpSessionsForSender } from './ipc/rdp'
 import { isAllowedKeyPath } from './ipc/security'
 import { ValidationError } from './ipc/errors'
+import { buildAppMenu } from './menu'
 
 function createWindow(): void {
   const win = new BrowserWindow({
@@ -118,8 +119,12 @@ app.whenReady().then(() => {
   }
 
   app.on('browser-window-created', (_, window) => {
-    optimizer.watchWindowShortcuts(window)
+    // zoom: true lets Chromium handle ⌘+/⌘-/⌘0 natively; otherwise the helper
+    // blocks ⌘- (and ⌘Shift+= ) while plain ⌘= still zooms in — an asymmetry.
+    optimizer.watchWindowShortcuts(window, { zoom: true })
   })
+
+  buildAppMenu()
 
   registerKeychainHandlers()
   registerSessionHandlers()

@@ -16,7 +16,6 @@ export default function App() {
   const setSessions = useAppStore(s => s.setSessions)
   const tabs = useAppStore(s => s.tabs)
   const activeTabId = useAppStore(s => s.activeTabId)
-  const closeTab = useAppStore(s => s.closeTab)
   const setActiveTab = useAppStore(s => s.setActiveTab)
   const showAddSession = useAppStore(s => s.showAddSession)
   const setShowAddSession = useAppStore(s => s.setShowAddSession)
@@ -104,14 +103,8 @@ export default function App() {
         return
       }
       if (meta && e.key === 'k') { e.preventDefault(); setShowCommandPalette(!showCommandPalette); return }
-      if (meta && e.key === 't') { e.preventDefault(); setShowAddConnection(true); return }
-      // Ctrl+` opens a local shell, same as VS Code
-      if (e.ctrlKey && !e.metaKey && e.key === '`') {
-        e.preventDefault()
-        useAppStore.getState().openLocalTerminalTab()
-        return
-      }
-      if (meta && e.key === 'w') { e.preventDefault(); if (activeTabId) closeTab(activeTabId); return }
+      // ⌘N (new connection), ⌘T (open connection), ⌘` (local terminal) and ⌘W
+      // (close tab) are owned by the application menu — see src/main/menu.ts.
       if (meta && /^[1-9]$/.test(e.key)) {
         e.preventDefault()
         const tab = visibleTabs[parseInt(e.key) - 1]
@@ -121,6 +114,29 @@ export default function App() {
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
   }, [tabs, activeTabId, showCommandPalette, isLocked])
+
+  // Application-menu commands (File menu). Their accelerators (⌘N/⌘T/⌘`/⌘W)
+  // are handled by the native menu so macOS can't swallow them; here we route
+  // each forwarded command to the matching action. State read via getState so
+  // the listeners never need re-subscribing.
+  useEffect(() => {
+    const offs = [
+      window.api.menu.on('new-connection', () => {
+        if (!useAppStore.getState().isLocked) setShowAddConnection(true)
+      }),
+      window.api.menu.on('open-connection', () => {
+        if (!useAppStore.getState().isLocked) setShowCommandPalette(true)
+      }),
+      window.api.menu.on('new-local-terminal', () => {
+        if (!useAppStore.getState().isLocked) useAppStore.getState().openLocalTerminalTab()
+      }),
+      window.api.menu.on('close-tab', () => {
+        const s = useAppStore.getState()
+        if (!s.isLocked && s.activeTabId) s.closeTab(s.activeTabId)
+      }),
+    ]
+    return () => offs.forEach(off => off())
+  }, [])
 
   return (
     <div className="flex flex-col h-full overflow-hidden select-none" style={{ background: 'var(--nox-bg)' }}>

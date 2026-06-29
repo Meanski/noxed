@@ -312,4 +312,14 @@ contextBridge.exposeInMainWorld('api', {
       return () => ipcRenderer.off('tab:cycle', handler)
     },
   },
+
+  // Application-menu commands, forwarded from the main process
+  menu: {
+    on: (action: 'new-connection' | 'open-connection' | 'new-local-terminal' | 'close-tab', cb: () => void) => {
+      const channel = `menu:${action}`
+      const handler = () => cb()
+      ipcRenderer.on(channel, handler)
+      return () => ipcRenderer.off(channel, handler)
+    },
+  },
 })

@@ -164,6 +164,7 @@ interface AppState {
   openLocalTerminalTab: () => void
   closeTab: (tabId: string) => void
   setActiveTab: (tabId: string) => void
+  reorderTabs: (draggedId: string, targetId: string) => void
   splitTab: (parentTabId: string, session: Session) => void
   setFocusedPane: (tabId: string | null) => void
   updateTab: (tabId: string, data: Partial<Tab>) => void
@@ -366,6 +367,27 @@ export const useAppStore = create<AppState>((set) => ({
     }),
 
   setActiveTab: (tabId) => set({ activeTabId: tabId, focusedPaneId: null }),
+
+  // Reorder a top-level tab to the position of another. Split panes ride along
+  // with their parent; the dashboard is pinned (UI never makes it a drop target).
+  reorderTabs: (draggedId, targetId) =>
+    set((s) => {
+      if (draggedId === targetId) return {}
+      const visible = s.tabs.filter((t) => !t.paneOf)
+      const from = visible.findIndex((t) => t.id === draggedId)
+      const to = visible.findIndex((t) => t.id === targetId)
+      if (from === -1 || to === -1 || visible[from].view === 'dashboard') return {}
+      const reordered = [...visible]
+      const [moved] = reordered.splice(from, 1)
+      reordered.splice(to, 0, moved)
+      const panes = s.tabs.filter((t) => t.paneOf)
+      const result: Tab[] = []
+      for (const t of reordered) {
+        result.push(t)
+        for (const p of panes) if (p.paneOf === t.id) result.push(p)
+      }
+      return { tabs: result }
+    }),
 
   splitTab: (parentTabId, session) =>
     set((s) => {
