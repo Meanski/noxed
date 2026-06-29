@@ -1,7 +1,7 @@
 {
   "name": "noxed",
-  "version": "0.1.4",
-  "description": "SSH session manager, SFTP client, and Kubernetes dashboard",
+  "version": "0.1.5",
+  "description": "SSH session manager, SFTP client, DB viewer, and Kubernetes dashboard",
   "main": "./out/main/index.js",
   "author": {
     "name": "Sean Woodliffe",
