@@ -8,6 +8,24 @@ import ImportSshConfigModal from './ImportSshConfigModal'
 
 type FilterType = 'ssh' | 'sftp' | 'database' | 'kubernetes' | 'online' | 'offline'
 
+const typeColor: Record<string, string> = {
+  ssh: '#3B5CCC', sftp: '#EC4899', database: '#10B981', kubernetes: '#8B5CF6', redis: '#DC382D', rdp: '#06B6D4',
+}
+const typeLabel: Record<string, string> = {
+  ssh: 'SSH', sftp: 'SFTP', database: 'Database', kubernetes: 'Kubernetes', redis: 'Redis', rdp: 'Remote Desktop',
+}
+
+function TypeIcon({ type, ...props }: Readonly<{ type?: string; [k: string]: any }>) {
+  switch (type ?? 'ssh') {
+    case 'sftp': return <FolderOpen {...props} />
+    case 'database': return <Database {...props} />
+    case 'kubernetes': return <Boxes {...props} />
+    case 'redis': return <Layers {...props} />
+    case 'rdp': return <Monitor {...props} />
+    default: return <Terminal {...props} />
+  }
+}
+
 export default function ConnectionManager() {
   const { sessions, openTab, removeSession, setShowAddConnection, setEditingConnectionId } = useAppStore()
   const [search, setSearch] = useState('')
@@ -64,24 +82,6 @@ export default function ConnectionManager() {
   const handleConnect = (s: Session) => {
     if (s.type === 'kubernetes') return
     openTab(s)
-  }
-
-  const typeColor: Record<string, string> = {
-    ssh: '#3B5CCC', sftp: '#EC4899', database: '#10B981', kubernetes: '#8B5CF6', redis: '#DC382D', rdp: '#06B6D4',
-  }
-  const typeLabel: Record<string, string> = {
-    ssh: 'SSH', sftp: 'SFTP', database: 'Database', kubernetes: 'Kubernetes', redis: 'Redis', rdp: 'Remote Desktop',
-  }
-  const TypeIcon = ({ type, ...props }: { type?: string; [k: string]: any }) => {
-    const t = type ?? 'ssh'
-    switch (t) {
-      case 'sftp': return <FolderOpen {...props} />
-      case 'database': return <Database {...props} />
-      case 'kubernetes': return <Boxes {...props} />
-      case 'redis': return <Layers {...props} />
-      case 'rdp': return <Monitor {...props} />
-      default: return <Terminal {...props} />
-    }
   }
 
   return (

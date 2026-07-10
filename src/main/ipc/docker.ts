@@ -1,6 +1,6 @@
 import { ipcMain, IpcMainInvokeEvent, WebContents } from 'electron'
 import { ClientChannel } from 'ssh2'
-import { randomUUID } from 'crypto'
+import { randomUUID } from 'node:crypto'
 import { connectSessionClient, ManagedSshConnection } from './sshClients'
 import { ConnectionError, NotFoundError, OwnershipError, ValidationError, toMessage } from './errors'
 
@@ -60,6 +60,27 @@ export function parseJsonLines(output: string): Record<string, unknown>[] {
   return rows
 }
 
+// Wires a `docker logs -f` channel to the renderer and returns the stream id.
+function attachLogStream(sender: WebContents, stream: ClientChannel): string {
+  const logId = randomUUID()
+  logStreams.set(logId, { channel: stream, senderId: sender.id })
+
+  const send = (data: Buffer) => {
+    if (!sender.isDestroyed()) sender.send('docker:logChunk', logId, data.toString('utf8'))
+  }
+  stream.on('data', send)
+  stream.stderr.on('data', send)
+  stream.on('close', () => {
+    logStreams.delete(logId)
+    if (!sender.isDestroyed()) sender.send('docker:logEnd', logId, null)
+  })
+  stream.on('error', (e: unknown) => {
+    logStreams.delete(logId)
+    if (!sender.isDestroyed()) sender.send('docker:logEnd', logId, toMessage(e))
+  })
+  return logId
+}
+
 function requireSession(event: IpcMainInvokeEvent, rawId: unknown): DockerSession {
   if (typeof rawId !== 'string') throw new ValidationError('Invalid Docker session id')
   const entry = sessions.get(rawId)
@@ -75,15 +96,14 @@ function execCollect(entry: DockerSession, command: string): Promise<string> {
 
       let stdout = ''
       let stderr = ''
-      let truncated = false
       const timer = setTimeout(() => {
         stream.close()
         reject(new ConnectionError('Remote command timed out'))
       }, EXEC_TIMEOUT_MS)
 
       stream.on('data', (d: Buffer) => {
+        // Over-limit output is dropped; parseJsonLines skips the partial tail line.
         if (stdout.length < MAX_OUTPUT_BYTES) stdout += d.toString('utf8')
-        else truncated = true
       })
       stream.stderr.on('data', (d: Buffer) => {
         if (stderr.length < 16 * 1024) stderr += d.toString('utf8')
@@ -91,7 +111,7 @@ function execCollect(entry: DockerSession, command: string): Promise<string> {
       stream.on('close', (code: number | null) => {
         clearTimeout(timer)
         if (code === 0 || (code === null && stdout)) {
-          resolve(truncated ? stdout : stdout)
+          resolve(stdout)
         } else if (code === 127) {
           reject(new ConnectionError('Docker CLI not found on this host'))
         } else {
@@ -187,23 +207,7 @@ export function registerDockerHandlers(): void {
     return new Promise<string>((resolve, reject) => {
       entry.conn.client.exec(`docker logs --tail ${tail} -f ${container} 2>&1`, (err, stream) => {
         if (err) return reject(new ConnectionError(toMessage(err)))
-        const logId = randomUUID()
-        logStreams.set(logId, { channel: stream, senderId: event.sender.id })
-
-        const send = (data: Buffer) => {
-          if (!event.sender.isDestroyed()) event.sender.send('docker:logChunk', logId, data.toString('utf8'))
-        }
-        stream.on('data', send)
-        stream.stderr.on('data', send)
-        stream.on('close', () => {
-          logStreams.delete(logId)
-          if (!event.sender.isDestroyed()) event.sender.send('docker:logEnd', logId, null)
-        })
-        stream.on('error', (e: unknown) => {
-          logStreams.delete(logId)
-          if (!event.sender.isDestroyed()) event.sender.send('docker:logEnd', logId, toMessage(e))
-        })
-        resolve(logId)
+        resolve(attachLogStream(event.sender, stream))
       })
     })
   })

@@ -1,7 +1,7 @@
 import { ipcMain, dialog, BrowserWindow } from 'electron'
 import Store from 'electron-store'
-import { randomUUID } from 'crypto'
-import { readFile, writeFile } from 'fs/promises'
+import { randomUUID } from 'node:crypto'
+import { readFile, writeFile } from 'node:fs/promises'
 import { saveCredential, getCredential, deleteCredentials, isUnlocked } from './keychain'
 import { serializeSessions, parseSessionsExport, connectionDedupKey } from './sessionTransfer'
 

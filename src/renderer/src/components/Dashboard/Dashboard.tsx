@@ -4,7 +4,7 @@ import {
   LayoutGrid, Grid2x2, List,
 } from 'lucide-react'
 import { useAppStore, Session } from '../../store'
-import { groupColor } from '../../lib/colors'
+import { groupColor, metricColor } from '../../lib/colors'
 import { CompactServerCard, HealthCard, ServerListRow } from './ServerViews'
 import { ServerContextMenu } from '../ServerContextMenu'
 
@@ -138,7 +138,12 @@ export default function Dashboard() {
     ...projectGroupOrder.filter(g => allGroupNames.includes(g)),
     ...allGroupNames
       .filter(g => !projectGroupOrder.includes(g))
-      .sort((a, b) => (a === 'Ungrouped' ? 1 : b === 'Ungrouped' ? -1 : a.localeCompare(b))),
+      .sort((a, b) => {
+        // 'Ungrouped' always sinks to the bottom.
+        if (a === 'Ungrouped') return 1
+        if (b === 'Ungrouped') return -1
+        return a.localeCompare(b)
+      }),
   ]
 
   useEffect(() => {
@@ -313,7 +318,7 @@ export default function Dashboard() {
                         {connectedInGroup.length}/{groupSessions.length} connected
                       </span>
                       {avgCpu !== null && (
-                        <span className="font-['JetBrains_Mono'] text-[12px] flex-shrink-0" style={{ color: avgCpu >= 80 ? '#EF4444' : avgCpu >= 60 ? '#F59E0B' : '#10B981' }}>
+                        <span className="font-['JetBrains_Mono'] text-[12px] flex-shrink-0" style={{ color: metricColor(avgCpu) }}>
                           {avgCpu}% CPU
                         </span>
                       )}
@@ -418,7 +423,7 @@ export default function Dashboard() {
 }
 
 /* ── Empty state ─────────────────────────────────────────────────────────── */
-function EmptyDashboard({ onAdd }: { onAdd: () => void }) {
+function EmptyDashboard({ onAdd }: Readonly<{ onAdd: () => void }>) {
   return (
     <div className="h-full w-full flex items-center justify-center" style={{ background: 'var(--nox-bg)' }}>
       <div className="text-center max-w-sm">

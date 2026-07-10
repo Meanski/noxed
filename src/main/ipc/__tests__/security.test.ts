@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { homedir } from 'os'
-import { resolve, normalize } from 'path'
+import { homedir } from 'node:os'
+import { resolve, normalize } from 'node:path'
 
 // We test isLikelyTextFile directly (pure function, no FS dependency)
 import { isLikelyTextFile } from '../security'
@@ -39,70 +39,33 @@ function validateKeyPathLogic(rawPath: string): { ok: true; resolved: string } |
 
 describe('Security — path traversal protection', () => {
   describe('validateKeyPathLogic', () => {
-    it('allows ~/.ssh/id_rsa', () => {
+    it('resolves ~ to the home directory', () => {
       const result = validateKeyPathLogic('~/.ssh/id_rsa')
       expect(result.ok).toBe(true)
       if (result.ok) expect(result.resolved).toBe(resolve(SSH_DIR, 'id_rsa'))
     })
 
-    it('allows ~/.ssh/id_ed25519', () => {
-      const result = validateKeyPathLogic('~/.ssh/id_ed25519')
-      expect(result.ok).toBe(true)
+    it.each([
+      ['~/.ssh/id_rsa', 'ssh key by tilde path'],
+      ['~/.ssh/id_ed25519', 'ed25519 key'],
+      [`${home}/.ssh/my_key`, 'absolute path inside .ssh'],
+      ['~/.config/ssh/deploy_key', '~/.config/ssh/ path'],
+      ['~/.pem/server.pem', '~/.pem/ path'],
+    ])('allows %s (%s)', (path) => {
+      expect(validateKeyPathLogic(path).ok).toBe(true)
     })
 
-    it('allows absolute path inside .ssh', () => {
-      const result = validateKeyPathLogic(`${home}/.ssh/my_key`)
-      expect(result.ok).toBe(true)
-    })
-
-    it('allows ~/.config/ssh/ paths', () => {
-      const result = validateKeyPathLogic('~/.config/ssh/deploy_key')
-      expect(result.ok).toBe(true)
-    })
-
-    it('allows ~/.pem/ paths', () => {
-      const result = validateKeyPathLogic('~/.pem/server.pem')
-      expect(result.ok).toBe(true)
-    })
-
-    it('BLOCKS /etc/passwd', () => {
-      const result = validateKeyPathLogic('/etc/passwd')
-      expect(result.ok).toBe(false)
-    })
-
-    it('BLOCKS /etc/shadow', () => {
-      const result = validateKeyPathLogic('/etc/shadow')
-      expect(result.ok).toBe(false)
-    })
-
-    it('BLOCKS reading arbitrary home directory files', () => {
-      const result = validateKeyPathLogic('~/.env')
-      expect(result.ok).toBe(false)
-    })
-
-    it('BLOCKS path traversal via ../', () => {
-      const result = validateKeyPathLogic('~/.ssh/../../etc/passwd')
-      expect(result.ok).toBe(false)
-    })
-
-    it('BLOCKS path traversal via encoded sequences', () => {
-      const result = validateKeyPathLogic('~/.ssh/../.env')
-      expect(result.ok).toBe(false)
-    })
-
-    it('BLOCKS absolute paths outside allowed dirs', () => {
-      const result = validateKeyPathLogic('/tmp/evil_key')
-      expect(result.ok).toBe(false)
-    })
-
-    it('BLOCKS empty string', () => {
-      const result = validateKeyPathLogic('')
-      expect(result.ok).toBe(false)
-    })
-
-    it('BLOCKS null-byte injection', () => {
-      const result = validateKeyPathLogic('~/.ssh/id_rsa\0/../../etc/passwd')
-      expect(result.ok).toBe(false)
+    it.each([
+      ['/etc/passwd', 'system file'],
+      ['/etc/shadow', 'system file'],
+      ['~/.env', 'arbitrary home directory file'],
+      ['~/.ssh/../../etc/passwd', 'path traversal via ../'],
+      ['~/.ssh/../.env', 'path traversal to dotfile'],
+      ['/tmp/evil_key', 'absolute path outside allowed dirs'],
+      ['', 'empty string'],
+      ['~/.ssh/id_rsa\0/../../etc/passwd', 'null-byte injection'],
+    ])('BLOCKS %s (%s)', (path) => {
+      expect(validateKeyPathLogic(path).ok).toBe(false)
     })
 
     it('BLOCKS reading the .ssh directory itself (not a file)', () => {

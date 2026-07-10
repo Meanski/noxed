@@ -10,7 +10,24 @@ interface Props {
   onClose: () => void
 }
 
-export default function ResourceDetailModal({ context, namespace, kind, name, kubeconfigPath, onClose }: Props) {
+// Matches JSON tokens: strings (optionally key-position), keywords, numbers.
+const JSON_TOKEN_RE = /("(?:\\.|[^\\"])*"(?:\s*:)?|\b(?:true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+-]?\d+)?)/g
+
+// Simple JSON syntax coloring
+function colorize(raw: string): string {
+  return raw
+    .replace(JSON_TOKEN_RE, (match) => {
+      if (match.startsWith('"')) {
+        if (match.endsWith(':')) return `<span style="color:#9d6ff8">${match}</span>`
+        return `<span style="color:#10b981">${match}</span>`
+      }
+      if (match === 'true' || match === 'false') return `<span style="color:#06b6d4">${match}</span>`
+      if (match === 'null') return `<span style="color:#EF4444">${match}</span>`
+      return `<span style="color:#f59e0b">${match}</span>`
+    })
+}
+
+export default function ResourceDetailModal({ context, namespace, kind, name, kubeconfigPath, onClose }: Readonly<Props>) {
   const [json, setJson] = useState('')
   const [loading, setLoading] = useState(true)
   const [copied, setCopied] = useState(false)
@@ -33,20 +50,6 @@ export default function ResourceDetailModal({ context, namespace, kind, name, ku
     await navigator.clipboard.writeText(json)
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
-  }
-
-  // Simple JSON syntax coloring
-  function colorize(raw: string): string {
-    return raw
-      .replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g, (match) => {
-        if (/^"/.test(match)) {
-          if (/:$/.test(match)) return `<span style="color:#9d6ff8">${match}</span>`
-          return `<span style="color:#10b981">${match}</span>`
-        }
-        if (/true|false/.test(match)) return `<span style="color:#06b6d4">${match}</span>`
-        if (/null/.test(match)) return `<span style="color:#EF4444">${match}</span>`
-        return `<span style="color:#f59e0b">${match}</span>`
-      })
   }
 
   return (

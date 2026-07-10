@@ -35,9 +35,9 @@ export function useMenuBehavior(x: number, y: number, onClose: () => void) {
   return { menuRef, pos }
 }
 
-export function MenuItem({ icon, label, onClick, danger, hasSubmenu }: {
+export function MenuItem({ icon, label, onClick, danger, hasSubmenu }: Readonly<{
   icon: React.ReactNode; label: string; onClick: () => void; danger?: boolean; hasSubmenu?: boolean
-}) {
+}>) {
   return (
     <button
       onClick={onClick}
@@ -53,7 +53,7 @@ export function MenuItem({ icon, label, onClick, danger, hasSubmenu }: {
   )
 }
 
-export function ServerContextMenu({ x, y, session, allGroups, onEdit, onRename, onColorChange, onFavorite, onMoveToProject, onDelete, onClose, onOpenDocker, onOpenRdp }: {
+export function ServerContextMenu({ x, y, session, allGroups, onEdit, onRename, onColorChange, onFavorite, onMoveToProject, onDelete, onClose, onOpenDocker, onOpenRdp }: Readonly<{
   x: number; y: number; session: Session
   allGroups: string[]
   onEdit: () => void
@@ -65,7 +65,7 @@ export function ServerContextMenu({ x, y, session, allGroups, onEdit, onRename, 
   onClose: () => void
   onOpenDocker?: () => void
   onOpenRdp?: () => void
-}) {
+}>) {
   const [showMoveMenu, setShowMoveMenu] = useState(false)
   const groupColors = useAppStore(s => s.groupColors)
   const [newProjectName, setNewProjectName] = useState('')

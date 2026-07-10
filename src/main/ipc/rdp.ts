@@ -1,8 +1,8 @@
 import { ipcMain, IpcMainEvent, IpcMainInvokeEvent, WebContents } from 'electron'
-import { spawn, ChildProcessWithoutNullStreams } from 'child_process'
-import { join } from 'path'
-import { existsSync } from 'fs'
-import { randomUUID } from 'crypto'
+import { spawn, ChildProcessWithoutNullStreams } from 'node:child_process'
+import { join } from 'node:path'
+import { existsSync } from 'node:fs'
+import { randomUUID } from 'node:crypto'
 import { is } from '@electron-toolkit/utils'
 import { NotFoundError, OwnershipError, ValidationError, ConnectionError, toMessage } from './errors'
 
@@ -102,44 +102,38 @@ function logStray(id: string, entry: RdpSession, stray: Buffer): void {
   )
 }
 
+// Validates the header at the buffer head. Returns null when it is not a
+// plausible frame (bad magic, absurd dimensions, or a dataLen mismatch —
+// e.g. a false "NXF1" matched inside pixel data) so the caller can resync.
+function parseFrameHeader(buffer: Buffer): { width: number; height: number; dataLen: number } | null {
+  if (buffer.toString('ascii', 0, 4) !== MAGIC) return null
+  const width = buffer.readUInt32LE(4)
+  const height = buffer.readUInt32LE(8)
+  const dataLen = buffer.readUInt32LE(12)
+  if (width === 0 || height === 0 || width > 7680 || height > 7680) return null
+  if (dataLen !== width * height * 4 || dataLen > MAX_FRAME_BYTES) return null
+  return { width, height, dataLen }
+}
+
 // Pull every complete frame out of the accumulated buffer and forward it.
 function drainFrames(id: string, entry: RdpSession): void {
   for (;;) {
     if (entry.buffer.length < HEADER_BYTES) return
 
-    if (entry.buffer.toString('ascii', 0, 4) !== MAGIC) {
+    const header = parseFrameHeader(entry.buffer)
+    if (!header) {
       // Non-frame bytes on stdout — recover by skipping to the next frame.
       if (!resyncToMagic(id, entry)) return
       continue
     }
 
-    const width = entry.buffer.readUInt32LE(4)
-    const height = entry.buffer.readUInt32LE(8)
-    const dataLen = entry.buffer.readUInt32LE(12)
-
-    // Validate width/height are reasonable and dataLen matches
-    if (width === 0 || height === 0 || width > 7680 || height > 7680) {
-      if (!resyncToMagic(id, entry)) return
-      continue
-    }
-    if (dataLen !== width * height * 4) {
-      if (!resyncToMagic(id, entry)) return
-      continue
-    }
-
-    if (dataLen > MAX_FRAME_BYTES) {
-      // Almost certainly a false "NXF1" matched inside pixel data — skip past it.
-      if (!resyncToMagic(id, entry)) return
-      continue
-    }
-
-    const total = HEADER_BYTES + dataLen
+    const total = HEADER_BYTES + header.dataLen
     if (entry.buffer.length < total) return // wait for more chunks
 
     const pixels = entry.buffer.subarray(HEADER_BYTES, total)
     if (!entry.sender.isDestroyed()) {
       // Copy out: the backing buffer is about to be sliced/reused.
-      entry.sender.send('rdp:frame', id, width, height, Buffer.from(pixels))
+      entry.sender.send('rdp:frame', id, header.width, header.height, Buffer.from(pixels))
     }
     entry.buffer = entry.buffer.subarray(total)
   }
@@ -155,9 +149,11 @@ export function registerRdpHandlers(): void {
     if (typeof username !== 'string' || !username) throw new ValidationError('Username is required')
     if (typeof password !== 'string') throw new ValidationError('Password is required')
 
-    const port = typeof config.port === 'number' ? config.port : 3389
-    const width = typeof config.width === 'number' ? config.width : 1280
-    const height = typeof config.height === 'number' ? config.height : 800
+    const clamp = (v: unknown, lo: number, hi: number, dflt: number): number =>
+      typeof v === 'number' && Number.isFinite(v) ? Math.min(hi, Math.max(lo, Math.round(v))) : dflt
+    const port = clamp(config.port, 1, 65535, 3389)
+    const width = clamp(config.width, 640, 7680, 1280)
+    const height = clamp(config.height, 480, 7680, 800)
 
     const bin = sidecarPath()
     if (!existsSync(bin)) {
@@ -172,7 +168,13 @@ export function registerRdpHandlers(): void {
       { stdio: ['pipe', 'pipe', 'pipe'] },
     )
 
-    // Write password to stdin instead of passing as command-line argument
+    // Write password to stdin instead of passing as command-line argument.
+    // The error handler matters: if the sidecar dies before reading (bad
+    // binary, instant crash), the write EPIPEs, and an unhandled stream
+    // 'error' would take down the whole main process.
+    proc.stdin.on('error', (err) => {
+      console.error(`[rdp] stdin write failed: ${toMessage(err)}`)
+    })
     proc.stdin.write(password + '\n')
     proc.stdin.end()
 
@@ -180,10 +182,12 @@ export function registerRdpHandlers(): void {
     const entry: RdpSession = { proc, sender: event.sender, buffer: Buffer.alloc(0), resyncs: 0 }
     sessions.set(id, entry)
 
-    // The sidecar prints an authoritative outcome line ("[sidecar] ...") to
-    // stderr alongside FreeRDP's verbose logs. Keep the last one so a failed
-    // connect surfaces *why* in the tab instead of a bare exit code.
+    // The sidecar prints outcome lines ("[sidecar] ...") to stderr alongside
+    // FreeRDP's verbose logs. Failures use a "[sidecar] error: ..." prefix —
+    // prefer those for the close reason so an informational line (cert
+    // fingerprint, "connected") never masks the actual failure.
     let lastSidecarMsg: string | null = null
+    let lastSidecarError: string | null = null
 
     proc.stdout.on('data', (chunk: Buffer) => {
       entry.buffer = entry.buffer.length ? Buffer.concat([entry.buffer, chunk]) : chunk
@@ -195,8 +199,13 @@ export function registerRdpHandlers(): void {
       const text = chunk.toString()
       console.error(`[rdp-sidecar ${id}] ${text.trimEnd()}`)
       for (const line of text.split('\n')) {
-        const m = line.match(/\[sidecar\]\s*(.+?)\s*$/)
-        if (m) lastSidecarMsg = m[1]
+        const m = /\[sidecar\](.*)/.exec(line)
+        if (!m) continue
+        const msg = m[1].trim()
+        if (!msg) continue
+        lastSidecarMsg = msg
+        const e = /^error:\s*(.+)$/.exec(msg)
+        if (e) lastSidecarError = e[1]
       }
     })
 
@@ -209,7 +218,7 @@ export function registerRdpHandlers(): void {
       sessions.delete(id)
       if (!event.sender.isDestroyed()) {
         const reason =
-          code === 0 ? null : lastSidecarMsg ?? `sidecar exited (${code})`
+          code === 0 ? null : lastSidecarError ?? lastSidecarMsg ?? `sidecar exited (${code})`
         event.sender.send('rdp:closed', id, reason)
       }
     })

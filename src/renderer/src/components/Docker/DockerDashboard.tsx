@@ -259,16 +259,18 @@ export default function DockerDashboard({ tab }: Props) {
   )
 }
 
-function ContainerTableRow({ container, stat, last, busy, onAction, onLogs }: {
+function ContainerTableRow({ container, stat, last, busy, onAction, onLogs }: Readonly<{
   container: ContainerRow
   stat?: StatsRow
   last: boolean
   busy: boolean
   onAction: (action: 'start' | 'stop' | 'restart' | 'rm') => void
   onLogs: () => void
-}) {
+}>) {
   const isRunning = container.State === 'running'
-  const stateColor = isRunning ? '#10B981' : container.State === 'exited' ? 'var(--nox-text-3)' : '#F59E0B'
+  let stateColor = '#F59E0B'
+  if (isRunning) stateColor = '#10B981'
+  else if (container.State === 'exited') stateColor = 'var(--nox-text-3)'
 
   return (
     <tr
@@ -322,12 +324,12 @@ function ContainerTableRow({ container, stat, last, busy, onAction, onLogs }: {
   )
 }
 
-function RowAction({ title, onClick, danger, children }: {
+function RowAction({ title, onClick, danger, children }: Readonly<{
   title: string
   onClick: () => void
   danger?: boolean
   children: React.ReactNode
-}) {
+}>) {
   return (
     <button
       title={title}

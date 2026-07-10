@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { Tab } from '../../store'
-import { useAppStore } from '../../store'
+import { Tab, useAppStore } from '../../store'
 import { formatFileSize, ipcErrorMessage, joinPath } from '../../lib/format'
 import { connectSftp } from '../../lib/sftpConnect'
 import {
@@ -77,7 +76,7 @@ export default function FilesDrawer({ tab, onClose }: Props) {
     setError(null)
     try {
       const result: SftpEntry[] = await window.api.sftp.list(id, dir)
-      setEntries(result.sort((a, b) => {
+      setEntries([...result].sort((a, b) => {
         if (a.isDirectory !== b.isDirectory) return a.isDirectory ? -1 : 1
         return a.name.localeCompare(b.name)
       }))
@@ -307,23 +306,22 @@ export default function FilesDrawer({ tab, onClose }: Props) {
         className="flex items-center px-3 py-2 flex-shrink-0"
         style={{ borderTop: '1px solid var(--nox-border)', minHeight: 32, background: 'var(--nox-shell)' }}
       >
-        {toast ? (
-          <p className="text-2xs break-words line-clamp-2" style={{ color: '#3B5CCC' }}>{toast}</p>
-        ) : !connecting && !error ? (
+        {toast && <p className="text-2xs break-words line-clamp-2" style={{ color: '#3B5CCC' }}>{toast}</p>}
+        {!toast && !connecting && !error && (
           <span className="text-2xs font-mono truncate" style={{ color: 'var(--nox-text-3)' }}>
             {entries.length} item{entries.length !== 1 ? 's' : ''}
           </span>
-        ) : null}
+        )}
       </div>
     </div>
   )
 }
 
 /* ── Breadcrumb ───────────────────────────────────────────────────────────── */
-function Breadcrumb({ segments, onNavigate }: {
+function Breadcrumb({ segments, onNavigate }: Readonly<{
   segments: string[]
   onNavigate: (idx: number) => void
-}) {
+}>) {
   if (segments.length === 0) {
     return (
       <span className="text-2xs font-mono" style={{ color: 'var(--nox-text-3)' }}>/</span>
@@ -368,11 +366,11 @@ function Breadcrumb({ segments, onNavigate }: {
 }
 
 /* ── Header button ────────────────────────────────────────────────────────── */
-function HeaderButton({ title, onClick, children }: {
+function HeaderButton({ title, onClick, children }: Readonly<{
   title: string
   onClick: () => void
   children: React.ReactNode
-}) {
+}>) {
   return (
     <button
       onClick={onClick}
@@ -394,14 +392,14 @@ function HeaderButton({ title, onClick, children }: {
 }
 
 /* ── File row ─────────────────────────────────────────────────────────────── */
-function FileRow({ entry, onNavigate, onOpen, onDownload, onDelete, onRename }: {
+function FileRow({ entry, onNavigate, onOpen, onDownload, onDelete, onRename }: Readonly<{
   entry: SftpEntry
   onNavigate: () => void
   onOpen: () => void
   onDownload: () => void
   onDelete: () => void
   onRename: () => void
-}) {
+}>) {
   const isDir = entry.isDirectory
 
   return (
@@ -466,9 +464,9 @@ function FileRow({ entry, onNavigate, onOpen, onDownload, onDelete, onRename }: 
   )
 }
 
-function RowButton({ onClick, title, children }: {
+function RowButton({ onClick, title, children }: Readonly<{
   onClick: () => void; title: string; children: React.ReactNode
-}) {
+}>) {
   return (
     <button
       onClick={(e) => { e.stopPropagation(); onClick() }}
@@ -490,7 +488,7 @@ function RowButton({ onClick, title, children }: {
 }
 
 /* ── State components ─────────────────────────────────────────────────────── */
-function ConnectingState({ host }: { host?: string }) {
+function ConnectingState({ host }: Readonly<{ host?: string }>) {
   return (
     <div className="flex flex-col items-center justify-center flex-1 gap-3 px-6">
       <div className="relative w-6 h-6">
@@ -508,7 +506,7 @@ function ConnectingState({ host }: { host?: string }) {
   )
 }
 
-function ErrorState({ message, onRetry }: { message: string; onRetry: () => void }) {
+function ErrorState({ message, onRetry }: Readonly<{ message: string; onRetry: () => void }>) {
   return (
     <div className="flex flex-col items-center justify-center flex-1 gap-3 px-5 text-center">
       <div

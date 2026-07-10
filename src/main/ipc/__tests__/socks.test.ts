@@ -29,7 +29,7 @@ describe('socks replies', () => {
 
   it('builds a ten-byte connect reply with the given code', () => {
     const reply = socksConnectReply(SOCKS_REPLY.success)
-    expect(reply.length).toBe(10)
+    expect(reply).toHaveLength(10)
     expect(reply[0]).toBe(5)
     expect(reply[1]).toBe(0)
   })

@@ -35,7 +35,8 @@ export function groupColor(name: string, overrides?: Record<string, string>): st
   if (custom) return custom
   const palette = ['#6366f1', '#22c55e', '#f59e0b', '#f87171', '#a78bfa', '#06b6d4', '#fb923c', '#e879f9', '#34d399']
   let hash = 0
-  for (let i = 0; i < name.length; i++) hash = (hash * 31 + name.charCodeAt(i)) | 0
+  // Math.imul keeps the hash wrapped to 32 bits, like the classic (h*31+c)|0.
+  for (const ch of name) hash = Math.imul(hash, 31) + (ch.codePointAt(0) ?? 0)
   return palette[Math.abs(hash) % palette.length]
 }
 

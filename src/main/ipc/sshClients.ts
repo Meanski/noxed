@@ -1,5 +1,5 @@
 import { Client, Algorithms, ClientChannel, ConnectConfig } from 'ssh2'
-import { readFileSync } from 'fs'
+import { readFileSync } from 'node:fs'
 import { getSessionById, Session } from './sessions'
 import { getCredential, isUnlocked } from './keychain'
 import { isAllowedKeyPath } from './security'

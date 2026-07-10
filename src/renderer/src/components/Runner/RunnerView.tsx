@@ -22,32 +22,40 @@ export default function RunnerView() {
   const [running, setRunning] = useState(false)
   const runIdRef = useRef<string | null>(null)
 
+  const applyOutput = (sessionId: string, data: string) => {
+    setResults(prev => {
+      const next = new Map(prev)
+      const r = next.get(sessionId)
+      if (r) next.set(sessionId, { ...r, output: r.output + data })
+      return next
+    })
+  }
+
+  const applyDone = (sessionId: string, exitCode: number | null, error: string | null) => {
+    setResults(prev => {
+      const next = new Map(prev)
+      const r = next.get(sessionId)
+      if (r) {
+        next.set(sessionId, {
+          ...r,
+          state: error || exitCode !== 0 ? 'failed' : 'done',
+          exitCode,
+          error,
+        })
+      }
+      setRunning([...next.values()].some(v => v.state === 'running'))
+      return next
+    })
+  }
+
   useEffect(() => {
     const offOutput = window.api.runner.onOutput((runId, sessionId, data) => {
       if (runId !== runIdRef.current) return
-      setResults(prev => {
-        const next = new Map(prev)
-        const r = next.get(sessionId)
-        if (r) next.set(sessionId, { ...r, output: r.output + data })
-        return next
-      })
+      applyOutput(sessionId, data)
     })
     const offDone = window.api.runner.onDone((runId, sessionId, exitCode, error) => {
       if (runId !== runIdRef.current) return
-      setResults(prev => {
-        const next = new Map(prev)
-        const r = next.get(sessionId)
-        if (r) {
-          next.set(sessionId, {
-            ...r,
-            state: error || exitCode !== 0 ? 'failed' : 'done',
-            exitCode,
-            error,
-          })
-        }
-        setRunning([...next.values()].some(v => v.state === 'running'))
-        return next
-      })
+      applyDone(sessionId, exitCode, error)
     })
     return () => {
       offOutput()
@@ -218,15 +226,23 @@ export default function RunnerView() {
   )
 }
 
-function HostResultCard({ session, result }: { session?: Session; result: HostResult }) {
+function resultBadge(result: HostResult): { text: string; color: string } {
+  if (result.state === 'running') return { text: 'running', color: '#3B5CCC' }
+  if (result.state === 'done') return { text: 'exit 0', color: '#10B981' }
+  return { text: result.error ? 'error' : `exit ${result.exitCode}`, color: '#EF4444' }
+}
+
+function resultText(result: HostResult): string {
+  if (result.error) return result.error
+  if (result.output) return result.output
+  return result.state === 'running' ? '…' : '(no output)'
+}
+
+function HostResultCard({ session, result }: Readonly<{ session?: Session; result: HostResult }>) {
   const [open, setOpen] = useState(true)
   const label = session ? (session.label || session.host) : 'unknown host'
 
-  const badge = result.state === 'running'
-    ? { text: 'running', color: '#3B5CCC' }
-    : result.state === 'done'
-      ? { text: 'exit 0', color: '#10B981' }
-      : { text: result.error ? 'error' : `exit ${result.exitCode}`, color: '#EF4444' }
+  const badge = resultBadge(result)
 
   return (
     <div className="rounded-md overflow-hidden" style={{ background: 'var(--nox-shell)', border: '1px solid var(--nox-border)' }}>
@@ -252,7 +268,7 @@ function HostResultCard({ session, result }: { session?: Session; result: HostRe
           className="m-0 px-4 py-3 font-mono text-[11.5px] leading-relaxed whitespace-pre-wrap break-all max-h-72 overflow-y-auto select-text"
           style={{ background: 'var(--nox-bg)', color: 'var(--nox-text-2)', borderTop: '1px solid var(--nox-border)' }}
         >
-          {result.error ? result.error : result.output || (result.state === 'running' ? '…' : '(no output)')}
+          {resultText(result)}
         </pre>
       )}
     </div>

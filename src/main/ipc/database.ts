@@ -1,12 +1,12 @@
 import { ipcMain, IpcMainInvokeEvent } from 'electron'
-import { randomUUID } from 'crypto'
+import { randomUUID } from 'node:crypto'
 import { Pool as PgPool } from 'pg'
 import mysql from 'mysql2/promise'
 import { ConnectionError, NotFoundError, OwnershipError, ValidationError, toMessage } from './errors'
 import { validateHost, validatePort } from './security'
 
 type DbType = 'postgresql' | 'mysql' | 'mariadb'
-type SslMode = 'disable' | 'require' | 'verify-ca' | 'verify-full' | undefined
+type SslMode = 'disable' | 'require' | 'verify-ca' | 'verify-full'
 
 interface QueryResult { columns: string[]; rows: unknown[]; rowCount: number; duration: number }
 
@@ -66,7 +66,10 @@ function validateConnectConfig(raw: unknown): DbConnectConfig {
   if (typeof c.database !== 'string' || c.database.length === 0 || c.database.length > MAX_DATABASE_LENGTH) {
     throw new ValidationError('Database name is required')
   }
-  const ssl = c.ssl === undefined ? undefined : String(c.ssl)
+  if (c.ssl !== undefined && typeof c.ssl !== 'string') {
+    throw new ValidationError('Invalid SSL mode')
+  }
+  const ssl = c.ssl as string | undefined
   if (ssl !== undefined && !['disable', 'require', 'verify-ca', 'verify-full'].includes(ssl)) {
     throw new ValidationError(`Invalid SSL mode: ${ssl}`)
   }
@@ -77,17 +80,12 @@ function validateConnectConfig(raw: unknown): DbConnectConfig {
     username: c.username,
     password: (c.password as string | undefined) || undefined,
     database: c.database,
-    ssl: ssl as SslMode,
+    ssl: ssl as SslMode | undefined,
   }
 }
 
-function pgSslOption(mode: SslMode): boolean | { rejectUnauthorized: boolean } | undefined {
-  if (mode === 'verify-full' || mode === 'verify-ca') return { rejectUnauthorized: true }
-  if (mode === 'require') return { rejectUnauthorized: false }
-  return undefined
-}
-
-function mysqlSslOption(mode: SslMode): Record<string, unknown> | undefined {
+// Shared by pg and mysql2 — both accept { rejectUnauthorized } for their ssl option.
+function sslOption(mode: SslMode | undefined): { rejectUnauthorized: boolean } | undefined {
   if (mode === 'verify-full' || mode === 'verify-ca') return { rejectUnauthorized: true }
   if (mode === 'require') return { rejectUnauthorized: false }
   return undefined
@@ -100,7 +98,7 @@ async function connectPostgres(config: DbConnectConfig): Promise<DbConnection> {
     user: config.username,
     password: config.password,
     database: config.database,
-    ssl: pgSslOption(config.ssl),
+    ssl: sslOption(config.ssl),
     connectionTimeoutMillis: 20_000,
     idleTimeoutMillis: 30_000,
     max: 4,
@@ -161,7 +159,7 @@ async function connectMysql(config: DbConnectConfig): Promise<DbConnection> {
     user: config.username,
     password: config.password,
     database: config.database,
-    ssl: mysqlSslOption(config.ssl),
+    ssl: sslOption(config.ssl),
     connectionLimit: 4,
     connectTimeout: 20_000,
     enableKeepAlive: true,

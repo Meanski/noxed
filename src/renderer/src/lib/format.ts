@@ -25,8 +25,8 @@ export function formatFileSize(bytes: number): string {
 
 export function formatK8sMemory(mem: string): string {
   if (!mem) return '—'
-  const ki = parseInt(mem, 10)
-  if (isNaN(ki)) return mem
+  const ki = Number.parseInt(mem, 10)
+  if (Number.isNaN(ki)) return mem
   if (ki >= 1024 * 1024) return `${(ki / 1024 / 1024).toFixed(0)}Gi`
   if (ki >= 1024) return `${(ki / 1024).toFixed(0)}Mi`
   return `${ki}Ki`

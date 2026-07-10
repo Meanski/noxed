@@ -21,7 +21,7 @@ const DEFAULT_DATE_FORMAT = 'YYYY-MM-DD HH:mm'
 const INIT: PaneState = { path: '/', entries: [], loading: false, selected: new Set(), sortKey: 'name', sortDir: 'asc', showHidden: false, error: null }
 let xferId = 0
 
-export default function SftpBrowser({ tab }: { tab: Tab }) {
+export default function SftpBrowser({ tab }: Readonly<{ tab: Tab }>) {
   const sessions = useAppStore(s => s.sessions)
   const updateTab = useAppStore(s => s.updateTab)
   const addNotification = useAppStore(s => s.addNotification)
@@ -85,9 +85,10 @@ export default function SftpBrowser({ tab }: { tab: Tab }) {
     setTransfers(t => [{ id, name, direction: dir, status: 'active' }, ...t])
     return id
   }
+  const removeTransfer = (id: number) => setTransfers(t => t.filter(x => x.id !== id))
   const finishTransfer = (id: number, name: string, direction: 'up' | 'down', error?: string) => {
     setTransfers(t => t.map(x => x.id === id ? { ...x, status: error ? 'error' : 'done', error } : x))
-    setTimeout(() => setTransfers(t => t.filter(x => x.id !== id)), error ? 5000 : 2000)
+    setTimeout(() => removeTransfer(id), error ? 5000 : 2000)
     window.api.settings.get().then((cfg: { transferAlerts?: unknown }) => {
       if (cfg.transferAlerts !== true) return
       const verb = direction === 'up' ? 'Upload' : 'Download'
@@ -106,7 +107,7 @@ export default function SftpBrowser({ tab }: { tab: Tab }) {
       const id = await connectSftp(session, tab.streamId)
       setClientId(id); clientRef.current = id
       updateTab(tab.id, { status: 'connected' }); setConnecting(false)
-      loadRemote(id, '/'); loadLocal(undefined)
+      loadRemote(id, '/'); loadLocal()
     } catch (err: any) {
       setConnError(ipcErrorMessage(err, 'SFTP connection failed'))
       updateTab(tab.id, { status: 'error', errorMessage: err?.message }); setConnecting(false)
@@ -138,10 +139,16 @@ export default function SftpBrowser({ tab }: { tab: Tab }) {
     catch (err: any) { uR({ error: err?.message, loading: false }) }
   }
 
+  function compareBy(sortKey: SortKey, a: FileEntry, b: FileEntry): number {
+    if (sortKey === 'name') return a.name.localeCompare(b.name)
+    if (sortKey === 'size') return a.size - b.size
+    return a.mtime - b.mtime
+  }
+
   function sorted(p: PaneState): FileEntry[] {
     return p.entries.filter(e => p.showHidden || !e.name.startsWith('.')).sort((a, b) => {
       if (a.isDirectory !== b.isDirectory) return a.isDirectory ? -1 : 1
-      let c = p.sortKey === 'name' ? a.name.localeCompare(b.name) : p.sortKey === 'size' ? a.size - b.size : a.mtime - b.mtime
+      const c = compareBy(p.sortKey, a, b)
       return p.sortDir === 'asc' ? c : -c
     })
   }
@@ -157,8 +164,19 @@ export default function SftpBrowser({ tab }: { tab: Tab }) {
     else uP(s, { selected: new Set([name]) })
   }
 
-  function navUp(s: Side) { const parts = gP(s).path.split('/').filter(Boolean); parts.pop(); const np = parts.length ? `/${parts.join('/')}` : '/'; s === 'local' ? loadLocal(np) : clientId && loadRemote(clientId, np) }
-  function navInto(s: Side, e: FileEntry) { if (!e.isDirectory) return; s === 'local' ? loadLocal(e.path || joinPath(local.path, e.name)) : clientId && loadRemote(clientId, joinPath(remote.path, e.name)) }
+  function navUp(s: Side) {
+    const parts = gP(s).path.split('/').filter(Boolean)
+    parts.pop()
+    const np = parts.length ? `/${parts.join('/')}` : '/'
+    if (s === 'local') loadLocal(np)
+    else if (clientId) loadRemote(clientId, np)
+  }
+
+  function navInto(s: Side, e: FileEntry) {
+    if (!e.isDirectory) return
+    if (s === 'local') loadLocal(e.path || joinPath(local.path, e.name))
+    else if (clientId) loadRemote(clientId, joinPath(remote.path, e.name))
+  }
 
   async function doUpload(files: FileEntry[]) {
     if (!clientId) return
@@ -376,10 +394,10 @@ export default function SftpBrowser({ tab }: { tab: Tab }) {
   )
 }
 
-function PaneChrome({ side, label, icon, pane, focused, onNavUp, onRefresh, onMkdir, onToggleHidden }: {
+function PaneChrome({ side, label, icon, pane, focused, onNavUp, onRefresh, onMkdir, onToggleHidden }: Readonly<{
   side: Side; label: string; icon: React.ReactNode; pane: PaneState; focused: boolean
   onNavUp: () => void; onRefresh: () => void; onMkdir: () => void; onToggleHidden: () => void
-}) {
+}>) {
   const segs = pane.path === '/' ? [] : pane.path.split('/').filter(Boolean)
   return (<>
     <div className="flex items-center gap-2 px-3 flex-shrink-0" style={{ height: 32, borderBottom: '1px solid var(--nox-border)', background: focused ? 'var(--nox-shell)' : 'var(--nox-bg)' }}>
@@ -396,9 +414,9 @@ function PaneChrome({ side, label, icon, pane, focused, onNavUp, onRefresh, onMk
   </>)
 }
 
-function FileTable({ pane, visible, side, diffMap, dateFormat, onToggleSort, onSelect, onClear, onNavUp, onNavInto, onDelete, onRename, onDragStart, onDrop, onDoubleClickFile }: {
+function FileTable({ pane, visible, side, diffMap, dateFormat, onToggleSort, onSelect, onClear, onNavUp, onNavInto, onDelete, onRename, onDragStart, onDrop, onDoubleClickFile }: Readonly<{
   pane: PaneState; visible: FileEntry[]; side: Side; diffMap: Map<string, string> | null; dateFormat: string; onToggleSort: (k: SortKey) => void; onSelect: (n: string, e: React.MouseEvent) => void; onClear: () => void; onNavUp: () => void; onNavInto: (e: FileEntry) => void; onDelete?: (e: FileEntry[]) => void; onRename?: (e: FileEntry) => void; onDragStart: (e: FileEntry, ev: React.DragEvent) => void; onDrop: (e: React.DragEvent) => void; onDoubleClickFile: (e: FileEntry) => void
-}) {
+}>) {
   const [dragOver, setDragOver] = useState(false)
   return (
     <div className="flex-1 overflow-auto relative" style={{ scrollbarWidth: 'thin', scrollbarColor: 'var(--nox-border) transparent' }} onClick={e => { if (e.target === e.currentTarget) onClear() }} onDragOver={e => { e.preventDefault(); setDragOver(true) }} onDragLeave={() => setDragOver(false)} onDrop={e => { setDragOver(false); onDrop(e) }}>
@@ -415,30 +433,46 @@ function FileTable({ pane, visible, side, diffMap, dateFormat, onToggleSort, onS
           {pane.path !== '/' && <tr className="cursor-default" onClick={onNavUp} onDoubleClick={onNavUp}><td colSpan={onRename ? 4 : 3} className="px-2 py-[4px]" style={{ color: 'var(--nox-text-3)' }}><span className="flex items-center gap-1.5"><ChevronUp className="w-3 h-3" /> ..</span></td></tr>}
           {visible.length === 0 && !pane.loading && !pane.error && <tr><td colSpan={onRename ? 4 : 3} className="text-center py-8" style={{ color: 'var(--nox-text-3)' }}>Empty</td></tr>}
           {pane.error && <tr><td colSpan={onRename ? 4 : 3} className="text-center py-6" style={{ color: '#EF4444' }}>{pane.error}</td></tr>}
-          {visible.map(entry => {
-            const sel = pane.selected.has(entry.name)
-            const diff = diffMap?.get(entry.name)
-            const diffBg = diff === 'local-only' ? 'rgba(16,185,129,0.06)' : diff === 'remote-only' ? 'rgba(139,92,246,0.06)' : diff === 'different' ? 'rgba(245,158,11,0.06)' : undefined
-            const diffDot = diff === 'local-only' ? '#10B981' : diff === 'remote-only' ? '#8B5CF6' : diff === 'different' ? '#F59E0B' : null
-            return (
-              <tr key={entry.name} draggable onDragStart={e => onDragStart(entry, e)} onClick={e => { e.stopPropagation(); onSelect(entry.name, e) }} onDoubleClick={() => entry.isDirectory ? onNavInto(entry) : onDoubleClickFile(entry)} className="group cursor-default transition-colors" style={{ background: sel ? 'rgba(59,92,204,0.08)' : diffBg }} onMouseEnter={e => { if (!sel) e.currentTarget.style.background = sel ? 'rgba(59,92,204,0.08)' : 'var(--nox-hover)' }} onMouseLeave={e => { if (!sel) e.currentTarget.style.background = diffBg || '' }}>
-                <td className="px-2 py-[4px] truncate"><span className="flex items-center gap-1.5 min-w-0">{diffDot && <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: diffDot }} />}{entry.isDirectory ? <FolderOpen className="w-3 h-3 flex-shrink-0" style={{ color: '#8B5CF6' }} /> : <File className="w-3 h-3 flex-shrink-0" style={{ color: 'var(--nox-text-3)' }} />}<span className="truncate" style={{ color: entry.isDirectory ? 'var(--nox-text)' : 'var(--nox-text-2)' }}>{entry.name}</span></span></td>
-                <td className="px-2 py-[4px] text-right" style={{ color: 'var(--nox-text-3)' }}>{entry.isDirectory ? '—' : formatFileSize(entry.size)}</td>
-                <td className="px-2 py-[4px]" style={{ color: 'var(--nox-text-3)', fontSize: 10 }}>{formatDate(entry.mtime, dateFormat)}</td>
-                {onRename && <td className="px-1 py-[4px]"><span className="flex items-center gap-0 opacity-0 group-hover:opacity-100 transition-opacity"><button title="Rename" onClick={e => { e.stopPropagation(); onRename(entry) }} className="w-4 h-4 flex items-center justify-center rounded" style={{ color: 'var(--nox-text-3)' }}><Pencil className="w-2.5 h-2.5" /></button>{onDelete && <button title="Delete" onClick={e => { e.stopPropagation(); onDelete([entry]) }} className="w-4 h-4 flex items-center justify-center rounded" style={{ color: '#EF4444' }}><Trash2 className="w-2.5 h-2.5" /></button>}</span></td>}
-              </tr>)
-          })}
+          {visible.map(entry => (
+            <FileRow key={entry.name} entry={entry} sel={pane.selected.has(entry.name)} diff={diffMap?.get(entry.name)}
+              dateFormat={dateFormat} onSelect={onSelect} onNavInto={onNavInto} onDoubleClickFile={onDoubleClickFile}
+              onDragStart={onDragStart} onRename={onRename} onDelete={onDelete} />
+          ))}
         </tbody>
       </table>
     </div>
   )
 }
 
-function Th({ label, sk, pane, onSort, align }: { label: string; sk: SortKey; pane: PaneState; onSort: (k: SortKey) => void; align?: 'right' }) {
+const DIFF_BG: Record<string, string> = {
+  'local-only': 'rgba(16,185,129,0.06)', 'remote-only': 'rgba(139,92,246,0.06)', different: 'rgba(245,158,11,0.06)',
+}
+const DIFF_DOT: Record<string, string> = {
+  'local-only': '#10B981', 'remote-only': '#8B5CF6', different: '#F59E0B',
+}
+
+function FileRow({ entry, sel, diff, dateFormat, onSelect, onNavInto, onDoubleClickFile, onDragStart, onRename, onDelete }: Readonly<{
+  entry: FileEntry; sel: boolean; diff: string | undefined; dateFormat: string
+  onSelect: (n: string, e: React.MouseEvent) => void; onNavInto: (e: FileEntry) => void; onDoubleClickFile: (e: FileEntry) => void
+  onDragStart: (e: FileEntry, ev: React.DragEvent) => void; onRename?: (e: FileEntry) => void; onDelete?: (e: FileEntry[]) => void
+}>) {
+  const diffBg = diff ? DIFF_BG[diff] : undefined
+  const diffDot = diff ? DIFF_DOT[diff] : undefined
+  return (
+    <tr draggable onDragStart={e => onDragStart(entry, e)} onClick={e => { e.stopPropagation(); onSelect(entry.name, e) }} onDoubleClick={() => entry.isDirectory ? onNavInto(entry) : onDoubleClickFile(entry)} className="group cursor-default transition-colors" style={{ background: sel ? 'rgba(59,92,204,0.08)' : diffBg }} onMouseEnter={e => { if (!sel) e.currentTarget.style.background = 'var(--nox-hover)' }} onMouseLeave={e => { if (!sel) e.currentTarget.style.background = diffBg || '' }}>
+      <td className="px-2 py-[4px] truncate"><span className="flex items-center gap-1.5 min-w-0">{diffDot && <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: diffDot }} />}{entry.isDirectory ? <FolderOpen className="w-3 h-3 flex-shrink-0" style={{ color: '#8B5CF6' }} /> : <File className="w-3 h-3 flex-shrink-0" style={{ color: 'var(--nox-text-3)' }} />}<span className="truncate" style={{ color: entry.isDirectory ? 'var(--nox-text)' : 'var(--nox-text-2)' }}>{entry.name}</span></span></td>
+      <td className="px-2 py-[4px] text-right" style={{ color: 'var(--nox-text-3)' }}>{entry.isDirectory ? '—' : formatFileSize(entry.size)}</td>
+      <td className="px-2 py-[4px]" style={{ color: 'var(--nox-text-3)', fontSize: 10 }}>{formatDate(entry.mtime, dateFormat)}</td>
+      {onRename && <td className="px-1 py-[4px]"><span className="flex items-center gap-0 opacity-0 group-hover:opacity-100 transition-opacity"><button title="Rename" onClick={e => { e.stopPropagation(); onRename(entry) }} className="w-4 h-4 flex items-center justify-center rounded" style={{ color: 'var(--nox-text-3)' }}><Pencil className="w-2.5 h-2.5" /></button>{onDelete && <button title="Delete" onClick={e => { e.stopPropagation(); onDelete([entry]) }} className="w-4 h-4 flex items-center justify-center rounded" style={{ color: '#EF4444' }}><Trash2 className="w-2.5 h-2.5" /></button>}</span></td>}
+    </tr>
+  )
+}
+
+function Th({ label, sk, pane, onSort, align }: Readonly<{ label: string; sk: SortKey; pane: PaneState; onSort: (k: SortKey) => void; align?: 'right' }>) {
   const active = pane.sortKey === sk
   return <th className="px-2 py-1.5 text-[9px] uppercase tracking-wider font-semibold cursor-pointer select-none whitespace-nowrap" style={{ textAlign: align || 'left', background: 'var(--nox-shell)', borderBottom: '1px solid var(--nox-border)', color: active ? 'var(--nox-text)' : 'var(--nox-text-3)' }} onClick={() => onSort(sk)}>{label}{active && <ArrowUpDown className="w-2 h-2 inline-block ml-0.5" style={{ transform: pane.sortDir === 'desc' ? 'scaleY(-1)' : undefined }} />}</th>
 }
 
-function Btn({ title, onClick, disabled, active, children }: { title: string; onClick: () => void; disabled?: boolean; active?: boolean; children: React.ReactNode }) {
+function Btn({ title, onClick, disabled, active, children }: Readonly<{ title: string; onClick: () => void; disabled?: boolean; active?: boolean; children: React.ReactNode }>) {
   return <button onClick={onClick} title={title} disabled={disabled} className="w-5 h-5 flex items-center justify-center rounded transition-colors disabled:opacity-25" style={{ color: active ? '#3B5CCC' : 'var(--nox-text-3)' }} onMouseEnter={e => { if (!disabled) e.currentTarget.style.background = 'var(--nox-hover)' }} onMouseLeave={e => { e.currentTarget.style.background = '' }}>{children}</button>
 }

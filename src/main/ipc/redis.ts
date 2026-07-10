@@ -1,6 +1,6 @@
 import { ipcMain, IpcMainInvokeEvent } from 'electron'
 import Redis from 'ioredis'
-import { randomUUID } from 'crypto'
+import { randomUUID } from 'node:crypto'
 import { isBlockedRedisCommand, validateHost, validatePort } from './security'
 import { ConnectionError, NotFoundError, OwnershipError, ValidationError, toMessage } from './errors'
 

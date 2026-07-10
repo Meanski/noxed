@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { pbkdf2Sync, randomBytes } from 'crypto'
+import { pbkdf2Sync, randomBytes } from 'node:crypto'
 
 // Extracted pure functions mirroring keychain.ts implementation for testing
 
@@ -153,13 +153,6 @@ describe('Keychain — brute-force protection', () => {
 })
 
 describe('Keychain — auth mode verification logic', () => {
-  it('none mode always succeeds', () => {
-    // mode === 'none' → always { success: true }
-    // This is a direct mapping of the production logic
-    const mode = 'none'
-    expect(mode === 'none').toBe(true)
-  })
-
   it('pin/password mode requires a credential', () => {
     const credential = undefined
     const result = !credential ? { success: false, error: 'Credential required' } : { success: true }
@@ -179,13 +172,13 @@ describe('Keychain — auth mode verification logic', () => {
     const salt = randomBytes(16).toString('hex')
     const storedHash = hashCredential('1234', salt)
     const inputHash = hashCredential('1234', salt)
-    expect(inputHash === storedHash).toBe(true)
+    expect(inputHash).toBe(storedHash)
   })
 
   it('pin/password mode rejects incorrect credential', () => {
     const salt = randomBytes(16).toString('hex')
     const storedHash = hashCredential('1234', salt)
     const wrongHash = hashCredential('5678', salt)
-    expect(wrongHash === storedHash).toBe(false)
+    expect(wrongHash).not.toBe(storedHash)
   })
 })

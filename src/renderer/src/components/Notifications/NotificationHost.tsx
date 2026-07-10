@@ -26,7 +26,7 @@ export default function NotificationHost() {
   )
 }
 
-function Toast({ notification, onDismiss }: { notification: AppNotification; onDismiss: () => void }) {
+function Toast({ notification, onDismiss }: Readonly<{ notification: AppNotification; onDismiss: () => void }>) {
   const { color, icon } = TYPE_STYLES[notification.type]
 
   useEffect(() => {

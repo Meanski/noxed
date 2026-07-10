@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react'
 import { Shield, Cable } from 'lucide-react'
 import { useAppStore } from '../../store'
 
+const countActive = (list: Array<{ status: string }>) => list.filter(t => t.status === 'active').length
+
 export default function StatusBar() {
   const sessions = useAppStore(s => s.sessions)
   const tabs = useAppStore(s => s.tabs)
@@ -19,7 +21,7 @@ export default function StatusBar() {
   useEffect(() => {
     const refresh = () => {
       window.api.tunnels.list()
-        .then(list => setActiveTunnels(list.filter(t => t.status === 'active').length))
+        .then(list => setActiveTunnels(countActive(list)))
         .catch(() => setActiveTunnels(0))
     }
     refresh()

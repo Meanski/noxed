@@ -10,8 +10,8 @@ process.on('uncaughtException', (err) => {
   console.error('[uncaughtException]', err)
 })
 
-import { join } from 'path'
-import { readFileSync } from 'fs'
+import { join } from 'node:path'
+import { readFileSync } from 'node:fs'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { registerSshHandlers, disposeSshStreamsForSender } from './ipc/ssh'
 import { registerSftpHandlers, disposeSftpClientsForSender } from './ipc/sftp'

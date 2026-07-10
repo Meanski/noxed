@@ -1,5 +1,5 @@
 import { ipcMain, IpcMainInvokeEvent, WebContents } from 'electron'
-import { randomUUID } from 'crypto'
+import { randomUUID } from 'node:crypto'
 import { connectSessionClient, ManagedSshConnection } from './sshClients'
 import { getSessionById } from './sessions'
 import { NotFoundError, OwnershipError, ValidationError, toMessage } from './errors'

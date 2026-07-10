@@ -22,7 +22,7 @@ const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/
 
 function isJsonString(s: string): boolean {
   if (s.length < 2) return false
-  return (s[0] === '{' && s[s.length - 1] === '}') || (s[0] === '[' && s[s.length - 1] === ']')
+  return (s.startsWith('{') && s.endsWith('}')) || (s.startsWith('[') && s.endsWith(']'))
 }
 
 /* ── Explain plan parsing ─────────────────────────────────────────────── */
@@ -81,7 +81,7 @@ function computeRowDiff(prev: QueryResult | null, next: QueryResult): Set<string
 
 /* ── Main component ───────────────────────────────────────────────────── */
 
-export default function DatabaseExplorer({ tab }: { tab: Tab }) {
+export default function DatabaseExplorer({ tab }: Readonly<{ tab: Tab }>) {
   const sessions = useAppStore(s => s.sessions)
   const updateTab = useAppStore(s => s.updateTab)
   const session = sessions.find(s => s.id === tab.sessionId)
@@ -217,8 +217,26 @@ export default function DatabaseExplorer({ tab }: { tab: Tab }) {
   function exportCsv() {
     if (!results) return
     const h = results.columns.join(',')
-    const rows = results.rows.map(r => results.columns.map(c => { const v = r[c]; if (v == null) return ''; const s = String(v); return s.includes(',') || s.includes('"') || s.includes('\n') ? `"${s.replace(/"/g, '""')}"` : s }).join(',')).join('\n')
+    const rows = results.rows.map(r => results.columns.map(c => {
+      const v = r[c]
+      if (v == null) return ''
+      const s = String(v)
+      return s.includes(',') || s.includes('"') || s.includes('\n') ? `"${s.replaceAll('"', '""')}"` : s
+    }).join(',')).join('\n')
     const blob = new Blob([`${h}\n${rows}`], { type: 'text/csv' }); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `${browsingTable || 'query'}-results.csv`; a.click(); URL.revokeObjectURL(a.href); showToast('Exported')
+  }
+
+  function pickQuery(q: string) {
+    setSql(q)
+    setActivePanel('results')
+    editorRef.current?.focus()
+  }
+
+  function startCellEdit(row: number, col: string, val: unknown) {
+    if (!browsingTable) return
+    setEditingCell({ row, col })
+    setEditValue(val == null ? '' : String(val))
+    setTimeout(() => editInputRef.current?.focus(), 0)
   }
 
   async function commitEdit() {
@@ -227,8 +245,8 @@ export default function DatabaseExplorer({ tab }: { tab: Tab }) {
     if (String(row[col] ?? '') === editValue) { setEditingCell(null); return }
     const pk = results.columns.includes('id') ? 'id' : results.columns[0]
     const pkVal = row[pk]; if (pkVal == null) { showToast('No primary key to identify row'); setEditingCell(null); return }
-    const newVal = editValue === '' ? 'NULL' : `'${editValue.replace(/'/g, "''")}'`
-    const pkLit = typeof pkVal === 'number' ? pkVal : `'${String(pkVal).replace(/'/g, "''")}'`
+    const newVal = editValue === '' ? 'NULL' : `'${editValue.replaceAll("'", "''")}'`
+    const pkLit = typeof pkVal === 'number' ? pkVal : `'${String(pkVal).replaceAll("'", "''")}'`
     try {
       await window.api.database.query(clientId, `UPDATE "${browsingTable}" SET "${col}" = ${newVal} WHERE "${pk}" = ${pkLit}`)
       const updated = [...results.rows]; updated[editingCell.row] = { ...row, [col]: editValue === '' ? null : editValue }
@@ -275,7 +293,10 @@ export default function DatabaseExplorer({ tab }: { tab: Tab }) {
 
   function startResize(e: React.MouseEvent) {
     e.preventDefault(); resizingRef.current = true; const startY = e.clientY; const startH = editorHeight
-    const onMove = (ev: MouseEvent) => { if (!resizingRef.current) return; setEditorHeight(Math.max(40, Math.min(400, startH + (ev.clientY - startY)))) }
+    const onMove = (ev: MouseEvent) => {
+      if (!resizingRef.current) return
+      setEditorHeight(Math.max(40, Math.min(400, startH + (ev.clientY - startY))))
+    }
     const onUp = () => { resizingRef.current = false; window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp) }
     window.addEventListener('mousemove', onMove); window.addEventListener('mouseup', onUp)
   }
@@ -286,7 +307,9 @@ export default function DatabaseExplorer({ tab }: { tab: Tab }) {
     const { col, dir } = resultSort
     return [...results.rows].sort((a, b) => {
       const av = a[col], bv = b[col]
-      if (av == null && bv == null) return 0; if (av == null) return 1; if (bv == null) return -1
+      if (av == null && bv == null) return 0
+      if (av == null) return 1
+      if (bv == null) return -1
       const cmp = typeof av === 'number' && typeof bv === 'number' ? av - bv : String(av).localeCompare(String(bv))
       return dir === 'asc' ? cmp : -cmp
     })
@@ -297,7 +320,7 @@ export default function DatabaseExplorer({ tab }: { tab: Tab }) {
   function toggleJsonExpand(key: string) { setExpandedJson(s => { const n = new Set(s); n.has(key) ? n.delete(key) : n.add(key); return n }) }
 
   const filteredTables = tableFilter ? tables.filter(t => t.toLowerCase().includes(tableFilter.toLowerCase())) : tables
-  const dbType = session?.dbType === 'mysql' ? 'MySQL' : session?.dbType === 'mariadb' ? 'MariaDB' : 'PostgreSQL'
+  const dbType = DB_TYPE_LABELS[session?.dbType ?? ''] ?? 'PostgreSQL'
   const detailRow = selectedRow !== null && results ? sortedRows[selectedRow] : null
   const resultsTableWidth = results ? 48 + results.columns.length * 160 : 0
   const resultsGridColumns = results ? `48px repeat(${results.columns.length}, 160px)` : undefined
@@ -307,49 +330,17 @@ export default function DatabaseExplorer({ tab }: { tab: Tab }) {
 
   return (
     <div className="flex h-full w-full min-w-0 min-h-0 overflow-hidden" style={{ background: 'var(--nox-bg)' }}>
-      {/* Schema sidebar */}
-      <div className="flex flex-col flex-shrink-0 overflow-hidden" style={{ width: 240, borderRight: '1px solid var(--nox-border)', background: 'var(--nox-shell)' }}>
-        <div className="flex items-center gap-2 px-3 flex-shrink-0" style={{ height: 36, borderBottom: '1px solid var(--nox-border)' }}>
-          <Database className="w-3.5 h-3.5" style={{ color: '#3B5CCC' }} />
-          <p className="text-[11px] font-semibold truncate flex-1" style={{ color: 'var(--nox-text)' }}>{session?.databaseName || 'Database'}</p>
-          <button onClick={() => refreshTables()} className="w-5 h-5 flex items-center justify-center rounded" style={{ color: 'var(--nox-text-3)' }}><RefreshCw className="w-3 h-3" /></button>
-        </div>
-        <div className="px-2 py-2 flex-shrink-0">
-          <div className="flex items-center gap-1.5 px-2 py-1 rounded" style={{ background: 'var(--nox-bg)', border: '1px solid var(--nox-border)' }}>
-            <Search className="w-3 h-3" style={{ color: 'var(--nox-text-3)' }} />
-            <input value={tableFilter} onChange={e => setTableFilter(e.target.value)} placeholder="Filter tables…" className="flex-1 bg-transparent text-[10px] font-mono focus:outline-none" style={{ color: 'var(--nox-text)' }} />
-            {tableFilter && <button onClick={() => setTableFilter('')} style={{ color: 'var(--nox-text-3)' }}><X className="w-2.5 h-2.5" /></button>}
-          </div>
-        </div>
-        <div className="px-3 pb-1 flex-shrink-0"><span className="text-[9px] uppercase tracking-wider font-semibold" style={{ color: 'var(--nox-text-3)' }}>Tables ({filteredTables.length})</span></div>
-        <div className="flex-1 overflow-y-auto" style={{ scrollbarWidth: 'thin' }}>
-          {filteredTables.map(table => (
-            <div key={table}>
-              <button onClick={() => selectTable(table)}
-                className="w-full flex items-center gap-1.5 px-3 py-[5px] text-left transition-colors"
-                style={{ color: activeTable === table ? 'var(--nox-text)' : 'var(--nox-text-2)', background: activeTable === table ? 'rgba(59,92,204,0.06)' : undefined }}
-                onMouseEnter={e => { if (activeTable !== table) e.currentTarget.style.background = 'var(--nox-hover)' }}
-                onMouseLeave={e => { if (activeTable !== table) e.currentTarget.style.background = '' }}>
-                {activeTable === table ? <ChevronDown className="w-2.5 h-2.5 flex-shrink-0" style={{ color: '#3B5CCC' }} /> : <ChevronRight className="w-2.5 h-2.5 flex-shrink-0" style={{ color: 'var(--nox-text-3)' }} />}
-                <Table2 className="w-3 h-3 flex-shrink-0" style={{ color: activeTable === table ? '#3B5CCC' : '#8B5CF6' }} />
-                <span className="text-[11px] font-mono truncate">{table}</span>
-              </button>
-              {activeTable === table && tableColumns[table] && (
-                <div className="pb-1">{tableColumns[table].map(col => (
-                  <div key={col.name} className="flex items-center gap-1.5 px-3 pl-8 py-[2px]">
-                    <Hash className="w-2.5 h-2.5 flex-shrink-0" style={{ color: 'var(--nox-text-3)', opacity: 0.3 }} />
-                    <span className="text-[10px] font-mono truncate flex-1" style={{ color: 'var(--nox-text-3)' }}>{col.name}</span>
-                    <span className="text-[9px] font-mono px-1 py-[1px] rounded flex-shrink-0" style={{ color: typeColor(col.type), background: `${typeColor(col.type)}11` }}>{col.type}</span>
-                  </div>
-                ))}</div>
-              )}
-            </div>
-          ))}
-        </div>
-        <div className="px-3 py-2 flex-shrink-0" style={{ borderTop: '1px solid var(--nox-border)' }}>
-          <div className="flex items-center gap-1.5"><Zap className="w-2.5 h-2.5" style={{ color: '#10B981' }} /><span className="text-[9px] font-mono" style={{ color: 'var(--nox-text-3)' }}>{dbType} · {session?.host}:{session?.port}</span></div>
-        </div>
-      </div>
+      <SchemaSidebar
+        dbLabel={session?.databaseName || 'Database'}
+        footer={`${dbType} · ${session?.host}:${session?.port}`}
+        tables={filteredTables}
+        tableFilter={tableFilter}
+        setTableFilter={setTableFilter}
+        activeTable={activeTable}
+        tableColumns={tableColumns}
+        onSelect={selectTable}
+        onRefresh={() => refreshTables()}
+      />
 
       {/* Main area */}
       <div className="flex-1 flex flex-col" style={{ minWidth: 0, minHeight: 0, overflow: 'hidden' }}>
@@ -434,23 +425,15 @@ export default function DatabaseExplorer({ tab }: { tab: Tab }) {
                       {sortedRows.map((row, i) => (
                         <div key={i} onClick={() => setSelectedRow(i === selectedRow ? null : i)} className="grid cursor-default transition-colors" style={{ gridTemplateColumns: resultsGridColumns, background: selectedRow === i ? 'rgba(59,92,204,0.06)' : undefined }} onMouseEnter={e => { if (selectedRow !== i) e.currentTarget.style.background = 'var(--nox-hover)' }} onMouseLeave={e => { if (selectedRow !== i) e.currentTarget.style.background = '' }}>
                           <div className="text-right px-2 py-[5px] text-[10px] sticky left-0 z-10 whitespace-nowrap" style={{ color: 'var(--nox-text-3)', background: selectedRow === i ? 'rgba(59,92,204,0.06)' : 'var(--nox-bg)', borderBottom: '1px solid var(--nox-border)' }}>{i + 1}</div>
-                          {results.columns.map(col => {
-                            const val = row[col]; const isNull = val == null
-                            const isEditing = editingCell?.row === i && editingCell?.col === col
-                            const cellKey = `${i}-${col}`
-                            return (
-                              <div key={col} className="px-3 py-[5px] whitespace-nowrap overflow-hidden text-ellipsis" style={{ color: isNull ? 'var(--nox-text-3)' : 'var(--nox-text)', borderBottom: '1px solid var(--nox-border)', background: changedCells.has(`${i}-${col}`) ? 'rgba(245,158,11,0.12)' : undefined, transition: 'background 0.5s' }}
-                                onDoubleClick={e => { e.stopPropagation(); if (browsingTable) { setEditingCell({ row: i, col }); setEditValue(isNull ? '' : String(val)); setTimeout(() => editInputRef.current?.focus(), 0) } }}>
-                                {isEditing ? (
-                                  <input ref={editInputRef} value={editValue} onChange={e => setEditValue(e.target.value)}
-                                    onBlur={commitEdit} onKeyDown={e => { if (e.key === 'Enter') commitEdit(); if (e.key === 'Escape') setEditingCell(null) }}
-                                    className="bg-transparent text-[11px] font-mono px-0 py-0 focus:outline-none w-full" style={{ color: 'var(--nox-text)', borderBottom: '1px solid #3B5CCC' }} />
-                                ) : (
-                                  <SmartCell value={val} cellKey={cellKey} expandedJson={expandedJson} onToggleJson={toggleJsonExpand} />
-                                )}
-                              </div>
-                            )
-                          })}
+                          {results.columns.map(col => (
+                            <ResultCell key={col} row={row} rowIndex={i} col={col}
+                              editing={editingCell?.row === i && editingCell?.col === col}
+                              changed={changedCells.has(`${i}-${col}`)}
+                              editValue={editValue} setEditValue={setEditValue} editInputRef={editInputRef}
+                              commitEdit={commitEdit} cancelEdit={() => setEditingCell(null)}
+                              startCellEdit={startCellEdit}
+                              expandedJson={expandedJson} onToggleJson={toggleJsonExpand} />
+                          ))}
                         </div>
                       ))}
                     </div>
@@ -466,25 +449,7 @@ export default function DatabaseExplorer({ tab }: { tab: Tab }) {
 
             {/* Row detail panel */}
             {detailOpen && detailRow && results && (
-              <div className="flex-shrink-0 flex flex-col overflow-hidden" style={{ width: 300, borderLeft: '1px solid var(--nox-border)', background: 'var(--nox-shell)' }}>
-                <div className="flex items-center gap-2 px-3 py-2 flex-shrink-0" style={{ borderBottom: '1px solid var(--nox-border)' }}>
-                  <span className="text-[11px] font-semibold flex-1" style={{ color: 'var(--nox-text)' }}>Row {selectedRow! + 1}</span>
-                  <button onClick={() => setDetailOpen(false)} style={{ color: 'var(--nox-text-3)' }}><X className="w-3 h-3" /></button>
-                </div>
-                <div className="flex-1 overflow-y-auto p-3" style={{ scrollbarWidth: 'thin' }}>
-                  {results.columns.map(col => {
-                    const val = detailRow[col]; const isNull = val == null
-                    const str = isNull ? null : typeof val === 'object' ? JSON.stringify(val, null, 2) : String(val)
-                    return (
-                      <div key={col} className="mb-3">
-                        <p className="text-[9px] uppercase tracking-wider font-semibold mb-0.5" style={{ color: 'var(--nox-text-3)' }}>{col}</p>
-                        {isNull ? <p className="text-[11px] font-mono italic opacity-40" style={{ color: 'var(--nox-text-3)' }}>NULL</p>
-                         : <pre className="text-[11px] font-mono break-all leading-relaxed whitespace-pre-wrap" style={{ color: 'var(--nox-text)' }}>{str}</pre>}
-                      </div>
-                    )
-                  })}
-                </div>
-              </div>
+              <RowDetailPanel columns={results.columns} row={detailRow} rowNumber={selectedRow! + 1} onClose={() => setDetailOpen(false)} />
             )}
           </>}
 
@@ -499,35 +464,9 @@ export default function DatabaseExplorer({ tab }: { tab: Tab }) {
             </div>
           )}
 
-          {/* ── History ──────────────────────────────────────────── */}
-          {activePanel === 'history' && (
-            <div className="flex-1 overflow-y-auto" style={{ scrollbarWidth: 'thin' }}>
-              {history.length === 0 ? <div className="flex items-center justify-center h-full"><p className="text-[11px]" style={{ color: 'var(--nox-text-3)' }}>No history</p></div>
-              : history.map((h, i) => (
-                <button key={i} onClick={() => { setSql(h.sql); setActivePanel('results'); editorRef.current?.focus() }}
-                  className="w-full text-left px-4 py-3 transition-colors" style={{ borderBottom: '1px solid var(--nox-border)' }}
-                  onMouseEnter={e => (e.currentTarget.style.background = 'var(--nox-hover)')} onMouseLeave={e => (e.currentTarget.style.background = '')}>
-                  <pre className="text-[11px] font-mono leading-relaxed whitespace-pre-wrap" style={{ color: 'var(--nox-text-2)' }}>{h.sql.length > 200 ? h.sql.slice(0, 200) + '…' : h.sql}</pre>
-                  <div className="flex items-center gap-3 mt-1"><span className="text-[9px] font-mono" style={{ color: 'var(--nox-text-3)' }}>{new Date(h.ts).toLocaleTimeString()}</span>{h.duration !== undefined && <span className="text-[9px] font-mono" style={{ color: 'var(--nox-text-3)' }}>{h.duration}ms</span>}{h.rows !== undefined && <span className="text-[9px] font-mono" style={{ color: 'var(--nox-text-3)' }}>{h.rows} rows</span>}</div>
-                </button>
-              ))}
-            </div>
-          )}
+          {activePanel === 'history' && <HistoryPanel history={history} onPick={pickQuery} />}
 
-          {/* ── Saved ────────────────────────────────────────────── */}
-          {activePanel === 'saved' && (
-            <div className="flex-1 overflow-y-auto" style={{ scrollbarWidth: 'thin' }}>
-              {savedQueries.length === 0 ? <div className="flex items-center justify-center h-full"><div className="text-center"><Pin className="w-6 h-6 mx-auto mb-2" style={{ color: 'var(--nox-text-3)', opacity: 0.2 }} /><p className="text-[11px]" style={{ color: 'var(--nox-text-3)' }}>Save queries with the Pin button</p></div></div>
-              : savedQueries.map((q, i) => (
-                <button key={i} onClick={() => { setSql(q.sql); setActivePanel('results'); editorRef.current?.focus() }}
-                  className="w-full text-left px-4 py-3 transition-colors" style={{ borderBottom: '1px solid var(--nox-border)' }}
-                  onMouseEnter={e => (e.currentTarget.style.background = 'var(--nox-hover)')} onMouseLeave={e => (e.currentTarget.style.background = '')}>
-                  <p className="text-[11px] font-medium mb-1" style={{ color: 'var(--nox-text)' }}>{q.label}</p>
-                  <pre className="text-[10px] font-mono truncate" style={{ color: 'var(--nox-text-3)' }}>{q.sql}</pre>
-                </button>
-              ))}
-            </div>
-          )}
+          {activePanel === 'saved' && <SavedPanel savedQueries={savedQueries} onPick={pickQuery} />}
         </div>
       </div>
 
@@ -536,34 +475,190 @@ export default function DatabaseExplorer({ tab }: { tab: Tab }) {
   )
 }
 
+const DB_TYPE_LABELS: Record<string, string> = { mysql: 'MySQL', mariadb: 'MariaDB', postgresql: 'PostgreSQL' }
+
+function SchemaSidebar({ dbLabel, footer, tables, tableFilter, setTableFilter, activeTable, tableColumns, onSelect, onRefresh }: Readonly<{
+  dbLabel: string; footer: string; tables: string[]; tableFilter: string; setTableFilter: (v: string) => void
+  activeTable: string | null; tableColumns: Record<string, TableColumn[]>; onSelect: (t: string) => void; onRefresh: () => void
+}>) {
+  return (
+    <div className="flex flex-col flex-shrink-0 overflow-hidden" style={{ width: 240, borderRight: '1px solid var(--nox-border)', background: 'var(--nox-shell)' }}>
+      <div className="flex items-center gap-2 px-3 flex-shrink-0" style={{ height: 36, borderBottom: '1px solid var(--nox-border)' }}>
+        <Database className="w-3.5 h-3.5" style={{ color: '#3B5CCC' }} />
+        <p className="text-[11px] font-semibold truncate flex-1" style={{ color: 'var(--nox-text)' }}>{dbLabel}</p>
+        <button onClick={onRefresh} className="w-5 h-5 flex items-center justify-center rounded" style={{ color: 'var(--nox-text-3)' }}><RefreshCw className="w-3 h-3" /></button>
+      </div>
+      <div className="px-2 py-2 flex-shrink-0">
+        <div className="flex items-center gap-1.5 px-2 py-1 rounded" style={{ background: 'var(--nox-bg)', border: '1px solid var(--nox-border)' }}>
+          <Search className="w-3 h-3" style={{ color: 'var(--nox-text-3)' }} />
+          <input value={tableFilter} onChange={e => setTableFilter(e.target.value)} placeholder="Filter tables…" className="flex-1 bg-transparent text-[10px] font-mono focus:outline-none" style={{ color: 'var(--nox-text)' }} />
+          {tableFilter && <button onClick={() => setTableFilter('')} style={{ color: 'var(--nox-text-3)' }}><X className="w-2.5 h-2.5" /></button>}
+        </div>
+      </div>
+      <div className="px-3 pb-1 flex-shrink-0"><span className="text-[9px] uppercase tracking-wider font-semibold" style={{ color: 'var(--nox-text-3)' }}>Tables ({tables.length})</span></div>
+      <div className="flex-1 overflow-y-auto" style={{ scrollbarWidth: 'thin' }}>
+        {tables.map(table => (
+          <div key={table}>
+            <button onClick={() => onSelect(table)}
+              className="w-full flex items-center gap-1.5 px-3 py-[5px] text-left transition-colors"
+              style={{ color: activeTable === table ? 'var(--nox-text)' : 'var(--nox-text-2)', background: activeTable === table ? 'rgba(59,92,204,0.06)' : undefined }}
+              onMouseEnter={e => { if (activeTable !== table) e.currentTarget.style.background = 'var(--nox-hover)' }}
+              onMouseLeave={e => { if (activeTable !== table) e.currentTarget.style.background = '' }}>
+              {activeTable === table ? <ChevronDown className="w-2.5 h-2.5 flex-shrink-0" style={{ color: '#3B5CCC' }} /> : <ChevronRight className="w-2.5 h-2.5 flex-shrink-0" style={{ color: 'var(--nox-text-3)' }} />}
+              <Table2 className="w-3 h-3 flex-shrink-0" style={{ color: activeTable === table ? '#3B5CCC' : '#8B5CF6' }} />
+              <span className="text-[11px] font-mono truncate">{table}</span>
+            </button>
+            {activeTable === table && tableColumns[table] && (
+              <div className="pb-1">{tableColumns[table].map(col => (
+                <div key={col.name} className="flex items-center gap-1.5 px-3 pl-8 py-[2px]">
+                  <Hash className="w-2.5 h-2.5 flex-shrink-0" style={{ color: 'var(--nox-text-3)', opacity: 0.3 }} />
+                  <span className="text-[10px] font-mono truncate flex-1" style={{ color: 'var(--nox-text-3)' }}>{col.name}</span>
+                  <span className="text-[9px] font-mono px-1 py-[1px] rounded flex-shrink-0" style={{ color: typeColor(col.type), background: `${typeColor(col.type)}11` }}>{col.type}</span>
+                </div>
+              ))}</div>
+            )}
+          </div>
+        ))}
+      </div>
+      <div className="px-3 py-2 flex-shrink-0" style={{ borderTop: '1px solid var(--nox-border)' }}>
+        <div className="flex items-center gap-1.5"><Zap className="w-2.5 h-2.5" style={{ color: '#10B981' }} /><span className="text-[9px] font-mono" style={{ color: 'var(--nox-text-3)' }}>{footer}</span></div>
+      </div>
+    </div>
+  )
+}
+
+function ResultCell({ row, rowIndex, col, editing, changed, editValue, setEditValue, editInputRef, commitEdit, cancelEdit, startCellEdit, expandedJson, onToggleJson }: Readonly<{
+  row: any; rowIndex: number; col: string; editing: boolean; changed: boolean
+  editValue: string; setEditValue: (v: string) => void; editInputRef: React.Ref<HTMLInputElement>
+  commitEdit: () => void; cancelEdit: () => void; startCellEdit: (row: number, col: string, val: unknown) => void
+  expandedJson: Set<string>; onToggleJson: (k: string) => void
+}>) {
+  const val = row[col]
+  const isNull = val == null
+  return (
+    <div className="px-3 py-[5px] whitespace-nowrap overflow-hidden text-ellipsis" style={{ color: isNull ? 'var(--nox-text-3)' : 'var(--nox-text)', borderBottom: '1px solid var(--nox-border)', background: changed ? 'rgba(245,158,11,0.12)' : undefined, transition: 'background 0.5s' }}
+      onDoubleClick={e => { e.stopPropagation(); startCellEdit(rowIndex, col, val) }}>
+      {editing ? (
+        <input ref={editInputRef} value={editValue} onChange={e => setEditValue(e.target.value)}
+          onBlur={commitEdit} onKeyDown={e => {
+            if (e.key === 'Enter') commitEdit()
+            if (e.key === 'Escape') cancelEdit()
+          }}
+          className="bg-transparent text-[11px] font-mono px-0 py-0 focus:outline-none w-full" style={{ color: 'var(--nox-text)', borderBottom: '1px solid #3B5CCC' }} />
+      ) : (
+        <SmartCell value={val} cellKey={`${rowIndex}-${col}`} expandedJson={expandedJson} onToggleJson={onToggleJson} />
+      )}
+    </div>
+  )
+}
+
+function RowDetailPanel({ columns, row, rowNumber, onClose }: Readonly<{
+  columns: string[]; row: any; rowNumber: number; onClose: () => void
+}>) {
+  return (
+    <div className="flex-shrink-0 flex flex-col overflow-hidden" style={{ width: 300, borderLeft: '1px solid var(--nox-border)', background: 'var(--nox-shell)' }}>
+      <div className="flex items-center gap-2 px-3 py-2 flex-shrink-0" style={{ borderBottom: '1px solid var(--nox-border)' }}>
+        <span className="text-[11px] font-semibold flex-1" style={{ color: 'var(--nox-text)' }}>Row {rowNumber}</span>
+        <button onClick={onClose} style={{ color: 'var(--nox-text-3)' }}><X className="w-3 h-3" /></button>
+      </div>
+      <div className="flex-1 overflow-y-auto p-3" style={{ scrollbarWidth: 'thin' }}>
+        {columns.map(col => {
+          const val = row[col]
+          if (val == null) {
+            return (
+              <div key={col} className="mb-3">
+                <p className="text-[9px] uppercase tracking-wider font-semibold mb-0.5" style={{ color: 'var(--nox-text-3)' }}>{col}</p>
+                <p className="text-[11px] font-mono italic opacity-40" style={{ color: 'var(--nox-text-3)' }}>NULL</p>
+              </div>
+            )
+          }
+          const str = typeof val === 'object' ? JSON.stringify(val, null, 2) : String(val)
+          return (
+            <div key={col} className="mb-3">
+              <p className="text-[9px] uppercase tracking-wider font-semibold mb-0.5" style={{ color: 'var(--nox-text-3)' }}>{col}</p>
+              <pre className="text-[11px] font-mono break-all leading-relaxed whitespace-pre-wrap" style={{ color: 'var(--nox-text)' }}>{str}</pre>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+function HistoryPanel({ history, onPick }: Readonly<{
+  history: { sql: string; ts: number; duration?: number; rows?: number }[]; onPick: (sql: string) => void
+}>) {
+  if (history.length === 0) {
+    return <div className="flex-1 flex items-center justify-center"><p className="text-[11px]" style={{ color: 'var(--nox-text-3)' }}>No history</p></div>
+  }
+  return (
+    <div className="flex-1 overflow-y-auto" style={{ scrollbarWidth: 'thin' }}>
+      {history.map((h, i) => (
+        <button key={`${h.ts}-${i}`} onClick={() => onPick(h.sql)}
+          className="w-full text-left px-4 py-3 transition-colors" style={{ borderBottom: '1px solid var(--nox-border)' }}
+          onMouseEnter={e => (e.currentTarget.style.background = 'var(--nox-hover)')} onMouseLeave={e => (e.currentTarget.style.background = '')}>
+          <pre className="text-[11px] font-mono leading-relaxed whitespace-pre-wrap" style={{ color: 'var(--nox-text-2)' }}>{h.sql.length > 200 ? h.sql.slice(0, 200) + '…' : h.sql}</pre>
+          <div className="flex items-center gap-3 mt-1"><span className="text-[9px] font-mono" style={{ color: 'var(--nox-text-3)' }}>{new Date(h.ts).toLocaleTimeString()}</span>{h.duration !== undefined && <span className="text-[9px] font-mono" style={{ color: 'var(--nox-text-3)' }}>{h.duration}ms</span>}{h.rows !== undefined && <span className="text-[9px] font-mono" style={{ color: 'var(--nox-text-3)' }}>{h.rows} rows</span>}</div>
+        </button>
+      ))}
+    </div>
+  )
+}
+
+function SavedPanel({ savedQueries, onPick }: Readonly<{ savedQueries: SavedQuery[]; onPick: (sql: string) => void }>) {
+  if (savedQueries.length === 0) {
+    return <div className="flex-1 flex items-center justify-center"><div className="text-center"><Pin className="w-6 h-6 mx-auto mb-2" style={{ color: 'var(--nox-text-3)', opacity: 0.2 }} /><p className="text-[11px]" style={{ color: 'var(--nox-text-3)' }}>Save queries with the Pin button</p></div></div>
+  }
+  return (
+    <div className="flex-1 overflow-y-auto" style={{ scrollbarWidth: 'thin' }}>
+      {savedQueries.map((q) => (
+        <button key={q.ts} onClick={() => onPick(q.sql)}
+          className="w-full text-left px-4 py-3 transition-colors" style={{ borderBottom: '1px solid var(--nox-border)' }}
+          onMouseEnter={e => (e.currentTarget.style.background = 'var(--nox-hover)')} onMouseLeave={e => (e.currentTarget.style.background = '')}>
+          <p className="text-[11px] font-medium mb-1" style={{ color: 'var(--nox-text)' }}>{q.label}</p>
+          <pre className="text-[10px] font-mono truncate" style={{ color: 'var(--nox-text-3)' }}>{q.sql}</pre>
+        </button>
+      ))}
+    </div>
+  )
+}
+
 /* ── Smart cell renderer ───────────────────────────────────────────────── */
 
-function SmartCell({ value, cellKey, expandedJson, onToggleJson }: {
+// Returns the parsed object for object values / JSON-looking strings, else null.
+function tryParseJsonCell(value: any, str: string): any {
+  if (typeof value === 'object') return value
+  if (!isJsonString(str)) return null
+  try { return JSON.parse(str) } catch { return null }
+}
+
+// JSON object/array — expandable inline
+function JsonCell({ parsed, expanded, onToggle }: Readonly<{ parsed: any; expanded: boolean; onToggle: () => void }>) {
+  return (
+    <span>
+      <button onClick={e => { e.stopPropagation(); onToggle() }}
+        className="inline-flex items-center gap-0.5 px-1 py-[1px] rounded text-[9px] font-mono font-medium"
+        style={{ color: '#8B5CF6', background: 'rgba(139,92,246,0.08)' }}>
+        {Array.isArray(parsed) ? `[${parsed.length}]` : `{${Object.keys(parsed).length}}`}
+        <ChevronRight className="w-2 h-2" style={{ transform: expanded ? 'rotate(90deg)' : undefined, transition: 'transform 0.15s' }} />
+      </button>
+      {expanded && (
+        <pre className="mt-1 text-[10px] font-mono leading-relaxed whitespace-pre-wrap" style={{ color: '#8B5CF6' }}>{JSON.stringify(parsed, null, 2)}</pre>
+      )}
+    </span>
+  )
+}
+
+function SmartCell({ value, cellKey, expandedJson, onToggleJson }: Readonly<{
   value: any; cellKey: string; expandedJson: Set<string>; onToggleJson: (k: string) => void
-}) {
+}>) {
   if (value == null) return <span className="italic opacity-40">NULL</span>
 
   const str = typeof value === 'object' ? JSON.stringify(value) : String(value)
 
-  // JSON object/array — expandable inline
-  if (typeof value === 'object' || isJsonString(str)) {
-    const expanded = expandedJson.has(cellKey)
-    const parsed = typeof value === 'object' ? value : (() => { try { return JSON.parse(str) } catch { return null } })()
-    if (parsed) {
-      return (
-        <span>
-          <button onClick={e => { e.stopPropagation(); onToggleJson(cellKey) }}
-            className="inline-flex items-center gap-0.5 px-1 py-[1px] rounded text-[9px] font-mono font-medium"
-            style={{ color: '#8B5CF6', background: 'rgba(139,92,246,0.08)' }}>
-            {Array.isArray(parsed) ? `[${parsed.length}]` : `{${Object.keys(parsed).length}}`}
-            <ChevronRight className="w-2 h-2" style={{ transform: expanded ? 'rotate(90deg)' : undefined, transition: 'transform 0.15s' }} />
-          </button>
-          {expanded && (
-            <pre className="mt-1 text-[10px] font-mono leading-relaxed whitespace-pre-wrap" style={{ color: '#8B5CF6' }}>{JSON.stringify(parsed, null, 2)}</pre>
-          )}
-        </span>
-      )
-    }
+  const parsed = tryParseJsonCell(value, str)
+  if (parsed) {
+    return <JsonCell parsed={parsed} expanded={expandedJson.has(cellKey)} onToggle={() => onToggleJson(cellKey)} />
   }
 
   // URL — clickable link
@@ -589,7 +684,7 @@ function SmartCell({ value, cellKey, expandedJson, onToggleJson }: {
   // ISO timestamp — show relative time tooltip
   if (ISO_DATE_RE.test(str)) {
     const d = new Date(str)
-    if (!isNaN(d.getTime())) {
+    if (!Number.isNaN(d.getTime())) {
       return (
         <span title={str} style={{ color: '#3B5CCC' }}>
           {d.toLocaleString()} <span className="text-[9px] opacity-50">({relativeTime(d)})</span>
@@ -613,10 +708,16 @@ function SmartCell({ value, cellKey, expandedJson, onToggleJson }: {
 
 /* ── Explain tree visualizer ───────────────────────────────────────────── */
 
-function ExplainTreeView({ node, maxCost, depth }: { node: ExplainNode; maxCost: number; depth: number }) {
+function explainCostColor(costPct: number): string {
+  if (costPct > 70) return '#EF4444'
+  if (costPct > 40) return '#F59E0B'
+  return '#10B981'
+}
+
+function ExplainTreeView({ node, maxCost, depth }: Readonly<{ node: ExplainNode; maxCost: number; depth: number }>) {
   const [expanded, setExpanded] = useState(true)
   const costPct = maxCost > 0 ? Math.max(2, (node.cost / maxCost) * 100) : 0
-  const costColor = costPct > 70 ? '#EF4444' : costPct > 40 ? '#F59E0B' : '#10B981'
+  const costColor = explainCostColor(costPct)
 
   return (
     <div style={{ marginLeft: depth > 0 ? 24 : 0 }}>
@@ -652,7 +753,7 @@ function ExplainTreeView({ node, maxCost, depth }: { node: ExplainNode; maxCost:
       </div>
 
       {expanded && node.children.map((child, i) => (
-        <ExplainTreeView key={i} node={child} maxCost={maxCost} depth={depth + 1} />
+        <ExplainTreeView key={`${child.type}-${child.relation ?? i}`} node={child} maxCost={maxCost} depth={depth + 1} />
       ))}
     </div>
   )
@@ -660,7 +761,7 @@ function ExplainTreeView({ node, maxCost, depth }: { node: ExplainNode; maxCost:
 
 /* ── Helpers ────────────────────────────────────────────────────────────── */
 
-function PanelTab({ active, onClick, badge, children }: { active: boolean; onClick: () => void; badge?: number; children: React.ReactNode }) {
+function PanelTab({ active, onClick, badge, children }: Readonly<{ active: boolean; onClick: () => void; badge?: number; children: React.ReactNode }>) {
   return (
     <button onClick={onClick} className="flex items-center gap-1.5 px-4 py-2 text-[11px] font-medium relative" style={{ color: active ? 'var(--nox-text)' : 'var(--nox-text-3)' }}>
       {children}
@@ -670,7 +771,7 @@ function PanelTab({ active, onClick, badge, children }: { active: boolean; onCli
   )
 }
 
-function TinyBtn({ title, onClick, active, children }: { title: string; onClick: () => void; active?: boolean; children: React.ReactNode }) {
+function TinyBtn({ title, onClick, active, children }: Readonly<{ title: string; onClick: () => void; active?: boolean; children: React.ReactNode }>) {
   return <button onClick={onClick} title={title} className="w-6 h-6 flex items-center justify-center rounded mr-0.5" style={{ color: active ? '#3B5CCC' : 'var(--nox-text-3)' }} onMouseEnter={e => (e.currentTarget.style.background = 'var(--nox-hover)')} onMouseLeave={e => (e.currentTarget.style.background = '')}>{children}</button>
 }
 

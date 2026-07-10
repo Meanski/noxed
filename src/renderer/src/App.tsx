@@ -107,7 +107,7 @@ export default function App() {
       // (close tab) are owned by the application menu — see src/main/menu.ts.
       if (meta && /^[1-9]$/.test(e.key)) {
         e.preventDefault()
-        const tab = visibleTabs[parseInt(e.key) - 1]
+        const tab = visibleTabs[Number.parseInt(e.key) - 1]
         if (tab) setActiveTab(tab.id)
       }
     }

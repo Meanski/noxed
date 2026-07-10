@@ -1,5 +1,5 @@
 import React from 'react'
-import { useAppStore } from '../store'
+import { useAppStore, Tab } from '../store'
 import TerminalView from './Terminal/TerminalView'
 import SftpBrowser from './SFTP/SftpBrowser'
 import K8sDashboard from './K8s/K8sDashboard'
@@ -58,11 +58,67 @@ const PANE_GRIDS: Record<number, React.CSSProperties> = {
   4: { gridTemplateColumns: '1fr 1fr', gridTemplateRows: '1fr 1fr' },
 }
 
+// Single-view tabs; terminal tabs are special-cased for split panes below.
+function viewContent(tab: Tab): React.ReactNode {
+  switch (tab.view) {
+    case 'k8s':
+      return tab.k8sContext
+        ? <K8sDashboard context={tab.k8sContext} kubeconfigPath={tab.kubeconfigPath} tabId={tab.id} />
+        : null
+    case 'sftp': return <SftpBrowser tab={tab} />
+    case 'database': return <DatabaseExplorer tab={tab} />
+    case 'redis': return <RedisExplorer tab={tab} />
+    case 'dashboard': return <Dashboard />
+    case 'connections': return <ConnectionManager />
+    case 'editor': return <EditorTab tab={tab} />
+    case 'settings': return <Settings />
+    case 'tunnels': return <TunnelsView />
+    case 'docker': return <DockerDashboard tab={tab} />
+    case 'runner': return <RunnerView />
+    case 'local-term': return <LocalTerminalView tab={tab} />
+    case 'rdp': return <RdpView tab={tab} />
+    default: return null
+  }
+}
+
+function TerminalPanes({ tab, style }: Readonly<{ tab: Tab; style: React.CSSProperties }>) {
+  const tabs = useAppStore(s => s.tabs)
+  const focusedPaneId = useAppStore(s => s.focusedPaneId)
+  const setFocusedPane = useAppStore(s => s.setFocusedPane)
+
+  const panes = [tab, ...tabs.filter(p => p.paneOf === tab.id)]
+  const split = panes.length > 1
+  return (
+    <div style={style}>
+      <div
+        className="flex-1 min-w-0 min-h-0 overflow-hidden h-full"
+        style={split
+          ? { display: 'grid', gap: 1, background: 'var(--nox-border)', ...PANE_GRIDS[Math.min(panes.length, 4)] }
+          : { display: 'flex', flexDirection: 'column' }}
+      >
+        {panes.map((pane, i) => (
+          <div
+            key={pane.id}
+            className="relative flex-1 min-w-0 min-h-0 overflow-hidden"
+            style={{
+              ...(split && panes.length === 3 && i === 2 ? { gridColumn: 'span 2' } : {}),
+              ...(split && focusedPaneId === pane.id ? { boxShadow: 'inset 0 0 0 1px rgba(124,58,237,0.45)' } : {}),
+            }}
+            onMouseDownCapture={() => { if (split) setFocusedPane(pane.id) }}
+          >
+            <TabErrorBoundary>
+              <TerminalView tab={pane} />
+            </TabErrorBoundary>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 export default function MainContent() {
   const tabs = useAppStore(s => s.tabs)
   const activeTabId = useAppStore(s => s.activeTabId)
-  const focusedPaneId = useAppStore(s => s.focusedPaneId)
-  const setFocusedPane = useAppStore(s => s.setFocusedPane)
 
   // Keep every open tab mounted so switching views does not tear down live
   // terminal, database, SFTP, Redis, or K8s connections.
@@ -71,9 +127,8 @@ export default function MainContent() {
       {tabs.map(tab => {
         if (tab.paneOf) return null // rendered inside the parent's grid
 
-        const isActive = tab.id === activeTabId
         const style: React.CSSProperties = {
-          display: isActive ? 'flex' : 'none',
+          display: tab.id === activeTabId ? 'flex' : 'none',
           position: 'absolute',
           inset: 0,
           overflow: 'hidden',
@@ -81,168 +136,15 @@ export default function MainContent() {
           minHeight: 0,
         }
 
-        if (tab.view === 'terminal') {
-          const panes = [tab, ...tabs.filter(p => p.paneOf === tab.id)]
-          const split = panes.length > 1
-          return (
-            <div key={tab.id} style={style}>
-              <div
-                className="flex-1 min-w-0 min-h-0 overflow-hidden h-full"
-                style={split
-                  ? { display: 'grid', gap: 1, background: 'var(--nox-border)', ...PANE_GRIDS[Math.min(panes.length, 4)] }
-                  : { display: 'flex', flexDirection: 'column' }}
-              >
-                {panes.map((pane, i) => (
-                  <div
-                    key={pane.id}
-                    className="relative flex-1 min-w-0 min-h-0 overflow-hidden"
-                    style={{
-                      ...(split && panes.length === 3 && i === 2 ? { gridColumn: 'span 2' } : {}),
-                      ...(split && focusedPaneId === pane.id ? { boxShadow: 'inset 0 0 0 1px rgba(124,58,237,0.45)' } : {}),
-                    }}
-                    onMouseDownCapture={() => { if (split) setFocusedPane(pane.id) }}
-                  >
-                    <TabErrorBoundary>
-                      <TerminalView tab={pane} />
-                    </TabErrorBoundary>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )
-        }
+        if (tab.view === 'terminal') return <TerminalPanes key={tab.id} tab={tab} style={style} />
 
-        if (tab.view === 'k8s' && tab.k8sContext) {
-          return (
-            <div key={tab.id} style={style}>
-              <TabErrorBoundary>
-                <K8sDashboard context={tab.k8sContext} kubeconfigPath={tab.kubeconfigPath} tabId={tab.id} />
-              </TabErrorBoundary>
-            </div>
-          )
-        }
-
-        if (tab.view === 'sftp') {
-          return (
-            <div key={tab.id} style={style}>
-              <TabErrorBoundary>
-                <SftpBrowser tab={tab} />
-              </TabErrorBoundary>
-            </div>
-          )
-        }
-
-        if (tab.view === 'database') {
-          return (
-            <div key={tab.id} style={style}>
-              <TabErrorBoundary>
-                <DatabaseExplorer tab={tab} />
-              </TabErrorBoundary>
-            </div>
-          )
-        }
-
-        if (tab.view === 'redis') {
-          return (
-            <div key={tab.id} style={style}>
-              <TabErrorBoundary>
-                <RedisExplorer tab={tab} />
-              </TabErrorBoundary>
-            </div>
-          )
-        }
-
-        if (tab.view === 'dashboard') {
-          return (
-            <div key={tab.id} style={style}>
-              <TabErrorBoundary>
-                <Dashboard />
-              </TabErrorBoundary>
-            </div>
-          )
-        }
-
-        if (tab.view === 'connections') {
-          return (
-            <div key={tab.id} style={style}>
-              <TabErrorBoundary>
-                <ConnectionManager />
-              </TabErrorBoundary>
-            </div>
-          )
-        }
-
-        if (tab.view === 'editor') {
-          return (
-            <div key={tab.id} style={style}>
-              <TabErrorBoundary>
-                <EditorTab tab={tab} />
-              </TabErrorBoundary>
-            </div>
-          )
-        }
-
-        if (tab.view === 'settings') {
-          return (
-            <div key={tab.id} style={style}>
-              <TabErrorBoundary>
-                <Settings />
-              </TabErrorBoundary>
-            </div>
-          )
-        }
-
-        if (tab.view === 'tunnels') {
-          return (
-            <div key={tab.id} style={style}>
-              <TabErrorBoundary>
-                <TunnelsView />
-              </TabErrorBoundary>
-            </div>
-          )
-        }
-
-        if (tab.view === 'docker') {
-          return (
-            <div key={tab.id} style={style}>
-              <TabErrorBoundary>
-                <DockerDashboard tab={tab} />
-              </TabErrorBoundary>
-            </div>
-          )
-        }
-
-        if (tab.view === 'runner') {
-          return (
-            <div key={tab.id} style={style}>
-              <TabErrorBoundary>
-                <RunnerView />
-              </TabErrorBoundary>
-            </div>
-          )
-        }
-
-        if (tab.view === 'local-term') {
-          return (
-            <div key={tab.id} style={style}>
-              <TabErrorBoundary>
-                <LocalTerminalView tab={tab} />
-              </TabErrorBoundary>
-            </div>
-          )
-        }
-
-        if (tab.view === 'rdp') {
-          return (
-            <div key={tab.id} style={style}>
-              <TabErrorBoundary>
-                <RdpView tab={tab} />
-              </TabErrorBoundary>
-            </div>
-          )
-        }
-
-        return null
+        const content = viewContent(tab)
+        if (!content) return null
+        return (
+          <div key={tab.id} style={style}>
+            <TabErrorBoundary>{content}</TabErrorBoundary>
+          </div>
+        )
       })}
     </div>
   )

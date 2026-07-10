@@ -3,7 +3,7 @@ import { Terminal } from '@xterm/xterm'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import { SearchAddon } from '@xterm/addon-search'
 import '@xterm/xterm/css/xterm.css'
-import { useAppStore, Tab } from '../../store'
+import { useAppStore, Tab, Session } from '../../store'
 import { checkResourceAlerts } from '../../lib/metricsAlerts'
 import SnippetRunner, { Snippet, SnippetScope } from './SnippetRunner'
 import TerminalSearchBar from './TerminalSearchBar'
@@ -488,6 +488,17 @@ export default function TerminalView({ tab }: Props) {
 
   // Metrics handled by sshDispatch singleton (registered on connect)
 
+  function startCooldown(secs: number) {
+    setCooldown(secs)
+    if (cooldownTimerRef.current) clearInterval(cooldownTimerRef.current)
+    cooldownTimerRef.current = setInterval(() => {
+      setCooldown(prev => {
+        if (prev <= 1) { clearInterval(cooldownTimerRef.current!); return 0 }
+        return prev - 1
+      })
+    }, 1000)
+  }
+
   async function connect() {
     if (!session) return
     setConnecting(true)
@@ -498,22 +509,7 @@ export default function TerminalView({ tab }: Props) {
     termRef.current?.write(`${dim}Connecting to ${session.username}@${session.host}…${reset}\r\n`)
 
     try {
-      let password: string | undefined
-      let privateKey: string | undefined
-
-      if (session.authType === 'key') {
-        if (!session.keyPath) throw new Error('Key authentication selected but no key file path is configured')
-        privateKey = await readKeyFile(session.keyPath)
-        if (!privateKey) throw new Error(`Cannot read private key: ${session.keyPath}`)
-      } else {
-        const creds = tab.sessionId
-          ? await window.api.sessions.getCredentials(tab.sessionId).catch((err: any) => {
-              throw new Error(err?.message?.includes('locked') ? 'App is locked — unlock noxed to reconnect' : (err?.message ?? 'Failed to retrieve credentials'))
-            })
-          : null
-        password = creds?.password
-        if (password === undefined) throw new Error('No password found for this session — re-enter credentials in Settings')
-      }
+      const { password, privateKey } = await resolveSshCredentials(session, tab.sessionId)
 
       const streamId = await window.api.ssh.connect({
         host: session.host,
@@ -539,19 +535,10 @@ export default function TerminalView({ tab }: Props) {
     } catch (err: any) {
       const msg = typeof err === 'string' ? err : err?.message ?? 'Connection failed'
       failCountRef.current += 1
-      // Backoff: 5s, 15s, 30s after successive failures
-      const backoff = failCountRef.current === 1 ? 5 : failCountRef.current === 2 ? 15 : 30
       updateTab(tab.id, { status: 'error', errorMessage: msg })
       termRef.current?.write(`\r\n\x1b[31m✕ ${msg}\x1b[0m\r\n`)
-      // Countdown
-      setCooldown(backoff)
-      if (cooldownTimerRef.current) clearInterval(cooldownTimerRef.current)
-      cooldownTimerRef.current = setInterval(() => {
-        setCooldown(prev => {
-          if (prev <= 1) { clearInterval(cooldownTimerRef.current!); return 0 }
-          return prev - 1
-        })
-      }, 1000)
+      // Backoff: 5s, 15s, 30s after successive failures
+      startCooldown(BACKOFF_SECONDS[Math.min(failCountRef.current, BACKOFF_SECONDS.length) - 1])
     } finally {
       setConnecting(false)
     }
@@ -629,6 +616,27 @@ export default function TerminalView({ tab }: Props) {
   )
 }
 
+const BACKOFF_SECONDS = [5, 15, 30]
+
 async function readKeyFile(path: string): Promise<string | undefined> {
   try { return await window.api.fs.readFile(path) } catch { return undefined }
+}
+
+// Resolves either the private key or the stored password for a session,
+// throwing a user-facing error when neither is usable.
+async function resolveSshCredentials(session: Session, sessionId?: string): Promise<{ password?: string; privateKey?: string }> {
+  if (session.authType === 'key') {
+    if (!session.keyPath) throw new Error('Key authentication selected but no key file path is configured')
+    const privateKey = await readKeyFile(session.keyPath)
+    if (!privateKey) throw new Error(`Cannot read private key: ${session.keyPath}`)
+    return { privateKey }
+  }
+  const creds = sessionId
+    ? await window.api.sessions.getCredentials(sessionId).catch((err: any) => {
+        throw new Error(err?.message?.includes('locked') ? 'App is locked — unlock noxed to reconnect' : (err?.message ?? 'Failed to retrieve credentials'))
+      })
+    : null
+  const password = creds?.password
+  if (password === undefined) throw new Error('No password found for this session — re-enter credentials in Settings')
+  return { password }
 }

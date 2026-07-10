@@ -277,7 +277,7 @@ export default function Sidebar() {
       </div>
 
       {/* Context menu */}
-      {ctxMenu && ctxMenu.session && (
+      {ctxMenu?.session && (
         <ServerContextMenu
           x={ctxMenu.x}
           y={ctxMenu.y}
@@ -311,7 +311,7 @@ export default function Sidebar() {
 }
 
 /* ── Draggable section ───────────────────────────────────────────────────── */
-function DraggableSection({ label, sessions, connectedIds, renamingId, onContextMenu, onOpen, onRename, onRenameCancel, onReorder }: {
+function DraggableSection({ label, sessions, connectedIds, renamingId, onContextMenu, onOpen, onRename, onRenameCancel, onReorder }: Readonly<{
   label: string
   sessions: Session[]
   connectedIds: Set<string | undefined>
@@ -321,7 +321,7 @@ function DraggableSection({ label, sessions, connectedIds, renamingId, onContext
   onRename: (s: Session, label: string) => void
   onRenameCancel: () => void
   onReorder: (ids: string[]) => void
-}) {
+}>) {
   const dragSrc = useRef<string | null>(null)
   const [dragOver, setDragOver] = useState<string | null>(null)
   const [order, setOrder] = useState<string[]>([])
@@ -383,7 +383,7 @@ function DraggableSection({ label, sessions, connectedIds, renamingId, onContext
 }
 
 /* ── Nav item ────────────────────────────────────────────────────────────── */
-function NavItem({ icon, label, active, onClick }: { icon: React.ReactNode; label: string; active: boolean; onClick: () => void }) {
+function NavItem({ icon, label, active, onClick }: Readonly<{ icon: React.ReactNode; label: string; active: boolean; onClick: () => void }>) {
   return (
     <div
       onClick={onClick}
@@ -399,7 +399,7 @@ function NavItem({ icon, label, active, onClick }: { icon: React.ReactNode; labe
 }
 
 /* ── Section group ───────────────────────────────────────────────────────── */
-function SectionGroup({ label, icon, children }: { label: string; icon?: React.ReactNode; children: React.ReactNode }) {
+function SectionGroup({ label, icon, children }: Readonly<{ label: string; icon?: React.ReactNode; children: React.ReactNode }>) {
   return (
     <div className="mt-3 mb-1">
       <div className="flex items-center justify-between px-2 py-1.5">
@@ -414,7 +414,7 @@ function SectionGroup({ label, icon, children }: { label: string; icon?: React.R
 }
 
 /* ── Connection item ─────────────────────────────────────────────────────── */
-function ConnectionItem({ session, connected, isRenaming, onContextMenu, onClick, onRename, onRenameCancel }: {
+function ConnectionItem({ session, connected, isRenaming, onContextMenu, onClick, onRename, onRenameCancel }: Readonly<{
   session: Session
   connected: boolean
   isRenaming: boolean
@@ -422,7 +422,7 @@ function ConnectionItem({ session, connected, isRenaming, onContextMenu, onClick
   onClick: () => void
   onRename: (label: string) => void
   onRenameCancel: () => void
-}) {
+}>) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [draft, setDraft] = useState(session.label || session.host)
 
@@ -472,14 +472,14 @@ function ConnectionItem({ session, connected, isRenaming, onContextMenu, onClick
 
 
 /* ── Project view ────────────────────────────────────────────────────────── */
-function ProjectView({ sessions, onConnect, onContextMenu, onMoveToProject, groupOrder, onGroupOrderChange }: {
+function ProjectView({ sessions, onConnect, onContextMenu, onMoveToProject, groupOrder, onGroupOrderChange }: Readonly<{
   sessions: Session[]
   onConnect: (s: Session) => void
   onContextMenu: (e: React.MouseEvent, s: Session) => void
   onMoveToProject: (session: Session, group: string) => void
   groupOrder: string[]
   onGroupOrderChange: (order: string[]) => void
-}) {
+}>) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [groupMenu, setGroupMenu] = useState<{ group: string; x: number; y: number } | null>(null)
   const groupColors = useAppStore(s => s.groupColors)
@@ -705,7 +705,7 @@ function ProjectView({ sessions, onConnect, onContextMenu, onMoveToProject, grou
 }
 
 /* ── Project context menu ────────────────────────────────────────────────── */
-function GroupContextMenu({ x, y, group, current, onNewConnection, onPick, onClose }: {
+function GroupContextMenu({ x, y, group, current, onNewConnection, onPick, onClose }: Readonly<{
   x: number
   y: number
   group: string
@@ -713,7 +713,7 @@ function GroupContextMenu({ x, y, group, current, onNewConnection, onPick, onClo
   onNewConnection: () => void
   onPick: (color: string | null) => void
   onClose: () => void
-}) {
+}>) {
   const { menuRef, pos } = useMenuBehavior(x, y, onClose)
 
   useEffect(() => {
@@ -742,7 +742,7 @@ function GroupContextMenu({ x, y, group, current, onNewConnection, onPick, onClo
 
       <MenuItem
         icon={<Plus className="w-3.5 h-3.5" />}
-        label={`New Connection in ${group === 'Ungrouped' ? 'Ungrouped' : `"${group}"`}`}
+        label={group === 'Ungrouped' ? 'New Connection in Ungrouped' : `New Connection in "${group}"`}
         onClick={onNewConnection}
       />
 
@@ -781,7 +781,7 @@ function GroupContextMenu({ x, y, group, current, onNewConnection, onPick, onClo
 }
 
 /* ── Connection type icon ────────────────────────────────────────────────── */
-function ConnectionTypeIcon({ type, size = 12 }: { type?: string; size?: number }) {
+function ConnectionTypeIcon({ type, size = 12 }: Readonly<{ type?: string; size?: number }>) {
   const color = 'var(--nox-text-3)'
   switch (type) {
     case 'sftp': return <FolderOpen size={size} style={{ color }} className="flex-shrink-0" />
@@ -793,9 +793,9 @@ function ConnectionTypeIcon({ type, size = 12 }: { type?: string; size?: number 
   }
 }
 
-function EmptyAreaMenu({ x, y, onNewConnection, onClose }: {
+function EmptyAreaMenu({ x, y, onNewConnection, onClose }: Readonly<{
   x: number; y: number; onNewConnection: () => void; onClose: () => void
-}) {
+}>) {
   const { menuRef, pos } = useMenuBehavior(x, y, onClose)
 
   return (

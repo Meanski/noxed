@@ -1,8 +1,8 @@
 import { ipcMain, BrowserWindow } from 'electron'
 import Store from 'electron-store'
-import { createServer, connect as netConnect, Server, Socket } from 'net'
-import { Duplex } from 'stream'
-import { randomUUID } from 'crypto'
+import { createServer, connect as netConnect, Server, Socket } from 'node:net'
+import { Duplex } from 'node:stream'
+import { randomUUID } from 'node:crypto'
 import { connectSessionClient, ManagedSshConnection } from './sshClients'
 import { getSessionById } from './sessions'
 import { NotFoundError, ValidationError, toMessage } from './errors'
@@ -136,30 +136,34 @@ async function startLocalForward(def: TunnelDef, entry: ActiveTunnel): Promise<v
   await listenLocally(server, def.listenPort)
 }
 
+// Second phase of the SOCKS5 handshake: parse the CONNECT request and open
+// the forwarded channel over the SSH connection.
+function handleSocksConnect(entry: ActiveTunnel, socket: Socket, request: Buffer): void {
+  const parsed = parseSocksConnectRequest(request)
+  if ('errorCode' in parsed) {
+    socket.end(socksConnectReply(parsed.errorCode))
+    return
+  }
+  entry.conn.client.forwardOut(
+    socket.remoteAddress ?? '127.0.0.1',
+    socket.remotePort ?? 0,
+    parsed.host,
+    parsed.port,
+    (err, stream) => {
+      if (err) { socket.end(socksConnectReply(SOCKS_REPLY.connectionRefused)); return }
+      socket.write(socksConnectReply(SOCKS_REPLY.success))
+      pipeBoth(socket, stream)
+    },
+  )
+}
+
 async function startDynamicForward(def: TunnelDef, entry: ActiveTunnel): Promise<void> {
   const server = createServer((socket) => {
     trackSocket(entry, socket)
     socket.once('data', (greeting: Buffer) => {
       if (!isSocksGreeting(greeting)) { socket.destroy(); return }
       socket.write(socksGreetingReply())
-      socket.once('data', (request: Buffer) => {
-        const parsed = parseSocksConnectRequest(request)
-        if ('errorCode' in parsed) {
-          socket.end(socksConnectReply(parsed.errorCode))
-          return
-        }
-        entry.conn.client.forwardOut(
-          socket.remoteAddress ?? '127.0.0.1',
-          socket.remotePort ?? 0,
-          parsed.host,
-          parsed.port,
-          (err, stream) => {
-            if (err) { socket.end(socksConnectReply(SOCKS_REPLY.connectionRefused)); return }
-            socket.write(socksConnectReply(SOCKS_REPLY.success))
-            pipeBoth(socket, stream)
-          },
-        )
-      })
+      socket.once('data', (request: Buffer) => handleSocksConnect(entry, socket, request))
     })
     socket.on('error', () => socket.destroy())
   })
@@ -237,7 +241,7 @@ export function listTunnels(): Array<TunnelDef & { status: TunnelStatus | 'stopp
 }
 
 export function disposeAllTunnels(): void {
-  for (const id of [...active.keys()]) stopTunnel(id)
+  for (const id of active.keys()) stopTunnel(id)
 }
 
 export function registerTunnelHandlers(): void {

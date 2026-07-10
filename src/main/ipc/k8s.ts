@@ -1,11 +1,11 @@
 import { app, ipcMain, dialog, BrowserWindow, IpcMainInvokeEvent, IpcMainEvent } from 'electron'
 import * as k8s from '@kubernetes/client-node'
-import * as net from 'net'
-import { PassThrough } from 'stream'
-import { copyFileSync, mkdirSync, statSync } from 'fs'
-import { join, basename, resolve as resolvePath } from 'path'
-import { homedir } from 'os'
-import { createHash, randomUUID } from 'crypto'
+import * as net from 'node:net'
+import { PassThrough } from 'node:stream'
+import { copyFileSync, mkdirSync, statSync } from 'node:fs'
+import { join, basename, resolve as resolvePath } from 'node:path'
+import { homedir } from 'node:os'
+import { createHash, randomUUID } from 'node:crypto'
 import { isUnlocked } from './keychain'
 import { isAllowedKubeconfigPath, registerAllowedKubeconfigDir, validateK8sName, validatePort } from './security'
 import { ConnectionError, NotFoundError, OwnershipError, ValidationError, toMessage } from './errors'
@@ -151,6 +151,43 @@ export function disposeK8sSessionsForSender(senderId: number): void {
 }
 
 // ── Handler registration ──────────────────────────────────────────────────────
+
+function startPodForward(
+  kc: k8s.KubeConfig,
+  namespace: string,
+  podName: string,
+  targetPort: number,
+  localPort: unknown,
+  senderId: number,
+  meta: Omit<PfMeta, 'localPort'>,
+): Promise<{ id: string; localPort: number }> {
+  if (localPort !== undefined && localPort !== null && localPort !== 0) {
+    validatePort(localPort, 'local port')
+  }
+  const sessionId = makeId()
+  const forward = new k8s.PortForward(kc)
+  const sockets = new Set<net.Socket>()
+
+  return new Promise<{ id: string; localPort: number }>((resolve, reject) => {
+    const server = net.createServer((socket) => {
+      sockets.add(socket)
+      socket.on('close', () => sockets.delete(socket))
+      socket.on('error', (err) => safeLog(`pf socket ${sessionId}`, err))
+      forward.portForward(namespace, podName, [targetPort], socket, null, socket)
+        .catch((err) => {
+          safeLog(`pf forward ${sessionId}`, err)
+          socket.destroy()
+        })
+    })
+
+    server.on('error', (err) => reject(new ConnectionError(toMessage(err))))
+    server.listen(localPort && Number(localPort) > 0 ? Number(localPort) : 0, '127.0.0.1', () => {
+      const addr = server.address() as net.AddressInfo
+      pfSessions.set(sessionId, { server, sockets, senderId, meta: { ...meta, localPort: addr.port } })
+      resolve({ id: sessionId, localPort: addr.port })
+    })
+  })
+}
 
 export function registerK8sHandlers(): void {
   registerAllowedKubeconfigDir(managedKubeconfigDir())
@@ -475,7 +512,7 @@ export function registerK8sHandlers(): void {
   ipcMain.handle('k8s:events', async (_e, context: unknown, namespace: unknown, kubeconfigPath?: unknown) => {
     const { core } = makeClient(context, validateOptionalKubeconfig(kubeconfigPath))
     const res = await core.listNamespacedEvent(validateNamespace(namespace))
-    return res.body.items
+    return [...res.body.items]
       .sort((a, b) => {
         const ta = a.lastTimestamp ? new Date(a.lastTimestamp as unknown as string).getTime() : 0
         const tb = b.lastTimestamp ? new Date(b.lastTimestamp as unknown as string).getTime() : 0
@@ -644,7 +681,7 @@ export function registerK8sHandlers(): void {
   ipcMain.on('k8s:execSend', (event: IpcMainEvent, sessionId: unknown, data: unknown) => {
     if (typeof sessionId !== 'string' || typeof data !== 'string') return
     const entry = execSessions.get(sessionId)
-    if (!entry || entry.senderId !== event.sender.id) return
+    if (entry?.senderId !== event.sender.id) return
     if (Buffer.byteLength(data, 'utf8') > 64 * 1024) return
     entry.stdin.write(data)
   })
@@ -654,7 +691,7 @@ export function registerK8sHandlers(): void {
     if (!Number.isInteger(cols) || !Number.isInteger(rows)) return
     if ((cols as number) < 1 || (cols as number) > 1000 || (rows as number) < 1 || (rows as number) > 1000) return
     const entry = execSessions.get(sessionId)
-    if (!entry || entry.senderId !== event.sender.id) return
+    if (entry?.senderId !== event.sender.id) return
     if (!entry.ws?.send) return
     try {
       const buf = Buffer.alloc(5)
@@ -676,43 +713,6 @@ export function registerK8sHandlers(): void {
   })
 
   // ── Port forwarding ───────────────────────────────────────────────────────────
-
-  function startPodForward(
-    kc: k8s.KubeConfig,
-    namespace: string,
-    podName: string,
-    targetPort: number,
-    localPort: unknown,
-    senderId: number,
-    meta: Omit<PfMeta, 'localPort'>,
-  ): Promise<{ id: string; localPort: number }> {
-    if (localPort !== undefined && localPort !== null && localPort !== 0) {
-      validatePort(localPort, 'local port')
-    }
-    const sessionId = makeId()
-    const forward = new k8s.PortForward(kc)
-    const sockets = new Set<net.Socket>()
-
-    return new Promise<{ id: string; localPort: number }>((resolve, reject) => {
-      const server = net.createServer((socket) => {
-        sockets.add(socket)
-        socket.on('close', () => sockets.delete(socket))
-        socket.on('error', (err) => safeLog(`pf socket ${sessionId}`, err))
-        forward.portForward(namespace, podName, [targetPort], socket, null, socket)
-          .catch((err) => {
-            safeLog(`pf forward ${sessionId}`, err)
-            socket.destroy()
-          })
-      })
-
-      server.on('error', (err) => reject(new ConnectionError(toMessage(err))))
-      server.listen(localPort && Number(localPort) > 0 ? Number(localPort) : 0, '127.0.0.1', () => {
-        const addr = server.address() as net.AddressInfo
-        pfSessions.set(sessionId, { server, sockets, senderId, meta: { ...meta, localPort: addr.port } })
-        resolve({ id: sessionId, localPort: addr.port })
-      })
-    })
-  }
 
   ipcMain.handle('k8s:portForwardStart', async (event: IpcMainInvokeEvent, context: unknown, namespace: unknown, podName: unknown, targetPort: unknown, localPort: unknown, kubeconfigPath?: unknown) => {
     const safePath = validateOptionalKubeconfig(kubeconfigPath)

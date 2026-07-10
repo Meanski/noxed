@@ -1,7 +1,7 @@
 import { ipcMain, IpcMainEvent, IpcMainInvokeEvent, WebContents } from 'electron'
 import { spawn, IPty } from 'node-pty'
-import { homedir, platform } from 'os'
-import { randomUUID } from 'crypto'
+import { homedir, platform } from 'node:os'
+import { randomUUID } from 'node:crypto'
 import { NotFoundError, OwnershipError, ValidationError, toMessage } from './errors'
 
 // Local shell sessions via node-pty: the user's default shell on

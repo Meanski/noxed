@@ -328,7 +328,7 @@ export default function CommandPalette({ onClose }: Props) {
   )
 }
 
-function SectionLabel({ children }: { children: React.ReactNode }) {
+function SectionLabel({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <div className="px-4 pt-3 pb-1.5">
       <span className="text-2xs font-semibold uppercase tracking-[0.08em] text-text-muted">
@@ -441,7 +441,7 @@ const CommandRow = forwardRef<
   </button>
 ))
 
-function Pip({ connected, connecting }: { connected: boolean; connecting: boolean }) {
+function Pip({ connected, connecting }: Readonly<{ connected: boolean; connecting: boolean }>) {
   if (connecting) {
     return (
       <span className="relative flex items-center justify-center w-2 h-2 flex-shrink-0">
@@ -456,7 +456,7 @@ function Pip({ connected, connecting }: { connected: boolean; connecting: boolea
   return <span className="w-2 h-2 rounded-full border border-text-faint flex-shrink-0" />
 }
 
-function GroupChip({ name }: { name: string }) {
+function GroupChip({ name }: Readonly<{ name: string }>) {
   const groupColors = useAppStore(s => s.groupColors)
   const color = groupColor(name, groupColors)
   return (
@@ -476,12 +476,12 @@ function GroupChip({ name }: { name: string }) {
 
 function HintKey({
   icon, secondIcon, text, label,
-}: {
+}: Readonly<{
   icon?: React.ReactNode
   secondIcon?: React.ReactNode
   text?: string
   label: string
-}) {
+}>) {
   return (
     <div className="flex items-center gap-1.5">
       <div className="flex items-center gap-0.5">
