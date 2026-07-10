@@ -144,7 +144,9 @@ describe('K8sDashboard — pods and connection state', () => {
     await waitFor(() => expect(screen.getByText('Cluster request failed')).toBeTruthy())
     expect(screen.getByText('cluster unreachable')).toBeTruthy()
     expect(screen.getAllByText('Connection error').length).toBeGreaterThan(0)
-    expect(useAppStore.getState().tabs[0].status).toBe('error')
+    // The tab status is written by a passive useEffect, which can flush after
+    // the banner's commit — poll instead of asserting synchronously.
+    await waitFor(() => expect(useAppStore.getState().tabs[0].status).toBe('error'))
     fireEvent.click(screen.getByText('Retry'))
     await podsLoaded()
   })
