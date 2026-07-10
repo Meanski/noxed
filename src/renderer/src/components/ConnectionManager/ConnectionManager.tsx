@@ -143,7 +143,10 @@ export default function ConnectionManager() {
                           border: `2px solid ${filters.has(ft) ? '#3B5CCC' : 'var(--nox-border)'}`,
                           background: filters.has(ft) ? '#3B5CCC' : 'transparent',
                         }}
+                        role="button"
+                        tabIndex={0}
                         onClick={() => toggleFilter(ft)}
+                        onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleFilter(ft) } }}
                       >
                         {filters.has(ft) && <Check className="w-3 h-3 text-white" />}
                       </div>
@@ -171,7 +174,10 @@ export default function ConnectionManager() {
                             border: `2px solid ${filters.has(ft) ? '#3B5CCC' : 'var(--nox-border)'}`,
                             background: filters.has(ft) ? '#3B5CCC' : 'transparent',
                           }}
+                          role="button"
+                          tabIndex={0}
                           onClick={() => toggleFilter(ft)}
+                          onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleFilter(ft) } }}
                         >
                           {filters.has(ft) && <Check className="w-3 h-3 text-white" />}
                         </div>

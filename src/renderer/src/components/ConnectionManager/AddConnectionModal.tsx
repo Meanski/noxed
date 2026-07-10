@@ -387,7 +387,8 @@ export default function AddConnectionModal({ onClose }: Props) {
     <div
       className="fixed inset-0 z-50 flex items-center justify-center"
       style={{ background: 'rgba(0,0,0,0.5)' }}
-      onClick={handleClose}
+      onClick={e => { if (e.target === e.currentTarget) handleClose() }}
+      onKeyDown={e => { if (e.key === 'Escape') handleClose() }}
     >
       <div
         className="rounded-xl w-full max-w-lg max-h-[90vh] flex flex-col overflow-hidden"
@@ -396,7 +397,6 @@ export default function AddConnectionModal({ onClose }: Props) {
           border: '1px solid var(--nox-border)',
           boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
         }}
-        onClick={e => e.stopPropagation()}
       >
         {/* Modal header */}
         <div className="px-6 py-4 flex-shrink-0" style={{ borderBottom: '1px solid var(--nox-border)' }}>
@@ -1190,7 +1190,10 @@ function MiniToggleRow({ on, onToggle, label, description }: Readonly<{
     <div className="flex items-center gap-3 p-3 rounded-md" style={{ background: 'var(--nox-bg)', border: '1px solid var(--nox-border)' }}>
       <div
         className="relative flex-shrink-0 cursor-pointer"
+        role="button"
+        tabIndex={0}
         onClick={onToggle}
+        onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onToggle() } }}
       >
         <div className="w-8 h-4 rounded-full transition-colors" style={{ background: on ? '#3B5CCC' : 'var(--nox-border)' }} />
         <div

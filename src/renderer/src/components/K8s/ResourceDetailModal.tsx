@@ -10,21 +10,57 @@ interface Props {
   onClose: () => void
 }
 
-// Matches JSON tokens: strings (optionally key-position), keywords, numbers.
-const JSON_TOKEN_RE = /("(?:\\.|[^\\"])*"(?:\s*:)?|\b(?:true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+-]?\d+)?)/g
+// JSON token matchers (sticky, tried in order at each position by colorize).
+const STRING_RE = /"(?:\\.|[^\\"])*"/y
+const KEY_SUFFIX_RE = /\s*:/y
+const KEYWORD_RE = /true|false|null/y
+const NUMBER_RE = /-?\d+(?:\.\d*)?(?:[eE][+-]?\d+)?/y
 
-// Simple JSON syntax coloring
+function matchAt(re: RegExp, text: string, index: number): string | null {
+  re.lastIndex = index
+  const m = re.exec(text)
+  return m ? m[0] : null
+}
+
+function isWordChar(ch: string | undefined): boolean {
+  return ch !== undefined && /\w/.test(ch)
+}
+
+// Returns the JSON token starting at `index` and its color, or null.
+function tokenAt(text: string, index: number): { text: string; color: string } | null {
+  const str = matchAt(STRING_RE, text, index)
+  if (str) {
+    const keySuffix = matchAt(KEY_SUFFIX_RE, text, index + str.length)
+    if (keySuffix) return { text: str + keySuffix, color: '#9d6ff8' }
+    return { text: str, color: '#10b981' }
+  }
+  if (!isWordChar(text[index - 1])) {
+    const kw = matchAt(KEYWORD_RE, text, index)
+    if (kw && !isWordChar(text[index + kw.length])) {
+      return { text: kw, color: kw === 'null' ? '#EF4444' : '#06b6d4' }
+    }
+  }
+  const num = matchAt(NUMBER_RE, text, index)
+  if (num) return { text: num, color: '#f59e0b' }
+  return null
+}
+
+// Simple JSON syntax coloring: single left-to-right pass so already-emitted
+// <span> markup is never re-matched.
 function colorize(raw: string): string {
-  return raw
-    .replace(JSON_TOKEN_RE, (match) => {
-      if (match.startsWith('"')) {
-        if (match.endsWith(':')) return `<span style="color:#9d6ff8">${match}</span>`
-        return `<span style="color:#10b981">${match}</span>`
-      }
-      if (match === 'true' || match === 'false') return `<span style="color:#06b6d4">${match}</span>`
-      if (match === 'null') return `<span style="color:#EF4444">${match}</span>`
-      return `<span style="color:#f59e0b">${match}</span>`
-    })
+  let out = ''
+  let i = 0
+  while (i < raw.length) {
+    const token = tokenAt(raw, i)
+    if (token) {
+      out += `<span style="color:${token.color}">${token.text}</span>`
+      i += token.text.length
+    } else {
+      out += raw[i]
+      i++
+    }
+  }
+  return out
 }
 
 export default function ResourceDetailModal({ context, namespace, kind, name, kubeconfigPath, onClose }: Readonly<Props>) {

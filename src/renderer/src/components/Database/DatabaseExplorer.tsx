@@ -235,7 +235,7 @@ export default function DatabaseExplorer({ tab }: Readonly<{ tab: Tab }>) {
   function startCellEdit(row: number, col: string, val: unknown) {
     if (!browsingTable) return
     setEditingCell({ row, col })
-    setEditValue(val == null ? '' : String(val))
+    setEditValue(toEditable(val))
     setTimeout(() => editInputRef.current?.focus(), 0)
   }
 
@@ -319,11 +319,9 @@ export default function DatabaseExplorer({ tab }: Readonly<{ tab: Tab }>) {
 
   function toggleJsonExpand(key: string) { setExpandedJson(s => { const n = new Set(s); n.has(key) ? n.delete(key) : n.add(key); return n }) }
 
-  const filteredTables = tableFilter ? tables.filter(t => t.toLowerCase().includes(tableFilter.toLowerCase())) : tables
+  const filteredTables = filterTables(tables, tableFilter)
   const dbType = DB_TYPE_LABELS[session?.dbType ?? ''] ?? 'PostgreSQL'
-  const detailRow = selectedRow !== null && results ? sortedRows[selectedRow] : null
-  const resultsTableWidth = results ? 48 + results.columns.length * 160 : 0
-  const resultsGridColumns = results ? `48px repeat(${results.columns.length}, 160px)` : undefined
+  const detailRow = getDetailRow(sortedRows, selectedRow)
 
   if (connecting) return <div className="flex items-center justify-center h-full" style={{ background: 'var(--nox-bg)' }}><div className="text-center"><Loader2 className="w-5 h-5 animate-spin mx-auto mb-3" style={{ color: '#3B5CCC' }} /><p className="text-[11px]" style={{ color: 'var(--nox-text-2)' }}>Connecting to {session?.databaseName || session?.host}</p></div></div>
   if (error && !clientId) return <div className="flex items-center justify-center h-full" style={{ background: 'var(--nox-bg)' }}><div className="text-center max-w-md px-6"><AlertTriangle className="w-6 h-6 mx-auto mb-3" style={{ color: '#EF4444' }} /><p className="text-[10px] mb-4 font-mono" style={{ color: 'var(--nox-text-3)' }}>{error}</p><button onClick={connect} className="px-4 py-1.5 rounded text-[11px] text-white" style={{ background: '#3B5CCC' }}>Retry</button></div></div>
@@ -344,35 +342,13 @@ export default function DatabaseExplorer({ tab }: Readonly<{ tab: Tab }>) {
 
       {/* Main area */}
       <div className="flex-1 flex flex-col" style={{ minWidth: 0, minHeight: 0, overflow: 'hidden' }}>
-        {/* Toolbar */}
-        <div className="flex items-center gap-2 px-3 flex-shrink-0" style={{ height: 36, borderBottom: '1px solid var(--nox-border)', background: 'var(--nox-shell)' }}>
-          <button onClick={() => runQuery()} disabled={running || !sql.trim()} className="flex items-center gap-1.5 px-3 py-1 rounded-md text-[11px] font-medium disabled:opacity-30" style={{ background: running ? 'var(--nox-active)' : '#3B5CCC', color: running ? 'var(--nox-text-2)' : '#fff' }}>
-            {running ? <Loader2 className="w-3 h-3 animate-spin" /> : <Play className="w-3 h-3" />}{running ? 'Running…' : 'Run'}
-          </button>
-          <button onClick={runExplain} disabled={running || explainRunning || !sql.trim()} className="flex items-center gap-1.5 px-2 py-1 rounded-md text-[11px] font-medium disabled:opacity-30" style={{ color: activePanel === 'explain' ? '#F59E0B' : 'var(--nox-text-3)', background: activePanel === 'explain' ? 'rgba(245,158,11,0.08)' : undefined }} title="Visualize query execution plan">
-            <Activity className="w-3 h-3" /> Explain
-          </button>
-          <div className="w-px h-4" style={{ background: 'var(--nox-border)' }} />
-          <div className="flex items-center gap-1">
-            <button onClick={watchActive ? stopWatch : startWatch} disabled={!watchActive && (running || !sql.trim())} className="flex items-center gap-1.5 px-2 py-1 rounded-md text-[11px] font-medium disabled:opacity-30" style={{ color: watchActive ? '#10B981' : 'var(--nox-text-3)', background: watchActive ? 'rgba(16,185,129,0.08)' : undefined }} title={watchActive ? 'Stop watching' : 'Auto-refresh query results'}>
-              {watchActive ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />} {watchActive ? 'Stop' : 'Watch'}
-            </button>
-            {watchActive && <span className="text-[9px] font-mono tabular-nums px-1.5 py-0.5 rounded-full animate-pulse" style={{ color: '#10B981', background: 'rgba(16,185,129,0.08)' }}>{watchCountdown}s</span>}
-            {!watchActive && (
-              <select value={watchSec} onChange={e => setWatchSec(Number(e.target.value))} className="bg-transparent text-[10px] font-mono focus:outline-none cursor-pointer" style={{ color: 'var(--nox-text-3)' }}>
-                <option value={2}>2s</option>
-                <option value={5}>5s</option>
-                <option value={10}>10s</option>
-                <option value={30}>30s</option>
-              </select>
-            )}
-          </div>
-          <kbd className="text-[9px] px-1.5 py-0.5 rounded font-mono" style={{ color: 'var(--nox-text-3)', background: 'var(--nox-active)' }}>{navigator.platform?.includes('Mac') ? '⌘' : 'Ctrl'}+Enter</kbd>
-          <div className="w-px h-4" style={{ background: 'var(--nox-border)' }} />
-          <button onClick={saveCurrentQuery} disabled={!sql.trim()} className="flex items-center gap-1 px-2 py-1 rounded text-[10px] disabled:opacity-30" style={{ color: 'var(--nox-text-3)' }} title="Save query"><Pin className="w-3 h-3" /> Save</button>
-          <div className="flex-1" />
-          <button onClick={() => { setSql(''); setResults(null); setQueryError(null); setBrowsingTable(null); setActiveTable(null); setExplainTree(null) }} className="flex items-center gap-1 px-2 py-1 rounded text-[10px]" style={{ color: 'var(--nox-text-3)' }}><RotateCcw className="w-3 h-3" /> Clear</button>
-        </div>
+        <ExplorerToolbar
+          running={running} explainRunning={explainRunning} hasSql={!!sql.trim()} activePanel={activePanel}
+          watchActive={watchActive} watchSec={watchSec} watchCountdown={watchCountdown}
+          onRun={() => runQuery()} onExplain={runExplain} onStartWatch={startWatch} onStopWatch={stopWatch}
+          onWatchSecChange={setWatchSec} onSave={saveCurrentQuery}
+          onClear={() => { setSql(''); setResults(null); setQueryError(null); setBrowsingTable(null); setActiveTable(null); setExplainTree(null) }}
+        />
 
         {/* SQL editor */}
         <div className="flex-shrink-0" style={{ height: editorHeight }}>
@@ -380,21 +356,11 @@ export default function DatabaseExplorer({ tab }: Readonly<{ tab: Tab }>) {
         </div>
         <div className="h-[3px] flex-shrink-0 cursor-row-resize group" style={{ background: 'var(--nox-border)' }} onMouseDown={startResize}><div className="h-full transition-colors group-hover:bg-[#3B5CCC]" /></div>
 
-        {/* Tabs */}
-        <div className="flex items-center gap-0 flex-shrink-0" style={{ borderBottom: '1px solid var(--nox-border)', background: 'var(--nox-shell)' }}>
-          <PanelTab active={activePanel === 'results'} onClick={() => setActivePanel('results')} badge={results ? results.rowCount : undefined}>Results</PanelTab>
-          <PanelTab active={activePanel === 'explain'} onClick={() => setActivePanel('explain')} badge={explainTree ? 1 : undefined}>Explain</PanelTab>
-          <PanelTab active={activePanel === 'history'} onClick={() => setActivePanel('history')} badge={history.length || undefined}>History</PanelTab>
-          <PanelTab active={activePanel === 'saved'} onClick={() => setActivePanel('saved')} badge={savedQueries.length || undefined}>Saved</PanelTab>
-          <div className="flex-1" />
-          {results && activePanel === 'results' && <>
-            <span className="text-[10px] font-mono mr-2" style={{ color: 'var(--nox-text-3)' }}>{results.columns.length} cols · {results.duration}ms</span>
-            <TinyBtn title="Copy" onClick={copyResults}><Copy className="w-3 h-3" /></TinyBtn>
-            <TinyBtn title="CSV" onClick={exportCsv}><Download className="w-3 h-3" /></TinyBtn>
-            <TinyBtn title={detailOpen ? 'Close detail' : 'Row detail'} onClick={() => setDetailOpen(d => !d)} active={detailOpen}>{detailOpen ? <PanelRightClose className="w-3 h-3" /> : <PanelRightOpen className="w-3 h-3" />}</TinyBtn>
-            <div className="w-2" />
-          </>}
-        </div>
+        <ResultsTabsBar
+          activePanel={activePanel} onSelect={setActivePanel} results={results} hasExplain={!!explainTree}
+          historyCount={history.length} savedCount={savedQueries.length} detailOpen={detailOpen}
+          onCopy={copyResults} onExport={exportCsv} onToggleDetail={() => setDetailOpen(d => !d)}
+        />
 
         {/* Panel content */}
         <div style={{ flex: '1 1 0', display: 'flex', minHeight: 0, minWidth: 0 }}>
@@ -411,35 +377,13 @@ export default function DatabaseExplorer({ tab }: Readonly<{ tab: Tab }>) {
                 </div>
               )}
               {results && (
-                <div className="flex-1 min-w-0 min-h-0 overflow-hidden">
-                  <div className="w-full h-full overflow-auto" style={{ scrollbarWidth: 'thin' }}>
-                    <div className="text-[11px] font-mono" style={{ width: resultsTableWidth, minWidth: '100%' }}>
-                      <div className="sticky top-0 z-20 grid" style={{ gridTemplateColumns: resultsGridColumns }}>
-                        <div className="text-right px-2 py-2 text-[10px] font-normal sticky left-0 z-30 whitespace-nowrap" style={{ color: 'var(--nox-text-3)', background: 'var(--nox-shell)', borderBottom: '2px solid var(--nox-border)' }}>#</div>
-                        {results.columns.map(col => (
-                          <button key={col} className="text-left px-3 py-2 text-[10px] font-semibold uppercase tracking-wider whitespace-nowrap cursor-pointer select-none overflow-hidden text-ellipsis" style={{ color: resultSort?.col === col ? 'var(--nox-text)' : 'var(--nox-text-2)', background: 'var(--nox-shell)', borderBottom: '2px solid var(--nox-border)' }} onClick={() => toggleResultSort(col)}>
-                            {col}{resultSort?.col === col && <ArrowUpDown className="w-2.5 h-2.5 inline-block ml-1" style={{ transform: resultSort.dir === 'desc' ? 'scaleY(-1)' : undefined }} />}
-                          </button>
-                        ))}
-                      </div>
-                      {sortedRows.map((row, i) => (
-                        <div key={i} onClick={() => setSelectedRow(i === selectedRow ? null : i)} className="grid cursor-default transition-colors" style={{ gridTemplateColumns: resultsGridColumns, background: selectedRow === i ? 'rgba(59,92,204,0.06)' : undefined }} onMouseEnter={e => { if (selectedRow !== i) e.currentTarget.style.background = 'var(--nox-hover)' }} onMouseLeave={e => { if (selectedRow !== i) e.currentTarget.style.background = '' }}>
-                          <div className="text-right px-2 py-[5px] text-[10px] sticky left-0 z-10 whitespace-nowrap" style={{ color: 'var(--nox-text-3)', background: selectedRow === i ? 'rgba(59,92,204,0.06)' : 'var(--nox-bg)', borderBottom: '1px solid var(--nox-border)' }}>{i + 1}</div>
-                          {results.columns.map(col => (
-                            <ResultCell key={col} row={row} rowIndex={i} col={col}
-                              editing={editingCell?.row === i && editingCell?.col === col}
-                              changed={changedCells.has(`${i}-${col}`)}
-                              editValue={editValue} setEditValue={setEditValue} editInputRef={editInputRef}
-                              commitEdit={commitEdit} cancelEdit={() => setEditingCell(null)}
-                              startCellEdit={startCellEdit}
-                              expandedJson={expandedJson} onToggleJson={toggleJsonExpand} />
-                          ))}
-                        </div>
-                      ))}
-                    </div>
-                    {sortedRows.length === 0 && <div className="flex items-center justify-center py-12"><p className="text-[11px]" style={{ color: 'var(--nox-text-3)' }}>No rows</p></div>}
-                  </div>
-                </div>
+                <ResultsGrid
+                  results={results} sortedRows={sortedRows} resultSort={resultSort} onToggleSort={toggleResultSort}
+                  selectedRow={selectedRow} onSelectRow={setSelectedRow}
+                  editingCell={editingCell} editValue={editValue} setEditValue={setEditValue} editInputRef={editInputRef}
+                  commitEdit={commitEdit} cancelEdit={() => setEditingCell(null)} startCellEdit={startCellEdit}
+                  changedCells={changedCells} expandedJson={expandedJson} onToggleJson={toggleJsonExpand}
+                />
               )}
               {!results && !queryError && !running && (
                 <div className="flex items-center justify-center flex-1 min-h-0 w-full"><div className="text-center"><Database className="w-8 h-8 mx-auto mb-3" style={{ color: 'var(--nox-text-3)', opacity: 0.12 }} /><p className="text-[11px]" style={{ color: 'var(--nox-text-3)' }}>Click a table to browse, or write a query</p></div></div>
@@ -476,6 +420,123 @@ export default function DatabaseExplorer({ tab }: Readonly<{ tab: Tab }>) {
 }
 
 const DB_TYPE_LABELS: Record<string, string> = { mysql: 'MySQL', mariadb: 'MariaDB', postgresql: 'PostgreSQL' }
+
+function ExplorerToolbar({ running, explainRunning, hasSql, activePanel, watchActive, watchSec, watchCountdown, onRun, onExplain, onStartWatch, onStopWatch, onWatchSecChange, onSave, onClear }: Readonly<{
+  running: boolean; explainRunning: boolean; hasSql: boolean; activePanel: ActivePanel
+  watchActive: boolean; watchSec: number; watchCountdown: number
+  onRun: () => void; onExplain: () => void; onStartWatch: () => void; onStopWatch: () => void
+  onWatchSecChange: (sec: number) => void; onSave: () => void; onClear: () => void
+}>) {
+  return (
+    <div className="flex items-center gap-2 px-3 flex-shrink-0" style={{ height: 36, borderBottom: '1px solid var(--nox-border)', background: 'var(--nox-shell)' }}>
+      <button onClick={onRun} disabled={running || !hasSql} className="flex items-center gap-1.5 px-3 py-1 rounded-md text-[11px] font-medium disabled:opacity-30" style={{ background: running ? 'var(--nox-active)' : '#3B5CCC', color: running ? 'var(--nox-text-2)' : '#fff' }}>
+        {running ? <Loader2 className="w-3 h-3 animate-spin" /> : <Play className="w-3 h-3" />}{running ? 'Running…' : 'Run'}
+      </button>
+      <button onClick={onExplain} disabled={running || explainRunning || !hasSql} className="flex items-center gap-1.5 px-2 py-1 rounded-md text-[11px] font-medium disabled:opacity-30" style={{ color: activePanel === 'explain' ? '#F59E0B' : 'var(--nox-text-3)', background: activePanel === 'explain' ? 'rgba(245,158,11,0.08)' : undefined }} title="Visualize query execution plan">
+        <Activity className="w-3 h-3" /> Explain
+      </button>
+      <div className="w-px h-4" style={{ background: 'var(--nox-border)' }} />
+      <WatchControls watchActive={watchActive} watchSec={watchSec} watchCountdown={watchCountdown} running={running} hasSql={hasSql} onStart={onStartWatch} onStop={onStopWatch} onSecChange={onWatchSecChange} />
+      <kbd className="text-[9px] px-1.5 py-0.5 rounded font-mono" style={{ color: 'var(--nox-text-3)', background: 'var(--nox-active)' }}>{navigator.platform?.includes('Mac') ? '⌘' : 'Ctrl'}+Enter</kbd>
+      <div className="w-px h-4" style={{ background: 'var(--nox-border)' }} />
+      <button onClick={onSave} disabled={!hasSql} className="flex items-center gap-1 px-2 py-1 rounded text-[10px] disabled:opacity-30" style={{ color: 'var(--nox-text-3)' }} title="Save query"><Pin className="w-3 h-3" /> Save</button>
+      <div className="flex-1" />
+      <button onClick={onClear} className="flex items-center gap-1 px-2 py-1 rounded text-[10px]" style={{ color: 'var(--nox-text-3)' }}><RotateCcw className="w-3 h-3" /> Clear</button>
+    </div>
+  )
+}
+
+function WatchControls({ watchActive, watchSec, watchCountdown, running, hasSql, onStart, onStop, onSecChange }: Readonly<{
+  watchActive: boolean; watchSec: number; watchCountdown: number; running: boolean; hasSql: boolean
+  onStart: () => void; onStop: () => void; onSecChange: (sec: number) => void
+}>) {
+  return (
+    <div className="flex items-center gap-1">
+      <button onClick={watchActive ? onStop : onStart} disabled={!watchActive && (running || !hasSql)} className="flex items-center gap-1.5 px-2 py-1 rounded-md text-[11px] font-medium disabled:opacity-30" style={{ color: watchActive ? '#10B981' : 'var(--nox-text-3)', background: watchActive ? 'rgba(16,185,129,0.08)' : undefined }} title={watchActive ? 'Stop watching' : 'Auto-refresh query results'}>
+        {watchActive ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />} {watchActive ? 'Stop' : 'Watch'}
+      </button>
+      {watchActive && <span className="text-[9px] font-mono tabular-nums px-1.5 py-0.5 rounded-full animate-pulse" style={{ color: '#10B981', background: 'rgba(16,185,129,0.08)' }}>{watchCountdown}s</span>}
+      {!watchActive && (
+        <select value={watchSec} onChange={e => onSecChange(Number(e.target.value))} className="bg-transparent text-[10px] font-mono focus:outline-none cursor-pointer" style={{ color: 'var(--nox-text-3)' }}>
+          <option value={2}>2s</option>
+          <option value={5}>5s</option>
+          <option value={10}>10s</option>
+          <option value={30}>30s</option>
+        </select>
+      )}
+    </div>
+  )
+}
+
+function ResultsTabsBar({ activePanel, onSelect, results, hasExplain, historyCount, savedCount, detailOpen, onCopy, onExport, onToggleDetail }: Readonly<{
+  activePanel: ActivePanel; onSelect: (p: ActivePanel) => void; results: QueryResult | null; hasExplain: boolean
+  historyCount: number; savedCount: number; detailOpen: boolean
+  onCopy: () => void; onExport: () => void; onToggleDetail: () => void
+}>) {
+  return (
+    <div className="flex items-center gap-0 flex-shrink-0" style={{ borderBottom: '1px solid var(--nox-border)', background: 'var(--nox-shell)' }}>
+      <PanelTab active={activePanel === 'results'} onClick={() => onSelect('results')} badge={results ? results.rowCount : undefined}>Results</PanelTab>
+      <PanelTab active={activePanel === 'explain'} onClick={() => onSelect('explain')} badge={hasExplain ? 1 : undefined}>Explain</PanelTab>
+      <PanelTab active={activePanel === 'history'} onClick={() => onSelect('history')} badge={historyCount || undefined}>History</PanelTab>
+      <PanelTab active={activePanel === 'saved'} onClick={() => onSelect('saved')} badge={savedCount || undefined}>Saved</PanelTab>
+      <div className="flex-1" />
+      {results && activePanel === 'results' && <>
+        <span className="text-[10px] font-mono mr-2" style={{ color: 'var(--nox-text-3)' }}>{results.columns.length} cols · {results.duration}ms</span>
+        <TinyBtn title="Copy" onClick={onCopy}><Copy className="w-3 h-3" /></TinyBtn>
+        <TinyBtn title="CSV" onClick={onExport}><Download className="w-3 h-3" /></TinyBtn>
+        <TinyBtn title={detailOpen ? 'Close detail' : 'Row detail'} onClick={onToggleDetail} active={detailOpen}>{detailOpen ? <PanelRightClose className="w-3 h-3" /> : <PanelRightOpen className="w-3 h-3" />}</TinyBtn>
+        <div className="w-2" />
+      </>}
+    </div>
+  )
+}
+
+function ResultsGrid({ results, sortedRows, resultSort, onToggleSort, selectedRow, onSelectRow, editingCell, editValue, setEditValue, editInputRef, commitEdit, cancelEdit, startCellEdit, changedCells, expandedJson, onToggleJson }: Readonly<{
+  results: QueryResult; sortedRows: any[]; resultSort: ResultSort; onToggleSort: (col: string) => void
+  selectedRow: number | null; onSelectRow: (i: number | null) => void
+  editingCell: { row: number; col: string } | null; editValue: string; setEditValue: (v: string) => void
+  editInputRef: React.Ref<HTMLInputElement>; commitEdit: () => void; cancelEdit: () => void
+  startCellEdit: (row: number, col: string, val: unknown) => void
+  changedCells: Set<string>; expandedJson: Set<string>; onToggleJson: (k: string) => void
+}>) {
+  const tableWidth = 48 + results.columns.length * 160
+  const gridColumns = `48px repeat(${results.columns.length}, 160px)`
+  return (
+    <div className="flex-1 min-w-0 min-h-0 overflow-hidden">
+      <div className="w-full h-full overflow-auto" style={{ scrollbarWidth: 'thin' }}>
+        <div className="text-[11px] font-mono" style={{ width: tableWidth, minWidth: '100%' }}>
+          <div className="sticky top-0 z-20 grid" style={{ gridTemplateColumns: gridColumns }}>
+            <div className="text-right px-2 py-2 text-[10px] font-normal sticky left-0 z-30 whitespace-nowrap" style={{ color: 'var(--nox-text-3)', background: 'var(--nox-shell)', borderBottom: '2px solid var(--nox-border)' }}>#</div>
+            {results.columns.map(col => (
+              <button key={col} className="text-left px-3 py-2 text-[10px] font-semibold uppercase tracking-wider whitespace-nowrap cursor-pointer select-none overflow-hidden text-ellipsis" style={{ color: resultSort?.col === col ? 'var(--nox-text)' : 'var(--nox-text-2)', background: 'var(--nox-shell)', borderBottom: '2px solid var(--nox-border)' }} onClick={() => onToggleSort(col)}>
+                {col}{resultSort?.col === col && <ArrowUpDown className="w-2.5 h-2.5 inline-block ml-1" style={{ transform: resultSort.dir === 'desc' ? 'scaleY(-1)' : undefined }} />}
+              </button>
+            ))}
+          </div>
+          {sortedRows.map((row, i) => (
+            <div key={i} role="button" tabIndex={0}
+              onClick={() => onSelectRow(i === selectedRow ? null : i)}
+              onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelectRow(i === selectedRow ? null : i) } }}
+              className="grid cursor-default transition-colors" style={{ gridTemplateColumns: gridColumns, background: selectedRow === i ? 'rgba(59,92,204,0.06)' : undefined }}
+              onMouseEnter={e => { if (selectedRow !== i) e.currentTarget.style.background = 'var(--nox-hover)' }} onMouseLeave={e => { if (selectedRow !== i) e.currentTarget.style.background = '' }}>
+              <div className="text-right px-2 py-[5px] text-[10px] sticky left-0 z-10 whitespace-nowrap" style={{ color: 'var(--nox-text-3)', background: selectedRow === i ? 'rgba(59,92,204,0.06)' : 'var(--nox-bg)', borderBottom: '1px solid var(--nox-border)' }}>{i + 1}</div>
+              {results.columns.map(col => (
+                <ResultCell key={col} row={row} rowIndex={i} col={col}
+                  editing={editingCell?.row === i && editingCell?.col === col}
+                  changed={changedCells.has(`${i}-${col}`)}
+                  editValue={editValue} setEditValue={setEditValue} editInputRef={editInputRef}
+                  commitEdit={commitEdit} cancelEdit={cancelEdit}
+                  startCellEdit={startCellEdit}
+                  expandedJson={expandedJson} onToggleJson={onToggleJson} />
+              ))}
+            </div>
+          ))}
+        </div>
+        {sortedRows.length === 0 && <div className="flex items-center justify-center py-12"><p className="text-[11px]" style={{ color: 'var(--nox-text-3)' }}>No rows</p></div>}
+      </div>
+    </div>
+  )
+}
 
 function SchemaSidebar({ dbLabel, footer, tables, tableFilter, setTableFilter, activeTable, tableColumns, onSelect, onRefresh }: Readonly<{
   dbLabel: string; footer: string; tables: string[]; tableFilter: string; setTableFilter: (v: string) => void
@@ -760,6 +821,20 @@ function ExplainTreeView({ node, maxCost, depth }: Readonly<{ node: ExplainNode;
 }
 
 /* ── Helpers ────────────────────────────────────────────────────────────── */
+
+function toEditable(v: unknown): string {
+  if (v == null) return ''
+  return typeof v === 'object' ? JSON.stringify(v) : String(v)
+}
+
+function filterTables(tables: string[], filter: string): string[] {
+  if (!filter) return tables
+  return tables.filter(t => t.toLowerCase().includes(filter.toLowerCase()))
+}
+
+function getDetailRow(rows: any[], selectedRow: number | null): any {
+  return selectedRow === null ? null : rows[selectedRow] ?? null
+}
 
 function PanelTab({ active, onClick, badge, children }: Readonly<{ active: boolean; onClick: () => void; badge?: number; children: React.ReactNode }>) {
   return (

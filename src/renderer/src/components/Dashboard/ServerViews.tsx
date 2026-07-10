@@ -60,7 +60,10 @@ export function HealthCard({
       onDragOver={e => { e.preventDefault(); onDragOver() }}
       onDrop={e => { e.preventDefault(); onDrop() }}
       onDragEnd={onDragEnd}
+      role="button"
+      tabIndex={0}
       onClick={onConnect}
+      onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onConnect() } }}
       onContextMenu={onContextMenu}
       className="rounded-lg overflow-hidden cursor-pointer transition-all hover:shadow-md min-h-[118px]"
       style={{
@@ -211,7 +214,10 @@ export function ServerListRow({ session, metrics, isConnected, onConnect, onCont
 
   return (
     <div
+      role="button"
+      tabIndex={0}
       onClick={onConnect}
+      onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onConnect() } }}
       onContextMenu={onContextMenu}
       className="group flex items-center gap-3 px-3 cursor-pointer transition-colors"
       style={{ height: 38 }}

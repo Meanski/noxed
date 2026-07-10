@@ -101,7 +101,11 @@ export default function TabBar() {
 
 function CloseConfirmDialog({ tabLabel, unsavedEdits, onConfirm, onCancel }: Readonly<{ tabLabel: string; unsavedEdits?: boolean; onConfirm: () => void; onCancel: () => void }>) {
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={e => { if (e.target === e.currentTarget) onCancel() }}>
+    <div
+      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+      onClick={e => { if (e.target === e.currentTarget) onCancel() }}
+      onKeyDown={e => { if (e.key === 'Escape') onCancel() }}
+    >
       <div
         className="rounded-lg shadow-xl max-w-sm w-full mx-4 p-5"
         style={{ background: 'var(--nox-shell)', border: '1px solid var(--nox-border)' }}
@@ -220,6 +224,7 @@ function TabPill({ tab, active, draggable, isDragging, isDropTarget, onActivate,
         <span
           role="button"
           onClick={onClose}
+          onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClose(e as unknown as React.MouseEvent) } }}
           className="w-4 h-4 flex items-center justify-center rounded transition-colors opacity-0 group-hover:opacity-100 flex-shrink-0 hover:bg-[#E5E7EB]"
           style={{ color: 'var(--nox-text-3)' }}
         >

@@ -21,6 +21,12 @@ const DEFAULT_DATE_FORMAT = 'YYYY-MM-DD HH:mm'
 const INIT: PaneState = { path: '/', entries: [], loading: false, selected: new Set(), sortKey: 'name', sortDir: 'asc', showHidden: false, error: null }
 let xferId = 0
 
+function compareBy(sortKey: SortKey, a: FileEntry, b: FileEntry): number {
+  if (sortKey === 'name') return a.name.localeCompare(b.name)
+  if (sortKey === 'size') return a.size - b.size
+  return a.mtime - b.mtime
+}
+
 export default function SftpBrowser({ tab }: Readonly<{ tab: Tab }>) {
   const sessions = useAppStore(s => s.sessions)
   const updateTab = useAppStore(s => s.updateTab)
@@ -137,12 +143,6 @@ export default function SftpBrowser({ tab }: Readonly<{ tab: Tab }>) {
     uR({ loading: true, error: null, selected: new Set() })
     try { uR({ entries: await window.api.sftp.list(id, dir), path: dir, loading: false }) }
     catch (err: any) { uR({ error: err?.message, loading: false }) }
-  }
-
-  function compareBy(sortKey: SortKey, a: FileEntry, b: FileEntry): number {
-    if (sortKey === 'name') return a.name.localeCompare(b.name)
-    if (sortKey === 'size') return a.size - b.size
-    return a.mtime - b.mtime
   }
 
   function sorted(p: PaneState): FileEntry[] {
@@ -318,7 +318,7 @@ export default function SftpBrowser({ tab }: Readonly<{ tab: Tab }>) {
 
       <div ref={containerRef} className="flex flex-1 min-h-0 relative">
         {/* LOCAL */}
-        <div style={{ width: `${splitPct}%` }} className="flex flex-col overflow-hidden" onClick={() => setFocusedPane('local')}>
+        <div style={{ width: `${splitPct}%` }} className="flex flex-col overflow-hidden" onClick={() => setFocusedPane('local')} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') setFocusedPane('local') }}>
           <PaneChrome side="local" label="Local" icon={<HardDrive className="w-3.5 h-3.5" />} pane={local} focused={focusedPane === 'local'} onNavUp={() => navUp('local')} onRefresh={() => loadLocal(local.path)} onMkdir={() => handleMkdir('local')} onToggleHidden={() => uL({ showHidden: !local.showHidden })} />
           <FileTable pane={local} visible={lv} side="local" diffMap={diffMap} dateFormat={dateFormat} onToggleSort={k => toggleSort('local', k)} onSelect={(n, e) => handleSelect('local', n, e)} onClear={() => uL({ selected: new Set() })} onNavUp={() => navUp('local')} onNavInto={e => navInto('local', e)} onDragStart={(e, ev) => onDragStart('local', e, ev)} onDrop={e => onPaneDrop('local', e)} onDoubleClickFile={openLocalFile} />
         </div>
@@ -330,7 +330,7 @@ export default function SftpBrowser({ tab }: Readonly<{ tab: Tab }>) {
         </div>
 
         {/* REMOTE */}
-        <div style={{ width: `${100 - splitPct}%` }} className="flex flex-col overflow-hidden" onClick={() => setFocusedPane('remote')}>
+        <div style={{ width: `${100 - splitPct}%` }} className="flex flex-col overflow-hidden" onClick={() => setFocusedPane('remote')} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') setFocusedPane('remote') }}>
           <PaneChrome side="remote" label={session?.host || 'Remote'} icon={<Server className="w-3.5 h-3.5" />} pane={remote} focused={focusedPane === 'remote'} onNavUp={() => navUp('remote')} onRefresh={() => clientId && loadRemote(clientId, remote.path)} onMkdir={() => handleMkdir('remote')} onToggleHidden={() => uR({ showHidden: !remote.showHidden })} />
           <FileTable pane={remote} visible={rv} side="remote" diffMap={diffMap} dateFormat={dateFormat} onToggleSort={k => toggleSort('remote', k)} onSelect={(n, e) => handleSelect('remote', n, e)} onClear={() => uR({ selected: new Set() })} onNavUp={() => navUp('remote')} onNavInto={e => navInto('remote', e)} onDelete={handleDelete} onRename={handleRename} onDragStart={(e, ev) => onDragStart('remote', e, ev)} onDrop={e => onPaneDrop('remote', e)} onDoubleClickFile={openFile} />
         </div>
@@ -371,8 +371,8 @@ export default function SftpBrowser({ tab }: Readonly<{ tab: Tab }>) {
 
       {/* Quick Look overlay */}
       {(quickLook || quickLookLoading) && (
-        <div className="absolute inset-0 z-50 flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)' }} onClick={() => setQuickLook(null)}>
-          <div className="rounded-lg overflow-hidden shadow-2xl flex flex-col" style={{ width: 560, maxHeight: '70vh', background: 'var(--nox-bg)', border: '1px solid var(--nox-border)' }} onClick={e => e.stopPropagation()}>
+        <div className="absolute inset-0 z-50 flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)' }} onClick={e => { if (e.target === e.currentTarget) setQuickLook(null) }} onKeyDown={e => { if (e.key === 'Escape') setQuickLook(null) }}>
+          <div className="rounded-lg overflow-hidden shadow-2xl flex flex-col" style={{ width: 560, maxHeight: '70vh', background: 'var(--nox-bg)', border: '1px solid var(--nox-border)' }}>
             {quickLookLoading ? (
               <div className="flex items-center justify-center py-16"><Loader2 className="w-5 h-5 animate-spin" style={{ color: '#3B5CCC' }} /></div>
             ) : quickLook && (<>
@@ -419,7 +419,7 @@ function FileTable({ pane, visible, side, diffMap, dateFormat, onToggleSort, onS
 }>) {
   const [dragOver, setDragOver] = useState(false)
   return (
-    <div className="flex-1 overflow-auto relative" style={{ scrollbarWidth: 'thin', scrollbarColor: 'var(--nox-border) transparent' }} onClick={e => { if (e.target === e.currentTarget) onClear() }} onDragOver={e => { e.preventDefault(); setDragOver(true) }} onDragLeave={() => setDragOver(false)} onDrop={e => { setDragOver(false); onDrop(e) }}>
+    <div className="flex-1 overflow-auto relative" style={{ scrollbarWidth: 'thin', scrollbarColor: 'var(--nox-border) transparent' }} onClick={e => { if (e.target === e.currentTarget) onClear() }} onKeyDown={e => { if (e.key === 'Escape') onClear() }} onDragOver={e => { e.preventDefault(); setDragOver(true) }} onDragLeave={() => setDragOver(false)} onDrop={e => { setDragOver(false); onDrop(e) }}>
       {dragOver && <div className="absolute inset-0 z-50 flex items-center justify-center pointer-events-none" style={{ background: 'rgba(59,92,204,0.05)', border: '2px dashed rgba(59,92,204,0.25)' }}><span className="text-[11px] font-medium" style={{ color: '#3B5CCC' }}>Drop to {side === 'remote' ? 'upload' : 'download'}</span></div>}
       <table className="w-full border-collapse text-[11px] font-mono" style={{ tableLayout: 'fixed' }}>
         <colgroup><col /><col style={{ width: 70 }} /><col style={{ width: 130 }} />{onRename && <col style={{ width: 50 }} />}</colgroup>

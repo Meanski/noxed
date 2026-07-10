@@ -285,6 +285,41 @@ describe('Zustand Store', () => {
     })
   })
 
+  describe('Session type → tab view mapping', () => {
+    it('opens an sftp view for sftp sessions', () => {
+      useAppStore.getState().openTab(makeSession({ type: 'sftp' }))
+      const tab = useAppStore.getState().tabs[0]
+      expect(tab.view).toBe('sftp')
+      expect(tab.status).toBe('idle')
+    })
+
+    it('opens a database view for database sessions', () => {
+      useAppStore.getState().openTab(makeSession({ type: 'database' }))
+      expect(useAppStore.getState().tabs[0].view).toBe('database')
+    })
+
+    it('opens a redis view for redis sessions', () => {
+      useAppStore.getState().openTab(makeSession({ type: 'redis' }))
+      expect(useAppStore.getState().tabs[0].view).toBe('redis')
+    })
+
+    it('opens an rdp view for rdp sessions, born connected with RDP label', () => {
+      useAppStore.getState().openTab(makeSession({ type: 'rdp', label: 'Win Box' }))
+      const tab = useAppStore.getState().tabs[0]
+      expect(tab.view).toBe('rdp')
+      expect(tab.status).toBe('connected')
+      expect(tab.label).toBe('RDP · Win Box')
+    })
+
+    it('falls back to terminal for untyped and ssh sessions', () => {
+      useAppStore.getState().openTab(makeSession({ id: 'a1' }))
+      useAppStore.getState().openTab(makeSession({ id: 'a2', type: 'ssh' }))
+      const [t1, t2] = useAppStore.getState().tabs
+      expect(t1.view).toBe('terminal')
+      expect(t2.view).toBe('terminal')
+    })
+  })
+
   describe('Notifications', () => {
     it('addNotification adds a notification', () => {
       useAppStore.getState().addNotification({ type: 'info', message: 'Test' })

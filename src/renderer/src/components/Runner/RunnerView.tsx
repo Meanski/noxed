@@ -141,7 +141,10 @@ export default function RunnerView() {
                     border: `2px solid ${checked ? '#3B5CCC' : 'var(--nox-border)'}`,
                     background: checked ? '#3B5CCC' : 'transparent',
                   }}
+                  role="button"
+                  tabIndex={0}
                   onClick={() => toggle(s.id)}
+                  onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(s.id) } }}
                 >
                   {checked && <Check className="w-3 h-3 text-white" />}
                 </div>

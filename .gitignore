@@ -13,3 +13,4 @@ native/rdp-spike/*.ppm
 # FreeRDP static-build working dirs (see build-freerdp-static.sh)
 native/rdp-spike/.freerdp-src/
 native/rdp-spike/.freerdp-static/
+coverage/

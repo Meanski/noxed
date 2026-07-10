@@ -274,7 +274,10 @@ function KeyListPane({ keys, pattern, setPattern, loadingKeys, selectedKey, onQu
           keys.map(({ key }) => (
             <div
               key={key}
+              role="button"
+              tabIndex={0}
               onClick={() => onSelect(key)}
+              onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelect(key) } }}
               className="group flex items-center gap-2 px-3 py-2 cursor-pointer transition-colors"
               style={{
                 background: selectedKey === key ? '#DC382D18' : 'transparent',

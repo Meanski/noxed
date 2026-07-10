@@ -204,8 +204,10 @@ export function registerRdpHandlers(): void {
         const msg = m[1].trim()
         if (!msg) continue
         lastSidecarMsg = msg
-        const e = /^error:\s*(.+)$/.exec(msg)
-        if (e) lastSidecarError = e[1]
+        if (msg.startsWith('error:')) {
+          const detail = msg.slice('error:'.length).trim()
+          if (detail) lastSidecarError = detail
+        }
       }
     })
 

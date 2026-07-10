@@ -386,7 +386,10 @@ function DraggableSection({ label, sessions, connectedIds, renamingId, onContext
 function NavItem({ icon, label, active, onClick }: Readonly<{ icon: React.ReactNode; label: string; active: boolean; onClick: () => void }>) {
   return (
     <div
+      role="button"
+      tabIndex={0}
       onClick={onClick}
+      onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick() } }}
       className="flex items-center gap-2 px-2 py-1.5 rounded-md cursor-pointer mb-0.5 transition-colors"
       style={active ? { background: 'var(--nox-active)', color: 'var(--nox-active-t)' } : { color: 'var(--nox-text)' }}
       onMouseEnter={e => { if (!active) (e.currentTarget as HTMLElement).style.background = 'var(--nox-hover)' }}
@@ -455,7 +458,10 @@ function ConnectionItem({ session, connected, isRenaming, onContextMenu, onClick
 
   return (
     <div
+      role="button"
+      tabIndex={0}
       onClick={onClick}
+      onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick() } }}
       onContextMenu={onContextMenu}
       className="flex items-center gap-2 px-2 py-1 rounded-md cursor-pointer transition-colors"
       onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'var(--nox-hover)' }}
@@ -606,7 +612,10 @@ function ProjectView({ sessions, onConnect, onContextMenu, onMoveToProject, grou
           >
             {/* Group header */}
             <div
+              role="button"
+              tabIndex={0}
               onClick={() => toggle(group)}
+              onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(group) } }}
               onContextMenu={e => {
                 e.preventDefault()
                 e.stopPropagation()
@@ -629,6 +638,7 @@ function ProjectView({ sessions, onConnect, onContextMenu, onMoveToProject, grou
                 onDragStart={e => { e.stopPropagation(); dragGroupSrc.current = group }}
                 onDragEnd={() => { dragGroupSrc.current = null; setDragOverGroup(null) }}
                 onClick={e => e.stopPropagation()}
+                onKeyDown={e => e.stopPropagation()}
               >
                 <GripVertical className="w-3 h-3" />
               </span>
@@ -670,7 +680,10 @@ function ProjectView({ sessions, onConnect, onContextMenu, onMoveToProject, grou
                       }
                       setReorderTarget(null)
                     }}
+                    role="button"
+                    tabIndex={0}
                     onClick={() => onConnect(s)}
+                    onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onConnect(s) } }}
                     onContextMenu={e => onContextMenu(e, s)}
                     className="flex items-center gap-2 px-2 py-1 rounded-md cursor-pointer transition-colors"
                     style={{ outline: reorderTarget === s.id ? '1px dashed var(--nox-active-t)' : 'none' }}

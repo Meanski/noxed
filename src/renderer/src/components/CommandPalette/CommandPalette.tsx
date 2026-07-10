@@ -193,12 +193,10 @@ export default function CommandPalette({ onClose }: Props) {
   return (
     <div
       className="fixed inset-0 z-50 flex items-start justify-center pt-[16vh] bg-black/50 backdrop-blur-sm animate-fade-in"
-      onClick={onClose}
+      onClick={(e) => { if (e.target === e.currentTarget) onClose() }}
+      onKeyDown={(e) => { if (e.key === 'Escape') onClose() }}
     >
-      <div
-        className="w-[620px] bg-surface/95 backdrop-blur-xl border border-border-strong rounded-2xl shadow-palette overflow-hidden animate-modal-in"
-        onClick={(e) => e.stopPropagation()}
-      >
+      <div className="w-[620px] bg-surface/95 backdrop-blur-xl border border-border-strong rounded-2xl shadow-palette overflow-hidden animate-modal-in">
         {/* Search input */}
         <div className="flex items-center gap-3 px-4 py-3.5 border-b border-border/60">
           <span className="text-text-muted flex-shrink-0">

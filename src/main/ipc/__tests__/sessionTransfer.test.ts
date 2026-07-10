@@ -65,6 +65,12 @@ describe('parseSessionsExport', () => {
     expect(() => parseSessionsExport('[]')).toThrow(ValidationError)
   })
 
+  it('rejects JSON documents whose root is not an object', () => {
+    expect(() => parseSessionsExport('42')).toThrow(ValidationError)
+    expect(() => parseSessionsExport('null')).toThrow(ValidationError)
+    expect(() => parseSessionsExport('"noxed-connections"')).toThrow(ValidationError)
+  })
+
   it('drops entries without a host', () => {
     const result = parseSessionsExport(wrap([{ label: 'broken', port: 22 }]))
     expect(result).toEqual([])
@@ -92,6 +98,96 @@ describe('parseSessionsExport', () => {
   it('filters non-string tags', () => {
     const result = parseSessionsExport(wrap([{ host: 'a.example.com', tags: ['ok', 42, null] }]))
     expect(result[0].tags).toEqual(['ok'])
+  })
+
+  it('imports every optional string field', () => {
+    const result = parseSessionsExport(wrap([{
+      host: 'db.example.com',
+      type: 'database',
+      keyPath: '~/.ssh/id_rsa',
+      group: 'Prod',
+      color: '#ff0000',
+      dbType: 'postgres',
+      databaseName: 'app',
+      sslMode: 'require',
+      kubeconfigPath: '~/.kube/config',
+    }]))
+    expect(result[0]).toMatchObject({
+      type: 'database',
+      keyPath: '~/.ssh/id_rsa',
+      group: 'Prod',
+      color: '#ff0000',
+      dbType: 'postgres',
+      databaseName: 'app',
+      sslMode: 'require',
+      kubeconfigPath: '~/.kube/config',
+    })
+  })
+
+  it('treats blank or non-string optional fields as absent', () => {
+    const result = parseSessionsExport(wrap([{
+      host: 'a.example.com',
+      group: '   ',
+      color: 42,
+      dbType: null,
+      keyPath: '',
+    }]))
+    expect(result[0].group).toBeUndefined()
+    expect(result[0].color).toBeUndefined()
+    expect(result[0].dbType).toBeUndefined()
+    expect(result[0].keyPath).toBeUndefined()
+  })
+
+  it('imports boolean and numeric preferences with strict types', () => {
+    const result = parseSessionsExport(wrap([{
+      host: 'a.example.com',
+      isFavorite: true,
+      pollingEnabled: false,
+      connectOnStart: true,
+      pollingIntervalSeconds: 30,
+      redisDb: 3,
+    }]))
+    expect(result[0]).toMatchObject({
+      isFavorite: true,
+      pollingEnabled: false,
+      connectOnStart: true,
+      pollingIntervalSeconds: 30,
+      redisDb: 3,
+    })
+  })
+
+  it('rejects malformed boolean and numeric preferences', () => {
+    const result = parseSessionsExport(wrap([{
+      host: 'a.example.com',
+      isFavorite: 'yes',
+      pollingEnabled: 1,
+      connectOnStart: null,
+      pollingIntervalSeconds: Number.NaN,
+      redisDb: 2.5,
+    }]))
+    expect(result[0].isFavorite).toBeUndefined()
+    expect(result[0].pollingEnabled).toBeUndefined()
+    expect(result[0].connectOnStart).toBeUndefined()
+    expect(result[0].pollingIntervalSeconds).toBeUndefined()
+    expect(result[0].redisDb).toBeUndefined()
+  })
+
+  it('drops non-object connection entries and unknown types fall back to ssh', () => {
+    const result = parseSessionsExport(wrap([
+      null,
+      'garbage',
+      42,
+      { host: 'a.example.com', type: 'carrier-pigeon' },
+      { host: 'b.example.com', type: 'redis' },
+    ]))
+    expect(result).toHaveLength(2)
+    expect(result[0].type).toBe('ssh')
+    expect(result[1].type).toBe('redis')
+  })
+
+  it('rejects oversized import payloads', () => {
+    const huge = `{"pad":"${'x'.repeat(5 * 1024 * 1024)}"}`
+    expect(() => parseSessionsExport(huge)).toThrow(ValidationError)
   })
 })
 
