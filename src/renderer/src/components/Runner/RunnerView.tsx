@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Check, ChevronDown, ChevronRight, Loader2, Play, Square, TerminalSquare } from 'lucide-react'
 import { useAppStore, Session } from '../../store'
 
@@ -19,7 +19,7 @@ export default function RunnerView() {
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [command, setCommand] = useState('')
   const [results, setResults] = useState<Map<string, HostResult>>(new Map())
-  const [running, setRunning] = useState(false)
+  const running = useMemo(() => [...results.values()].some(v => v.state === 'running'), [results])
   const runIdRef = useRef<string | null>(null)
 
   const applyOutput = (sessionId: string, data: string) => {
@@ -46,10 +46,6 @@ export default function RunnerView() {
       return next
     })
   }
-
-  useEffect(() => {
-    setRunning([...results.values()].some(v => v.state === 'running'))
-  }, [results])
 
   useEffect(() => {
     const offOutput = window.api.runner.onOutput((runId, sessionId, data) => {
@@ -84,11 +80,9 @@ export default function RunnerView() {
     if (!command.trim() || selected.size === 0 || running) return
     const ids = [...selected]
     setResults(new Map(ids.map(id => [id, { state: 'running' as HostState, output: '', exitCode: null, error: null }])))
-    setRunning(true)
     try {
       runIdRef.current = await window.api.runner.run(ids, command)
     } catch (err: any) {
-      setRunning(false)
       setResults(new Map())
       addNotification({ type: 'error', message: err?.message ?? 'Run failed' })
     }
@@ -104,7 +98,6 @@ export default function RunnerView() {
       }
       return next
     })
-    setRunning(false)
   }
 
   const sessionById = (id: string) => sessions.find(s => s.id === id)

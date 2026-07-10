@@ -528,14 +528,18 @@ function ResultsGrid({ results, sortedRows, resultSort, onToggleSort, selectedRo
             ))}
           </div>
           {/* Rows can contain interactive cells (JsonCell buttons), so the row
-              itself stays a div: no button role, but click + keyboard select. */}
+              itself stays a div; keyboard selection goes through the row-number
+              button. The row keydown ignores bubbled events from those child
+              buttons so Enter there doesn't both activate and select. */}
           {sortedRows.map((row, i) => (
             <div key={rowKeys[i]}
               onClick={() => onSelectRow(i === selectedRow ? null : i)}
-              onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelectRow(i === selectedRow ? null : i) } }}
+              onKeyDown={e => { if (e.target !== e.currentTarget) return; if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelectRow(i === selectedRow ? null : i) } }}
               className="grid cursor-default transition-colors" style={{ gridTemplateColumns: gridColumns, background: selectedRow === i ? 'rgba(59,92,204,0.06)' : undefined }}
               onMouseEnter={e => { if (selectedRow !== i) e.currentTarget.style.background = 'var(--nox-hover)' }} onMouseLeave={e => { if (selectedRow !== i) e.currentTarget.style.background = '' }}>
-              <div className="text-right px-2 py-[5px] text-[10px] sticky left-0 z-10 whitespace-nowrap" style={{ color: 'var(--nox-text-3)', background: selectedRow === i ? 'rgba(59,92,204,0.06)' : 'var(--nox-bg)', borderBottom: '1px solid var(--nox-border)' }}>{i + 1}</div>
+              <button type="button" aria-pressed={selectedRow === i} title={`Select row ${i + 1}`}
+                onClick={e => { e.stopPropagation(); onSelectRow(i === selectedRow ? null : i) }}
+                className="text-right px-2 py-[5px] text-[10px] sticky left-0 z-10 whitespace-nowrap" style={{ color: 'var(--nox-text-3)', background: selectedRow === i ? 'rgba(59,92,204,0.06)' : 'var(--nox-bg)', borderBottom: '1px solid var(--nox-border)' }}>{i + 1}</button>
               {results.columns.map(col => (
                 <ResultCell key={col} row={row} rowIndex={i} col={col}
                   editing={editingCell?.row === i && editingCell?.col === col}
