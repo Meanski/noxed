@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { metricColor, metricColorMuted, groupColor, podStatusColor } from '../colors'
+import { metricColor, metricColorMuted, groupColor, podStatusColor, containerStateColor } from '../colors'
 
 describe('metricColor', () => {
   it('is red at or above 80', () => {
@@ -54,5 +54,20 @@ describe('podStatusColor', () => {
     expect(podStatusColor('Pending')).toBe('#F59E0B')
     expect(podStatusColor('CrashLoopBackOff')).toBe('#EF4444')
     expect(podStatusColor('Unknown')).toBe('#6B7280')
+  })
+})
+
+describe('containerStateColor', () => {
+  it('maps running to green', () => {
+    expect(containerStateColor('running')).toBe('#10B981')
+  })
+
+  it('maps exited to the muted text variable', () => {
+    expect(containerStateColor('exited')).toBe('var(--nox-text-3)')
+  })
+
+  it('falls back to amber for transitional states', () => {
+    expect(containerStateColor('restarting')).toBe('#F59E0B')
+    expect(containerStateColor('paused')).toBe('#F59E0B')
   })
 })

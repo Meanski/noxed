@@ -4,6 +4,7 @@ import {
   Boxes, AlertTriangle, ChevronRight, ChevronDown, HardDrive,
 } from 'lucide-react'
 import { useAppStore, Tab } from '../../store'
+import { containerStateColor } from '../../lib/colors'
 import DockerLogsModal from './DockerLogsModal'
 
 interface ContainerRow {
@@ -268,9 +269,7 @@ function ContainerTableRow({ container, stat, last, busy, onAction, onLogs }: Re
   onLogs: () => void
 }>) {
   const isRunning = container.State === 'running'
-  let stateColor = '#F59E0B'
-  if (isRunning) stateColor = '#10B981'
-  else if (container.State === 'exited') stateColor = 'var(--nox-text-3)'
+  const stateColor = containerStateColor(container.State)
 
   return (
     <tr

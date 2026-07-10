@@ -49,6 +49,12 @@ export function podStatusColor(status: string): string {
   return '#6B7280'
 }
 
+export function containerStateColor(state: string): string {
+  if (state === 'running') return '#10B981'
+  if (state === 'exited') return 'var(--nox-text-3)'
+  return '#F59E0B'
+}
+
 export function dbTypeLabel(dbType?: string): string {
   const map: Record<string, string> = {
     postgresql: 'PostgreSQL',
