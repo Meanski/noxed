@@ -22,11 +22,11 @@ beforeEach(() => {
   })
 })
 
-/** The filter dropdown renders checkbox-like divs with role=button inside each label. */
+/** The filter dropdown renders checkbox-like buttons inside each label. */
 function filterCheckbox(labelText: string) {
   const dropdown = screen.getByText('Connection Type').parentElement as HTMLElement
   const label = within(dropdown).getByText(labelText).closest('label') as HTMLElement
-  return label.querySelector('[role="button"]') as HTMLElement
+  return label.querySelector('button') as HTMLElement
 }
 
 function openFilterDropdown() {
@@ -78,22 +78,21 @@ describe('ConnectionManager', () => {
     expect(rowNames()).toEqual(['Postgres'])
   })
 
-  it('toggles type filters with Enter and Space', () => {
+  it('toggles type filters via the checkbox buttons and reflects aria-pressed', () => {
     render(<ConnectionManager />)
     openFilterDropdown()
 
-    fireEvent.keyDown(filterCheckbox('Kubernetes'), { key: 'Enter' })
+    expect(filterCheckbox('Kubernetes').getAttribute('aria-pressed')).toBe('false')
+    fireEvent.click(filterCheckbox('Kubernetes'))
     expect(rowNames()).toEqual(['Cluster'])
+    expect(filterCheckbox('Kubernetes').getAttribute('aria-pressed')).toBe('true')
 
-    fireEvent.keyDown(filterCheckbox('Kubernetes'), { key: ' ' })
+    fireEvent.click(filterCheckbox('Kubernetes'))
     expect(rowNames()).toEqual(['Web Server', 'Postgres', 'Cluster'])
-
-    // Other keys are ignored
-    fireEvent.keyDown(filterCheckbox('Kubernetes'), { key: 'a' })
-    expect(rowNames()).toEqual(['Web Server', 'Postgres', 'Cluster'])
+    expect(filterCheckbox('Kubernetes').getAttribute('aria-pressed')).toBe('false')
   })
 
-  it('filters by online/offline status including keyboard toggling', () => {
+  it('filters by online/offline status', () => {
     render(<ConnectionManager />)
     openFilterDropdown()
     const dropdown = screen.getByText('Connection Type').parentElement as HTMLElement
@@ -103,10 +102,10 @@ describe('ConnectionManager', () => {
     fireEvent.mouseEnter(onlineLabel)
     fireEvent.mouseLeave(onlineLabel)
 
-    fireEvent.keyDown(filterCheckbox('online'), { key: 'Enter' })
+    fireEvent.click(filterCheckbox('online'))
     expect(rowNames()).toEqual(['Web Server'])
 
-    fireEvent.keyDown(filterCheckbox('online'), { key: ' ' })
+    fireEvent.click(filterCheckbox('online'))
     fireEvent.click(filterCheckbox('offline'))
     expect(rowNames()).toEqual(['Postgres', 'Cluster'])
 

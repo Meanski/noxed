@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { LayoutDashboard, List, Settings, Terminal, Boxes, Database, FolderOpen, X, Layers, Plus, FileCode, Monitor } from 'lucide-react'
+import { LayoutDashboard, List, Settings, Terminal, Boxes, Database, FolderOpen, X, Layers, Plus, FileCode, Monitor, Cable, TerminalSquare } from 'lucide-react'
 import { useAppStore, Tab } from '../../store'
 
 export default function TabBar() {
@@ -156,6 +156,8 @@ const VIEW_ICONS: Partial<Record<Tab['view'], { Icon: typeof Terminal; activeCol
   editor: { Icon: FileCode, activeColor: '#F59E0B' },
   docker: { Icon: Boxes, activeColor: '#2496ED' },
   'local-term': { Icon: Terminal, activeColor: '#10B981' },
+  tunnels: { Icon: Cable, activeColor: '#3B5CCC' },
+  runner: { Icon: TerminalSquare, activeColor: '#3B5CCC' },
 }
 
 function tabIcon(view: Tab['view'], active: boolean) {

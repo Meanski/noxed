@@ -619,7 +619,12 @@ export default function TerminalView({ tab }: Props) {
 const BACKOFF_SECONDS = [5, 15, 30]
 
 async function readKeyFile(path: string): Promise<string | undefined> {
-  try { return await window.api.fs.readFile(path) } catch { return undefined }
+  try {
+    return await window.api.fs.readFile(path)
+  } catch (err: any) {
+    console.error(`[terminal] failed to read key file ${path}:`, err?.message ?? err)
+    return undefined
+  }
 }
 
 // Resolves either the private key or the stored password for a session,

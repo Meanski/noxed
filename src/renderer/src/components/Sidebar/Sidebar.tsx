@@ -385,19 +385,17 @@ function DraggableSection({ label, sessions, connectedIds, renamingId, onContext
 /* ── Nav item ────────────────────────────────────────────────────────────── */
 function NavItem({ icon, label, active, onClick }: Readonly<{ icon: React.ReactNode; label: string; active: boolean; onClick: () => void }>) {
   return (
-    <div
-      role="button"
-      tabIndex={0}
+    <button
+      type="button"
       onClick={onClick}
-      onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick() } }}
-      className="flex items-center gap-2 px-2 py-1.5 rounded-md cursor-pointer mb-0.5 transition-colors"
+      className="w-full text-left flex items-center gap-2 px-2 py-1.5 rounded-md cursor-pointer mb-0.5 transition-colors"
       style={active ? { background: 'var(--nox-active)', color: 'var(--nox-active-t)' } : { color: 'var(--nox-text)' }}
       onMouseEnter={e => { if (!active) (e.currentTarget as HTMLElement).style.background = 'var(--nox-hover)' }}
       onMouseLeave={e => { if (!active) (e.currentTarget as HTMLElement).style.background = '' }}
     >
       <span style={{ color: active ? 'var(--nox-active-t)' : 'var(--nox-text-2)' }}>{icon}</span>
       <span className="font-['Inter'] text-[12.5px]" style={{ fontWeight: active ? 500 : 400 }}>{label}</span>
-    </div>
+    </button>
   )
 }
 
@@ -457,13 +455,11 @@ function ConnectionItem({ session, connected, isRenaming, onContextMenu, onClick
   }
 
   return (
-    <div
-      role="button"
-      tabIndex={0}
+    <button
+      type="button"
       onClick={onClick}
-      onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick() } }}
       onContextMenu={onContextMenu}
-      className="flex items-center gap-2 px-2 py-1 rounded-md cursor-pointer transition-colors"
+      className="w-full text-left flex items-center gap-2 px-2 py-1 rounded-md cursor-pointer transition-colors"
       onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'var(--nox-hover)' }}
       onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = '' }}
     >
@@ -472,7 +468,7 @@ function ConnectionItem({ session, connected, isRenaming, onContextMenu, onClick
         {session.label || session.host}
       </span>
       {connected && <span className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-[#10B981]" />}
-    </div>
+    </button>
   )
 }
 
@@ -611,17 +607,15 @@ function ProjectView({ sessions, onConnect, onContextMenu, onMoveToProject, grou
             }}
           >
             {/* Group header */}
-            <div
-              role="button"
-              tabIndex={0}
+            <button
+              type="button"
               onClick={() => toggle(group)}
-              onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(group) } }}
               onContextMenu={e => {
                 e.preventDefault()
                 e.stopPropagation()
                 setGroupMenu({ group, x: e.clientX, y: e.clientY })
               }}
-              className="group flex items-center gap-1.5 px-2 py-1.5 rounded-md cursor-pointer transition-colors"
+              className="group w-full text-left flex items-center gap-1.5 px-2 py-1.5 rounded-md cursor-pointer transition-colors"
               style={{
                 background: isGroupTarget || isItemTarget ? 'var(--nox-hover)' : '',
                 outline: isItemTarget ? '1px dashed var(--nox-active-t)' : 'none',
@@ -653,12 +647,13 @@ function ProjectView({ sessions, onConnect, onContextMenu, onMoveToProject, grou
               <span className="text-[10px] px-1.5 py-0.5 rounded" style={{ color: 'var(--nox-text-3)', background: 'var(--nox-border)' }}>
                 {items.length}
               </span>
-            </div>
+            </button>
 
             {isExpanded && (
               <div className="ml-5 mt-0.5 space-y-0.5">
                 {items.map(s => (
-                  <div
+                  <button
+                    type="button"
                     key={s.id}
                     draggable
                     onDragStart={e => { e.stopPropagation(); dragItemSrc.current = s }}
@@ -680,12 +675,9 @@ function ProjectView({ sessions, onConnect, onContextMenu, onMoveToProject, grou
                       }
                       setReorderTarget(null)
                     }}
-                    role="button"
-                    tabIndex={0}
                     onClick={() => onConnect(s)}
-                    onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onConnect(s) } }}
                     onContextMenu={e => onContextMenu(e, s)}
-                    className="flex items-center gap-2 px-2 py-1 rounded-md cursor-pointer transition-colors"
+                    className="w-full text-left flex items-center gap-2 px-2 py-1 rounded-md cursor-pointer transition-colors"
                     style={{ outline: reorderTarget === s.id ? '1px dashed var(--nox-active-t)' : 'none' }}
                     onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'var(--nox-hover)' }}
                     onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = '' }}
@@ -694,7 +686,7 @@ function ProjectView({ sessions, onConnect, onContextMenu, onMoveToProject, grou
                     <span className="font-['Inter'] text-[11.5px] flex-1 truncate" style={{ color: 'var(--nox-text)' }}>
                       {s.label || s.host}
                     </span>
-                  </div>
+                  </button>
                 ))}
               </div>
             )}

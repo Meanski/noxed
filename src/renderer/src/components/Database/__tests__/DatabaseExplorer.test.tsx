@@ -120,7 +120,7 @@ describe('DatabaseExplorer — connect flow', () => {
     const { tab } = setup()
     ;(window as any).api.sessions.getCredentials = vi.fn().mockRejectedValue(new Error('vault is locked'))
     render(<DatabaseExplorer tab={tab} />)
-    await screen.findByText('App is locked — unlock noxed to reconnect')
+    expect(await screen.findByText('App is locked — unlock noxed to reconnect')).toBeTruthy()
   })
 
   it('disconnects on unmount and logs when disconnect fails', async () => {
@@ -153,7 +153,7 @@ describe('DatabaseExplorer — sidebar and tables', () => {
     await screen.findByText('Tables (4)')
     api.database.tables.mockRejectedValueOnce(new Error('schema read failed'))
     fireEvent.click(header.querySelector('button')!)
-    await screen.findByText('schema read failed')
+    expect(await screen.findByText('schema read failed')).toBeTruthy()
   })
 
   it('browses a table on click, loads columns with type badges, and collapses on second click', async () => {
@@ -181,7 +181,7 @@ describe('DatabaseExplorer — sidebar and tables', () => {
   it('toasts when loading table columns fails', async () => {
     await renderConnected({}, { tableInfo: vi.fn().mockRejectedValue(new Error('no perms')) })
     fireEvent.click(screen.getByText('orders'))
-    await screen.findByText('no perms')
+    expect(await screen.findByText('no perms')).toBeTruthy()
   })
 })
 
@@ -311,7 +311,7 @@ describe('DatabaseExplorer — results grid', () => {
   it('selects rows via click and Enter/Space keydown and shows the detail panel', async () => {
     const { api } = await renderConnected()
     await runSql(api, 'SELECT * FROM users')
-    const aliceRow = (await screen.findByText('alice')).closest('[role="button"]') as HTMLElement
+    const aliceRow = (await screen.findByText('alice')).closest('div.grid') as HTMLElement
     fireEvent.click(aliceRow)
     fireEvent.click(screen.getByTitle('Row detail'))
     const detail = screen.getByText('Row 1').parentElement!.parentElement as HTMLElement
@@ -321,7 +321,7 @@ describe('DatabaseExplorer — results grid', () => {
     fireEvent.click(aliceRow)
     expect(screen.queryByText('Row 1')).toBeNull()
     // select bob via Enter key: NULL meta shown in detail
-    const bobRow = screen.getByText('bob').closest('[role="button"]') as HTMLElement
+    const bobRow = screen.getByText('bob').closest('div.grid') as HTMLElement
     fireEvent.keyDown(bobRow, { key: 'Enter' })
     await screen.findByText('Row 2')
     // deselect via Space key
@@ -432,13 +432,14 @@ describe('DatabaseExplorer — cell editing', () => {
     await waitFor(() =>
       expect(api.database.query).toHaveBeenCalledWith(
         'db-1',
-        'UPDATE "users" SET "meta" = \'{"role":"user"}\' WHERE "id" = 1'
+        'UPDATE "users" SET "meta" = $1 WHERE "id" = $2',
+        ['{"role":"user"}', 1],
       )
     )
     await screen.findByText('Updated')
   })
 
-  it('sets NULL when the edit value is emptied, escaping quotes in string pk', async () => {
+  it('sets NULL when the edit value is emptied, binding a string pk', async () => {
     const res = {
       columns: ['code', 'label'],
       rows: [{ code: "o'k", label: 'old' }],
@@ -456,7 +457,8 @@ describe('DatabaseExplorer — cell editing', () => {
     await waitFor(() =>
       expect(api.database.query).toHaveBeenCalledWith(
         'db-1',
-        'UPDATE "users" SET "label" = NULL WHERE "code" = \'o\'\'k\''
+        'UPDATE "users" SET "label" = $1 WHERE "code" = $2',
+        [null, "o'k"],
       )
     )
     await screen.findByText('NULL')
@@ -469,13 +471,13 @@ describe('DatabaseExplorer — cell editing', () => {
     fireEvent.doubleClick(cell)
     const input = await screen.findByDisplayValue('alice')
     fireEvent.keyDown(input, { key: 'Enter' })
-    expect(api.database.query.mock.calls.length).toBe(callsBefore)
+    expect(api.database.query.mock.calls).toHaveLength(callsBefore)
     // escape path
     fireEvent.doubleClick(screen.getByText('bob'))
     const input2 = await screen.findByDisplayValue('bob')
     fireEvent.keyDown(input2, { key: 'Escape' })
     await waitFor(() => expect(screen.queryByDisplayValue('bob')).toBeNull())
-    expect(api.database.query.mock.calls.length).toBe(callsBefore)
+    expect(api.database.query.mock.calls).toHaveLength(callsBefore)
   })
 
   it('toasts when no primary key identifies the row', async () => {
@@ -492,7 +494,7 @@ describe('DatabaseExplorer — cell editing', () => {
     const input = await screen.findByDisplayValue('orphan')
     fireEvent.change(input, { target: { value: 'renamed' } })
     fireEvent.keyDown(input, { key: 'Enter' })
-    await screen.findByText('No primary key to identify row')
+    expect(await screen.findByText('No primary key to identify row')).toBeTruthy()
   })
 
   it('toasts when the UPDATE fails', async () => {
@@ -506,7 +508,7 @@ describe('DatabaseExplorer — cell editing', () => {
     const input = await screen.findByDisplayValue('alice')
     fireEvent.change(input, { target: { value: 'alicia' } })
     fireEvent.keyDown(input, { key: 'Enter' })
-    await screen.findByText('Update failed: permission denied')
+    expect(await screen.findByText('Update failed: permission denied')).toBeTruthy()
   })
 
   it('does not open the editor when results did not come from browsing a table', async () => {
@@ -588,7 +590,7 @@ describe('DatabaseExplorer — explain', () => {
     await renderConnected({}, { query })
     fireEvent.change(editor(), { target: { value: 'SELECT 1' } })
     fireEvent.click(screen.getByTitle('Visualize query execution plan'))
-    await screen.findByText('Explain failed: cannot explain')
+    expect(await screen.findByText('Explain failed: cannot explain')).toBeTruthy()
   })
 })
 
@@ -632,7 +634,7 @@ describe('DatabaseExplorer — watch mode', () => {
     expect(screen.getByText('Watch')).toBeTruthy()
     const callsAfterStop = api.database.query.mock.calls.length
     await act(async () => { await vi.advanceTimersByTimeAsync(6000) })
-    expect(api.database.query.mock.calls.length).toBe(callsAfterStop)
+    expect(api.database.query.mock.calls).toHaveLength(callsAfterStop)
     expect((screen.getByText('bob').closest('div') as HTMLElement).style.background).not.toContain('245')
   })
 
@@ -657,6 +659,6 @@ describe('DatabaseExplorer — watch mode', () => {
     unmount()
     const after = api.database.query.mock.calls.length
     await act(async () => { await vi.advanceTimersByTimeAsync(10000) })
-    expect(api.database.query.mock.calls.length).toBe(after)
+    expect(api.database.query.mock.calls).toHaveLength(after)
   })
 })

@@ -45,18 +45,26 @@ function tokenAt(text: string, index: number): { text: string; color: string } |
   return null
 }
 
+const HTML_ESCAPES: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }
+
+function escapeHtml(text: string): string {
+  return text.replace(/[&<>"']/g, ch => HTML_ESCAPES[ch])
+}
+
 // Simple JSON syntax coloring: single left-to-right pass so already-emitted
-// <span> markup is never re-matched.
+// <span> markup is never re-matched. The result feeds dangerouslySetInnerHTML,
+// so every character of the (untrusted) resource JSON is HTML-escaped — only
+// the generated spans (with colors from the fixed internal set) are markup.
 function colorize(raw: string): string {
   let out = ''
   let i = 0
   while (i < raw.length) {
     const token = tokenAt(raw, i)
     if (token) {
-      out += `<span style="color:${token.color}">${token.text}</span>`
+      out += `<span style="color:${token.color}">${escapeHtml(token.text)}</span>`
       i += token.text.length
     } else {
-      out += raw[i]
+      out += escapeHtml(raw[i])
       i++
     }
   }

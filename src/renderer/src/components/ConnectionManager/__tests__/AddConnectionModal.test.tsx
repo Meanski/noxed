@@ -126,7 +126,7 @@ describe('AddConnectionModal — SSH', () => {
   })
 
   it('saves a key-auth connection and shows Saving… while pending', async () => {
-    let resolveCreate!: (v: any) => void
+    let resolveCreate!: (v: { id: string }) => void
     api.sessions.create.mockReturnValue(new Promise(res => { resolveCreate = res }))
     renderModal()
     goToConfig('SSH Server')
@@ -172,19 +172,21 @@ describe('AddConnectionModal — SSH', () => {
     expect((screen.getByPlaceholderText('Enter password') as HTMLInputElement).type).toBe('password')
   })
 
-  it('toggles polling and connect-on-start via mouse and keyboard', async () => {
+  it('toggles polling and connect-on-start via the toggle buttons', async () => {
     renderModal()
     goToConfig('SSH Server')
     fireEvent.change(screen.getByPlaceholderText('192.168.1.10'), { target: { value: 'srv' } })
     fireEvent.change(screen.getByPlaceholderText('root'), { target: { value: 'root' } })
 
     const toggleFor = (label: string) =>
-      screen.getByText(label).parentElement!.parentElement!.querySelector('[role="button"]')!
+      screen.getByText(label).parentElement!.parentElement!.querySelector('button')!
+    expect(toggleFor('Enable Dashboard Polling').getAttribute('aria-pressed')).toBe('false')
     fireEvent.click(toggleFor('Enable Dashboard Polling'))
-    fireEvent.keyDown(toggleFor('Connect on App Start'), { key: 'Enter' })
-    // Space toggles polling back off, then Enter re-enables it
-    fireEvent.keyDown(toggleFor('Enable Dashboard Polling'), { key: ' ' })
-    fireEvent.keyDown(toggleFor('Enable Dashboard Polling'), { key: 'Enter' })
+    expect(toggleFor('Enable Dashboard Polling').getAttribute('aria-pressed')).toBe('true')
+    fireEvent.click(toggleFor('Connect on App Start'))
+    // Toggle polling back off, then re-enable it
+    fireEvent.click(toggleFor('Enable Dashboard Polling'))
+    fireEvent.click(toggleFor('Enable Dashboard Polling'))
 
     fireEvent.click(saveButton())
     await waitFor(() => expect(api.sessions.create).toHaveBeenCalled())

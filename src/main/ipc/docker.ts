@@ -68,16 +68,19 @@ function attachLogStream(sender: WebContents, stream: ClientChannel): string {
   const send = (data: Buffer) => {
     if (!sender.isDestroyed()) sender.send('docker:logChunk', logId, data.toString('utf8'))
   }
+  // 'error' is typically followed by 'close'; only the first terminal event
+  // may notify, so an error message isn't clobbered by a null from 'close'.
+  let settled = false
+  const finish = (error: string | null) => {
+    if (settled) return
+    settled = true
+    logStreams.delete(logId)
+    if (!sender.isDestroyed()) sender.send('docker:logEnd', logId, error)
+  }
   stream.on('data', send)
   stream.stderr.on('data', send)
-  stream.on('close', () => {
-    logStreams.delete(logId)
-    if (!sender.isDestroyed()) sender.send('docker:logEnd', logId, null)
-  })
-  stream.on('error', (e: unknown) => {
-    logStreams.delete(logId)
-    if (!sender.isDestroyed()) sender.send('docker:logEnd', logId, toMessage(e))
-  })
+  stream.on('close', () => finish(null))
+  stream.on('error', (e: unknown) => finish(toMessage(e)))
   return logId
 }
 

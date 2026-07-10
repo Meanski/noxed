@@ -75,7 +75,9 @@ describe('SnippetRunner', () => {
 
   it('saves a new snippet with parsed tags', () => {
     const props = renderRunner()
-    fireEvent.click(screen.getByText('Snippets').parentElement!.querySelectorAll('button')[0]!)
+    // The add button is icon-only (no title/aria-label); it renders immediately
+    // after the "Snippets" header label.
+    fireEvent.click(screen.getByText('Snippets').nextElementSibling as HTMLElement)
 
     fireEvent.change(screen.getByPlaceholderText('Label (e.g. Deploy)'), { target: { value: 'Disk' } })
     fireEvent.change(screen.getByPlaceholderText('Command (use {{var}} for placeholders)'), { target: { value: 'df -h' } })

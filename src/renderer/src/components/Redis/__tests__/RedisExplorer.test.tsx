@@ -64,16 +64,16 @@ describe('RedisExplorer', () => {
     expect(await screen.findByText('Select a key to view its value')).toBeTruthy()
   })
 
-  it('selects keys via Enter and Space keyboard activation', async () => {
+  it('selects hash and list keys through the key row buttons', async () => {
     const { api } = setup()
-    const row = (await screen.findByText('user:profile')).closest('[role="button"]') as HTMLElement
-    fireEvent.keyDown(row, { key: 'Enter' })
+    const row = (await screen.findByText('user:profile')).closest('button') as HTMLElement
+    fireEvent.click(row)
     expect(await screen.findByText('sean')).toBeTruthy()
     expect(screen.getByText('TTL: 3600s')).toBeTruthy()
     expect(screen.getByText('name')).toBeTruthy()
 
-    const listRow = screen.getByText('queue:jobs').closest('[role="button"]') as HTMLElement
-    fireEvent.keyDown(listRow, { key: ' ' })
+    const listRow = screen.getByText('queue:jobs').closest('button') as HTMLElement
+    fireEvent.click(listRow)
     expect(await screen.findByText('job-a')).toBeTruthy()
     expect(screen.getByText('job-b')).toBeTruthy()
     expect(api.redis.get).toHaveBeenCalledTimes(2)
@@ -90,8 +90,9 @@ describe('RedisExplorer', () => {
     const { api } = setup()
     fireEvent.click(await screen.findByText('user:1'))
     await screen.findByText('hello world')
-    const row = screen.getAllByText('user:1')[0].closest('[role="button"]') as HTMLElement
-    fireEvent.click(row.querySelector('button') as HTMLElement)
+    // The key button and its sibling delete button live in the same row container
+    const keyButton = screen.getAllByText('user:1')[0].closest('button') as HTMLElement
+    fireEvent.click(keyButton.nextElementSibling as HTMLElement)
     await waitFor(() => expect(api.redis.del).toHaveBeenCalledWith('redis-1', 'user:1'))
     expect(screen.queryByText('hello world')).toBeNull()
     expect(await screen.findByText('3 keys')).toBeTruthy()

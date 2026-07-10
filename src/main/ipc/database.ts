@@ -10,9 +10,11 @@ type SslMode = 'disable' | 'require' | 'verify-ca' | 'verify-full'
 
 interface QueryResult { columns: string[]; rows: unknown[]; rowCount: number; duration: number }
 
+type QueryParam = string | number | boolean | null
+
 interface DbConnection {
   type: DbType
-  query: (sql: string) => Promise<QueryResult>
+  query: (sql: string, params?: QueryParam[]) => Promise<QueryResult>
   close: () => Promise<void>
   getTables: () => Promise<string[]>
   getTableInfo: (table: string) => Promise<{ columns: { name: string; type: string; nullable: boolean }[] }>
@@ -39,6 +41,19 @@ const MAX_DATABASE_LENGTH = 128
 function validateConnId(id: unknown): string {
   if (typeof id !== 'string' || !UUID_RE.test(id)) throw new ValidationError('Invalid database connection id')
   return id
+}
+
+const MAX_QUERY_PARAMS = 256
+
+function validateQueryParams(raw: unknown): QueryParam[] | undefined {
+  if (raw === undefined || raw === null) return undefined
+  if (!Array.isArray(raw) || raw.length > MAX_QUERY_PARAMS) throw new ValidationError('Invalid query parameters')
+  for (const v of raw) {
+    if (v !== null && typeof v !== 'string' && typeof v !== 'number' && typeof v !== 'boolean') {
+      throw new ValidationError('Query parameters must be scalar values')
+    }
+  }
+  return raw as QueryParam[]
 }
 
 function requireOwnedConn(event: IpcMainInvokeEvent, rawId: unknown): DbConnection {
@@ -117,9 +132,9 @@ async function connectPostgres(config: DbConnectConfig): Promise<DbConnection> {
 
   return {
     type: 'postgresql',
-    async query(sql: string) {
+    async query(sql: string, params?: QueryParam[]) {
       const start = Date.now()
-      const result = await pool.query(sql)
+      const result = await pool.query(sql, params)
       return {
         columns: result.fields?.map(f => f.name) ?? [],
         rows: result.rows ?? [],
@@ -176,9 +191,9 @@ async function connectMysql(config: DbConnectConfig): Promise<DbConnection> {
 
   return {
     type: config.dbType === 'mariadb' ? 'mariadb' : 'mysql',
-    async query(sql: string) {
+    async query(sql: string, params?: QueryParam[]) {
       const start = Date.now()
-      const [rows, fields] = await pool.query(sql)
+      const [rows, fields] = await pool.query(sql, params)
       const resultRows = Array.isArray(rows) ? rows as unknown[] : []
       const resultFields = Array.isArray(fields) ? fields : []
       return {
@@ -241,14 +256,14 @@ export function registerDatabaseHandlers(): void {
     }
   })
 
-  ipcMain.handle('db:query', async (event, rawId: unknown, sql: unknown) => {
+  ipcMain.handle('db:query', async (event, rawId: unknown, sql: unknown, rawParams: unknown) => {
     if (typeof sql !== 'string' || sql.trim().length === 0) {
       throw new ValidationError('SQL query is required')
     }
     if (Buffer.byteLength(sql, 'utf8') > MAX_SQL_BYTES) {
       throw new ValidationError(`SQL query exceeds ${MAX_SQL_BYTES} bytes`)
     }
-    return requireOwnedConn(event, rawId).query(sql)
+    return requireOwnedConn(event, rawId).query(sql, validateQueryParams(rawParams))
   })
 
   ipcMain.handle('db:tables', async (event, rawId: unknown) => {

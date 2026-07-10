@@ -43,10 +43,13 @@ export default function RunnerView() {
           error,
         })
       }
-      setRunning([...next.values()].some(v => v.state === 'running'))
       return next
     })
   }
+
+  useEffect(() => {
+    setRunning([...results.values()].some(v => v.state === 'running'))
+  }, [results])
 
   useEffect(() => {
     const offOutput = window.api.runner.onOutput((runId, sessionId, data) => {
@@ -135,19 +138,18 @@ export default function RunnerView() {
                 onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'var(--nox-hover)' }}
                 onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent' }}
               >
-                <div
+                <button
+                  type="button"
+                  aria-pressed={checked}
                   className="w-4 h-4 rounded flex items-center justify-center flex-shrink-0"
                   style={{
                     border: `2px solid ${checked ? '#3B5CCC' : 'var(--nox-border)'}`,
                     background: checked ? '#3B5CCC' : 'transparent',
                   }}
-                  role="button"
-                  tabIndex={0}
                   onClick={() => toggle(s.id)}
-                  onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(s.id) } }}
                 >
                   {checked && <Check className="w-3 h-3 text-white" />}
-                </div>
+                </button>
                 <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: s.color ?? '#3B5CCC' }} />
                 <span className="font-['Inter'] text-[12px] truncate" style={{ color: 'var(--nox-text)' }}>
                   {s.label || s.host}

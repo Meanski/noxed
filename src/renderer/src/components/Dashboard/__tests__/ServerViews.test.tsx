@@ -79,21 +79,18 @@ describe('HealthCard', () => {
     expect(bars[2].style.background).toBe('rgb(59, 92, 204)')
   })
 
-  it('fires onConnect for click, Enter and Space (but not other keys)', () => {
+  it('fires onConnect when the card is clicked', () => {
     const onConnect = vi.fn()
     const session = makeSession({ label: 'KeyCard' })
     render(
       <HealthCard session={session} metrics={undefined} isConnected={false} onConnect={onConnect} {...dragProps} />
     )
-    const card = screen.getByText('KeyCard').closest('[role="button"]') as HTMLElement
+    const card = screen.getByText('KeyCard').closest('button') as HTMLElement
     fireEvent.click(card)
-    fireEvent.keyDown(card, { key: 'Enter' })
-    fireEvent.keyDown(card, { key: ' ' })
-    fireEvent.keyDown(card, { key: 'a' })
-    expect(onConnect).toHaveBeenCalledTimes(3)
+    expect(onConnect).toHaveBeenCalledTimes(1)
   })
 
-  it('shows a Connect button when disconnected that stops propagation', () => {
+  it('shows a Connect affordance when disconnected that connects on click', () => {
     const onConnect = vi.fn()
     render(
       <HealthCard session={makeSession()} isConnected={false} onConnect={onConnect} {...dragProps} />
@@ -145,7 +142,7 @@ describe('HealthCard', () => {
         onDragEnd={onDragEnd}
       />
     )
-    const card = screen.getByText('DragCard').closest('[role="button"]') as HTMLElement
+    const card = screen.getByText('DragCard').closest('button') as HTMLElement
     expect(card.style.border).toContain('dashed')
     fireEvent.dragStart(card)
     fireEvent.dragOver(card)
@@ -168,7 +165,7 @@ describe('HealthCard', () => {
         {...dragProps}
       />
     )
-    fireEvent.contextMenu(screen.getByText('CtxCard').closest('[role="button"]') as HTMLElement)
+    fireEvent.contextMenu(screen.getByText('CtxCard').closest('button') as HTMLElement)
     expect(onContextMenu).toHaveBeenCalledTimes(1)
   })
 })
@@ -235,23 +232,20 @@ describe('ServerListRow', () => {
     render(
       <ServerListRow session={makeSession()} isConnected={false} onConnect={noop} />
     )
-    expect(screen.getAllByText('—').length).toBe(3)
+    expect(screen.getAllByText('—')).toHaveLength(3)
     expect(screen.getByText('Disconnected')).toBeTruthy()
   })
 
-  it('fires onConnect for click, Enter and Space keyboard activation', () => {
+  it('fires onConnect when the row is clicked', () => {
     const onConnect = vi.fn()
     const session = makeSession({ label: 'RowKeys' })
     render(<ServerListRow session={session} isConnected={false} onConnect={onConnect} />)
-    const row = screen.getByText('RowKeys').closest('[role="button"]') as HTMLElement
+    const row = screen.getByText('RowKeys').closest('button') as HTMLElement
     fireEvent.click(row)
-    fireEvent.keyDown(row, { key: 'Enter' })
-    fireEvent.keyDown(row, { key: ' ' })
-    fireEvent.keyDown(row, { key: 'Escape' })
-    expect(onConnect).toHaveBeenCalledTimes(3)
+    expect(onConnect).toHaveBeenCalledTimes(1)
   })
 
-  it('offers a Connect action button when disconnected', () => {
+  it('offers a Connect action when disconnected', () => {
     const onConnect = vi.fn()
     render(<ServerListRow session={makeSession()} isConnected={false} onConnect={onConnect} />)
     fireEvent.click(screen.getByTitle('Connect'))

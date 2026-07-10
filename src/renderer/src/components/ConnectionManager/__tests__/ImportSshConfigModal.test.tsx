@@ -22,10 +22,10 @@ beforeEach(() => {
   api = installWindowApi({ sshConfig: { hosts: vi.fn().mockResolvedValue(hosts) } })
 })
 
-/** Each host row is a label whose leading role=button div is the checkbox. */
+/** Each host row is a label whose leading button is the checkbox. */
 function checkboxFor(alias: string) {
   const label = screen.getByText(alias).closest('label') as HTMLElement
-  return label.querySelector('[role="button"]') as HTMLElement
+  return label.querySelector('button') as HTMLElement
 }
 
 describe('ImportSshConfigModal', () => {
@@ -51,25 +51,25 @@ describe('ImportSshConfigModal', () => {
     expect(screen.getByText('Import (2)')).toBeTruthy()
   })
 
-  it('toggles selection by click and by Enter/Space on the checkbox', async () => {
+  it('toggles selection by clicking the checkbox and reflects aria-pressed', async () => {
     render(<ImportSshConfigModal onClose={onClose} />)
     await screen.findByText('web')
 
+    expect(checkboxFor('web').getAttribute('aria-pressed')).toBe('true')
     fireEvent.click(checkboxFor('web'))
+    expect(checkboxFor('web').getAttribute('aria-pressed')).toBe('false')
     expect(screen.getByText('Import (2)')).toBeTruthy()
 
-    fireEvent.keyDown(checkboxFor('app'), { key: 'Enter' })
+    fireEvent.click(checkboxFor('app'))
     expect(screen.getByText('Import (1)')).toBeTruthy()
 
-    fireEvent.keyDown(checkboxFor('legacy'), { key: ' ' })
+    fireEvent.click(checkboxFor('legacy'))
     // Every host deselected — the button loses its count and disables
     const importButton = screen.getByText('Import', { exact: true }).closest('button') as HTMLButtonElement
     expect(importButton.disabled).toBe(true)
 
-    // Irrelevant keys do nothing; Space re-selects
-    fireEvent.keyDown(checkboxFor('web'), { key: 'x' })
-    expect(importButton.disabled).toBe(true)
-    fireEvent.keyDown(checkboxFor('web'), { key: ' ' })
+    // Clicking again re-selects
+    fireEvent.click(checkboxFor('web'))
     expect(screen.getByText('Import (1)')).toBeTruthy()
   })
 

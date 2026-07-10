@@ -28,8 +28,7 @@ import { ValidationError, NotFoundError, OwnershipError, ConnectionError } from 
 
 registerDockerHandlers()
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type Handler = (...args: any[]) => any
+type Handler = (...args: unknown[]) => unknown
 
 function handler(channel: string): Handler {
   const call = (ipcMain.handle as Mock).mock.calls.find((c) => c[0] === channel)

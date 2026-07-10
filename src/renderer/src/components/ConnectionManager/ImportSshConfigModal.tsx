@@ -160,19 +160,18 @@ export default function ImportSshConfigModal({ onClose }: Props) {
                 onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'var(--nox-hover)' }}
                 onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent' }}
               >
-                <div
+                <button
+                  type="button"
                   className="w-4 h-4 rounded flex items-center justify-center flex-shrink-0"
                   style={{
                     border: `2px solid ${checked ? '#3B5CCC' : 'var(--nox-border)'}`,
                     background: checked ? '#3B5CCC' : 'transparent',
                   }}
-                  role="button"
-                  tabIndex={0}
+                  aria-pressed={checked}
                   onClick={() => toggle(h.alias)}
-                  onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(h.alias) } }}
                 >
                   {checked && <Check className="w-3 h-3 text-white" />}
-                </div>
+                </button>
                 <Terminal className="w-3.5 h-3.5 flex-shrink-0" style={{ color: '#3B5CCC' }} />
                 <div className="flex-1 min-w-0">
                   <span className="font-['Plus_Jakarta_Sans'] font-semibold text-[12.5px] block truncate" style={{ color: 'var(--nox-text)' }}>

@@ -245,10 +245,14 @@ export default function DatabaseExplorer({ tab }: Readonly<{ tab: Tab }>) {
     if (String(row[col] ?? '') === editValue) { setEditingCell(null); return }
     const pk = results.columns.includes('id') ? 'id' : results.columns[0]
     const pkVal = row[pk]; if (pkVal == null) { showToast('No primary key to identify row'); setEditingCell(null); return }
-    const newVal = editValue === '' ? 'NULL' : `'${editValue.replaceAll("'", "''")}'`
-    const pkLit = typeof pkVal === 'number' ? pkVal : `'${String(pkVal).replaceAll("'", "''")}'`
+    const dbType = session?.dbType || 'postgresql'
+    const q = (name: string) => quoteIdent(name, dbType)
     try {
-      await window.api.database.query(clientId, `UPDATE "${browsingTable}" SET "${col}" = ${newVal} WHERE "${pk}" = ${pkLit}`)
+      await window.api.database.query(
+        clientId,
+        `UPDATE ${q(browsingTable)} SET ${q(col)} = ${bindPlaceholder(dbType, 1)} WHERE ${q(pk)} = ${bindPlaceholder(dbType, 2)}`,
+        [editValue === '' ? null : editValue, typeof pkVal === 'number' ? pkVal : String(pkVal)],
+      )
       const updated = [...results.rows]; updated[editingCell.row] = { ...row, [col]: editValue === '' ? null : editValue }
       setResults({ ...results, rows: updated }); showToast('Updated')
     } catch (err: any) { showToast(`Update failed: ${err?.message}`) }
@@ -501,6 +505,16 @@ function ResultsGrid({ results, sortedRows, resultSort, onToggleSort, selectedRo
 }>) {
   const tableWidth = 48 + results.columns.length * 160
   const gridColumns = `48px repeat(${results.columns.length}, 160px)`
+  // Result rows have no inherent identity; key on the pk-ish column value,
+  // disambiguating duplicates with an occurrence counter (not the array index).
+  const pkCol = results.columns.includes('id') ? 'id' : results.columns[0]
+  const seen = new Map<string, number>()
+  const rowKeys = sortedRows.map(row => {
+    const base = toEditable(row[pkCol])
+    const n = (seen.get(base) ?? 0) + 1
+    seen.set(base, n)
+    return n > 1 ? `${base}#${n}` : base
+  })
   return (
     <div className="flex-1 min-w-0 min-h-0 overflow-hidden">
       <div className="w-full h-full overflow-auto" style={{ scrollbarWidth: 'thin' }}>
@@ -513,8 +527,10 @@ function ResultsGrid({ results, sortedRows, resultSort, onToggleSort, selectedRo
               </button>
             ))}
           </div>
+          {/* Rows can contain interactive cells (JsonCell buttons), so the row
+              itself stays a div: no button role, but click + keyboard select. */}
           {sortedRows.map((row, i) => (
-            <div key={i} role="button" tabIndex={0}
+            <div key={rowKeys[i]}
               onClick={() => onSelectRow(i === selectedRow ? null : i)}
               onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelectRow(i === selectedRow ? null : i) } }}
               className="grid cursor-default transition-colors" style={{ gridTemplateColumns: gridColumns, background: selectedRow === i ? 'rgba(59,92,204,0.06)' : undefined }}
@@ -820,11 +836,23 @@ function ExplainTreeView({ node, maxCost, depth }: Readonly<{ node: ExplainNode;
   )
 }
 
+// Identifier quoting per dialect — values themselves always travel as bind
+// parameters, never interpolated into the SQL string.
+function quoteIdent(name: string, dbType: string): string {
+  if (dbType === 'mysql' || dbType === 'mariadb') return '`' + name.replaceAll('`', '``') + '`'
+  return '"' + name.replaceAll('"', '""') + '"'
+}
+
+function bindPlaceholder(dbType: string, n: number): string {
+  return dbType === 'mysql' || dbType === 'mariadb' ? '?' : `$${n}`
+}
+
 /* ── Helpers ────────────────────────────────────────────────────────────── */
 
 function toEditable(v: unknown): string {
   if (v == null) return ''
-  return typeof v === 'object' ? JSON.stringify(v) : String(v)
+  if (typeof v === 'object') return JSON.stringify(v)
+  return String(v)
 }
 
 function filterTables(tables: string[], filter: string): string[] {

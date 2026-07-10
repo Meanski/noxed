@@ -6,7 +6,7 @@ import { installWindowApi, seedStore, makeSession } from '../../../__tests__/har
 import { useAppStore } from '../../../store'
 
 function rowFor(label: string): HTMLElement {
-  return screen.getByText(label).closest('[role="button"]') as HTMLElement
+  return screen.getByText(label).closest('button') as HTMLElement
 }
 
 describe('Sidebar', () => {
@@ -19,24 +19,20 @@ describe('Sidebar', () => {
     })
   })
 
-  it('activates nav items with Enter and Space', () => {
+  it('activates nav items on click', () => {
     render(<Sidebar />)
 
-    fireEvent.keyDown(rowFor('Dashboard'), { key: 'Enter' })
+    fireEvent.click(rowFor('Dashboard'))
     expect(useAppStore.getState().tabs.some(t => t.view === 'dashboard')).toBe(true)
 
-    fireEvent.keyDown(rowFor('Tunnels'), { key: ' ' })
+    fireEvent.click(rowFor('Tunnels'))
     expect(useAppStore.getState().tabs.some(t => t.view === 'tunnels')).toBe(true)
 
-    // Unrelated keys do nothing
-    fireEvent.keyDown(rowFor('Connections'), { key: 'a' })
-    expect(useAppStore.getState().tabs.some(t => t.view === 'connections')).toBe(false)
-
-    fireEvent.keyDown(rowFor('Settings'), { key: 'Enter' })
+    fireEvent.click(rowFor('Settings'))
     expect(useAppStore.getState().tabs.some(t => t.view === 'settings')).toBe(true)
   })
 
-  it('opens a session tab when a connection row receives Enter or Space', () => {
+  it('opens a session tab when a connection row is clicked', () => {
     seedStore({
       sessions: [
         makeSession({ id: 'ssh-1', label: 'Web Server' }),
@@ -45,10 +41,10 @@ describe('Sidebar', () => {
     })
     render(<Sidebar />)
 
-    fireEvent.keyDown(rowFor('Web Server'), { key: 'Enter' })
+    fireEvent.click(rowFor('Web Server'))
     expect(useAppStore.getState().tabs.some(t => t.sessionId === 'ssh-1' && t.view === 'terminal')).toBe(true)
 
-    fireEvent.keyDown(rowFor('Db Server'), { key: ' ' })
+    fireEvent.click(rowFor('Db Server'))
     expect(useAppStore.getState().tabs.some(t => t.sessionId === 'ssh-2')).toBe(true)
   })
 
@@ -59,7 +55,7 @@ describe('Sidebar', () => {
     expect(useAppStore.getState().tabs.some(t => t.sessionId === 'ssh-9')).toBe(true)
   })
 
-  it('toggles project groups and connects to grouped sessions via keyboard', () => {
+  it('toggles project groups and connects to grouped sessions on click', () => {
     seedStore({
       sidebarView: 'project',
       sessions: [makeSession({ id: 'p-1', label: 'Prod Box', group: 'Prod' })],
@@ -69,21 +65,21 @@ describe('Sidebar', () => {
     // Group is collapsed initially — the session row is hidden
     expect(screen.queryByText('Prod Box')).toBeNull()
 
-    fireEvent.keyDown(rowFor('Prod'), { key: 'Enter' })
+    fireEvent.click(rowFor('Prod'))
     expect(screen.getByText('Prod Box')).toBeTruthy()
 
-    fireEvent.keyDown(rowFor('Prod Box'), { key: ' ' })
+    fireEvent.click(rowFor('Prod Box'))
     expect(useAppStore.getState().tabs.some(t => t.sessionId === 'p-1')).toBe(true)
 
-    // Space collapses the group again
-    fireEvent.keyDown(rowFor('Prod'), { key: ' ' })
+    // Clicking the header again collapses the group
+    fireEvent.click(rowFor('Prod'))
     expect(screen.queryByText('Prod Box')).toBeNull()
   })
 
   it('opens redis sessions through the redis tab action', () => {
     seedStore({ sessions: [makeSession({ id: 'r-1', label: 'Cache', type: 'redis' })] })
     render(<Sidebar />)
-    fireEvent.keyDown(rowFor('Cache'), { key: 'Enter' })
+    fireEvent.click(rowFor('Cache'))
     const tab = useAppStore.getState().tabs.find(t => t.sessionId === 'r-1')
     expect(tab?.view).toBe('redis')
   })

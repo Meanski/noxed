@@ -54,18 +54,16 @@ export function HealthCard({
   const reachability = reachabilityInfo(isConnected)
 
   return (
-    <div
+    <button
+      type="button"
       draggable
       onDragStart={onDragStart}
       onDragOver={e => { e.preventDefault(); onDragOver() }}
       onDrop={e => { e.preventDefault(); onDrop() }}
       onDragEnd={onDragEnd}
-      role="button"
-      tabIndex={0}
       onClick={onConnect}
-      onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onConnect() } }}
       onContextMenu={onContextMenu}
-      className="rounded-lg overflow-hidden cursor-pointer transition-all hover:shadow-md min-h-[118px]"
+      className="w-full text-left rounded-lg overflow-hidden cursor-pointer transition-all hover:shadow-md min-h-[118px]"
       style={{
         background: 'var(--nox-shell)',
         border: isDropTarget ? `2px dashed ${color}` : '1px solid var(--nox-border)',
@@ -95,8 +93,7 @@ export function HealthCard({
             </div>
             <div className="flex items-center gap-1 flex-shrink-0">
               {!isConnected && (
-                <button
-                  onClick={e => { e.stopPropagation(); onConnect() }}
+                <span
                   className="flex items-center gap-1 px-2 py-1 rounded-md font-['Inter'] text-[10.5px] font-medium transition-colors flex-shrink-0"
                   style={{ background: color + '15', color, border: `1px solid ${color}30` }}
                   onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = color + '25' }}
@@ -104,7 +101,7 @@ export function HealthCard({
                 >
                   <Plug className="w-2.5 h-2.5" />
                   Connect
-                </button>
+                </span>
               )}
             </div>
           </div>
@@ -143,7 +140,7 @@ export function HealthCard({
           )}
         </div>
       </div>
-    </div>
+    </button>
   )
 }
 
@@ -213,13 +210,11 @@ export function ServerListRow({ session, metrics, isConnected, onConnect, onCont
   const diskPct = live && metrics?.diskTotal ? Math.round(((metrics.diskUsed ?? 0) / metrics.diskTotal) * 100) : null
 
   return (
-    <div
-      role="button"
-      tabIndex={0}
+    <button
+      type="button"
       onClick={onConnect}
-      onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onConnect() } }}
       onContextMenu={onContextMenu}
-      className="group flex items-center gap-3 px-3 cursor-pointer transition-colors"
+      className="group w-full text-left flex items-center gap-3 px-3 cursor-pointer transition-colors"
       style={{ height: 38 }}
       onMouseEnter={e => { e.currentTarget.style.background = 'var(--nox-hover)' }}
       onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
@@ -246,17 +241,16 @@ export function ServerListRow({ session, metrics, isConnected, onConnect, onCont
 
       <div className="flex items-center gap-1 flex-shrink-0 w-8 justify-end">
         {!isConnected && (
-          <button
+          <span
             title="Connect"
-            onClick={e => { e.stopPropagation(); onConnect() }}
             className="p-1 rounded opacity-0 group-hover:opacity-100 transition-opacity"
             style={{ color }}
           >
             <Plug className="w-3 h-3" />
-          </button>
+          </span>
         )}
       </div>
-    </div>
+    </button>
   )
 }
 

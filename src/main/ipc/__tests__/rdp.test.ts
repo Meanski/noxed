@@ -129,7 +129,7 @@ describe('frame stream parsing', () => {
     expect(sentId).toBe(id)
     expect(w).toBe(2)
     expect(h).toBe(2)
-    expect((pixels as Buffer).length).toBe(16)
+    expect(pixels as Buffer).toHaveLength(16)
   })
 
   it('buffers partial frames across chunks', () => {
@@ -205,25 +205,30 @@ describe('stderr [sidecar] parsing and exit reasons', () => {
     expect(event.sender.send).toHaveBeenCalledWith('rdp:closed', id, 'Logon failed')
   })
 
-  it('falls back to the last informational sidecar message on failure', () => {
+  it.each([
+    {
+      name: 'falls back to the last informational sidecar message on failure',
+      stderr: '[sidecar] certificate accepted\n',
+      exitCode: 3,
+      reason: 'certificate accepted',
+    },
+    {
+      name: 'keeps "error:" with no detail as a plain message, not an error detail',
+      stderr: '[sidecar] error:\n',
+      exitCode: 1,
+      reason: 'error:',
+    },
+    {
+      name: 'ignores empty sidecar lines and reports a generic exit reason',
+      stderr: '[sidecar]   \nplain freerdp output\n',
+      exitCode: 2,
+      reason: 'sidecar exited (2)',
+    },
+  ])('$name', ({ stderr, exitCode, reason }) => {
     const { proc, id, event } = connect()
-    proc.stderr.emit('data', Buffer.from('[sidecar] certificate accepted\n'))
-    proc.emit('exit', 3)
-    expect(event.sender.send).toHaveBeenCalledWith('rdp:closed', id, 'certificate accepted')
-  })
-
-  it('keeps "error:" with no detail as a plain message, not an error detail', () => {
-    const { proc, id, event } = connect()
-    proc.stderr.emit('data', Buffer.from('[sidecar] error:\n'))
-    proc.emit('exit', 1)
-    expect(event.sender.send).toHaveBeenCalledWith('rdp:closed', id, 'error:')
-  })
-
-  it('ignores empty sidecar lines and reports a generic exit reason', () => {
-    const { proc, id, event } = connect()
-    proc.stderr.emit('data', Buffer.from('[sidecar]   \nplain freerdp output\n'))
-    proc.emit('exit', 2)
-    expect(event.sender.send).toHaveBeenCalledWith('rdp:closed', id, 'sidecar exited (2)')
+    proc.stderr.emit('data', Buffer.from(stderr))
+    proc.emit('exit', exitCode)
+    expect(event.sender.send).toHaveBeenCalledWith('rdp:closed', id, reason)
   })
 
   it('sends a null reason on clean exit', () => {

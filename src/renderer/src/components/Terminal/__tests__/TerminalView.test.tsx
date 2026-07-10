@@ -45,7 +45,7 @@ import TerminalView from '../TerminalView'
 
 let api: WindowApiMock
 
-function setup(sessionOverrides: Partial<Session> = {}, apiOverrides: Record<string, any> = {}): Tab {
+function setup(sessionOverrides: Partial<Session> = {}, apiOverrides: Record<string, unknown> = {}): Tab {
   api = installWindowApi(apiOverrides)
   const session = makeSession({ id: 's1', host: 'h1.example.com', username: 'root', ...sessionOverrides })
   const tab = makeTab({ id: 't1', sessionId: 's1', view: 'terminal', status: 'idle' })

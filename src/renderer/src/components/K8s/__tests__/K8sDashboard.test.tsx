@@ -76,7 +76,10 @@ function k8sData() {
   }
 }
 
-function setup(k8sOverrides: Record<string, any> = {}, props: Record<string, any> = {}) {
+function setup(
+  k8sOverrides: Record<string, unknown> = {},
+  props: Partial<React.ComponentProps<typeof K8sDashboard>> = {},
+) {
   const api = installWindowApi({ k8s: { ...k8sData(), ...k8sOverrides } })
   seedStore({ sessions: [], tabs: [], activeTabId: null })
   const utils = render(<K8sDashboard context="test-ctx" {...props} />)
@@ -181,9 +184,11 @@ describe('K8sDashboard — resource kind switching', () => {
     await waitFor(() => expect(screen.getByText('api')).toBeTruthy())
     fireEvent.click(screen.getAllByTitle('Scale')[0])
     expect(screen.getByText('Scale Deployment')).toBeTruthy()
-    // + / − and direct input
-    fireEvent.click(screen.getByText('Scale to 2').parentElement!.parentElement!.querySelectorAll('button')[1]) // plus? layout: minus, input, plus...
-    const input = screen.getByDisplayValue(/\d+/) as HTMLInputElement
+    // + / − and direct input. The plus button is icon-only (no title/aria-label),
+    // so anchor on the replica input it renders immediately after.
+    const input = screen.getByDisplayValue('2') as HTMLInputElement
+    fireEvent.click(input.nextElementSibling as HTMLElement)
+    expect(input.value).toBe('3')
     fireEvent.change(input, { target: { value: '5' } })
     fireEvent.click(screen.getByText('Scale to 5'))
     await waitFor(() =>

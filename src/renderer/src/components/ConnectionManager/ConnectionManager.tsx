@@ -2,6 +2,7 @@ import { useState } from 'react'
 import {
   Filter, Search, Plus, Terminal, FolderOpen, Database, Boxes, Layers, Monitor,
   Plug, Pencil, Copy, Trash2, ChevronDown, ChevronUp, Check, FileDown,
+  type LucideProps,
 } from 'lucide-react'
 import { useAppStore, Session } from '../../store'
 import ImportSshConfigModal from './ImportSshConfigModal'
@@ -15,7 +16,7 @@ const typeLabel: Record<string, string> = {
   ssh: 'SSH', sftp: 'SFTP', database: 'Database', kubernetes: 'Kubernetes', redis: 'Redis', rdp: 'Remote Desktop',
 }
 
-function TypeIcon({ type, ...props }: Readonly<{ type?: string; [k: string]: any }>) {
+function TypeIcon({ type, ...props }: Readonly<{ type?: string } & LucideProps>) {
   switch (type ?? 'ssh') {
     case 'sftp': return <FolderOpen {...props} />
     case 'database': return <Database {...props} />
@@ -137,19 +138,18 @@ export default function ConnectionManager() {
                       onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'var(--nox-hover)' }}
                       onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent' }}
                     >
-                      <div
+                      <button
+                        type="button"
                         className="w-4 h-4 rounded flex items-center justify-center flex-shrink-0"
                         style={{
                           border: `2px solid ${filters.has(ft) ? '#3B5CCC' : 'var(--nox-border)'}`,
                           background: filters.has(ft) ? '#3B5CCC' : 'transparent',
                         }}
-                        role="button"
-                        tabIndex={0}
+                        aria-pressed={filters.has(ft)}
                         onClick={() => toggleFilter(ft)}
-                        onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleFilter(ft) } }}
                       >
                         {filters.has(ft) && <Check className="w-3 h-3 text-white" />}
-                      </div>
+                      </button>
                       <span className="w-2 h-2 rounded-full" style={{ background: typeColor[ft] }} />
                       <span className="font-['Inter'] text-[12.5px]" style={{ color: 'var(--nox-text)' }}>{typeLabel[ft]}</span>
                     </label>
@@ -168,19 +168,18 @@ export default function ConnectionManager() {
                         onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'var(--nox-hover)' }}
                         onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent' }}
                       >
-                        <div
+                        <button
+                          type="button"
                           className="w-4 h-4 rounded flex items-center justify-center flex-shrink-0"
                           style={{
                             border: `2px solid ${filters.has(ft) ? '#3B5CCC' : 'var(--nox-border)'}`,
                             background: filters.has(ft) ? '#3B5CCC' : 'transparent',
                           }}
-                          role="button"
-                          tabIndex={0}
+                          aria-pressed={filters.has(ft)}
                           onClick={() => toggleFilter(ft)}
-                          onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleFilter(ft) } }}
                         >
                           {filters.has(ft) && <Check className="w-3 h-3 text-white" />}
-                        </div>
+                        </button>
                         <span className="w-2 h-2 rounded-full" style={{ background: ft === 'online' ? '#10B981' : 'var(--nox-text-3)' }} />
                         <span className="font-['Inter'] text-[12.5px] capitalize" style={{ color: 'var(--nox-text)' }}>{ft}</span>
                       </label>

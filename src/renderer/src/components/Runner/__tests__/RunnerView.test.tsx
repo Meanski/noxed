@@ -2,7 +2,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
 import RunnerView from '../RunnerView'
-import { installWindowApi, seedStore, makeSession } from '../../../__tests__/harness'
+import { installWindowApi, seedStore, makeSession, type WindowApiMock } from '../../../__tests__/harness'
 import { useAppStore } from '../../../store'
 
 type OutputCb = (runId: string, sessionId: string, data: string) => void
@@ -38,10 +38,10 @@ function setup(runResult: 'ok' | 'fail' = 'ok') {
 }
 
 function checkboxFor(label: string): HTMLElement {
-  return screen.getByText(label).closest('label')!.querySelector('[role="button"]') as HTMLElement
+  return screen.getByText(label).closest('label')!.querySelector('button') as HTMLElement
 }
 
-async function startRun(host1: ReturnType<typeof makeSession>, api: any, command = 'uptime') {
+async function startRun(host1: ReturnType<typeof makeSession>, api: WindowApiMock, command = 'uptime') {
   fireEvent.click(checkboxFor(host1.label))
   fireEvent.change(screen.getByPlaceholderText(/runs on every selected host/), { target: { value: command } })
   fireEvent.click(screen.getByText('Run'))
@@ -62,17 +62,16 @@ describe('RunnerView', () => {
     expect(screen.getByText('Run a command across your fleet')).toBeTruthy()
   })
 
-  it('toggles hosts via click and Enter/Space keyboard activation', () => {
+  it('toggles hosts via the checkbox button and reflects state in aria-pressed', () => {
     setup()
     const box = checkboxFor('web-1')
+    expect(box.getAttribute('aria-pressed')).toBe('false')
     fireEvent.click(box)
     expect(screen.getByText('Hosts (1/2)')).toBeTruthy()
-    fireEvent.keyDown(box, { key: ' ' })
+    expect(box.getAttribute('aria-pressed')).toBe('true')
+    fireEvent.click(box)
     expect(screen.getByText('Hosts (0/2)')).toBeTruthy()
-    fireEvent.keyDown(box, { key: 'Enter' })
-    expect(screen.getByText('Hosts (1/2)')).toBeTruthy()
-    fireEvent.keyDown(box, { key: 'x' })
-    expect(screen.getByText('Hosts (1/2)')).toBeTruthy()
+    expect(box.getAttribute('aria-pressed')).toBe('false')
   })
 
   it('selects all / none via the header toggle', () => {
@@ -90,7 +89,7 @@ describe('RunnerView', () => {
     fireEvent.click(screen.getByText('Run'))
 
     await waitFor(() => expect(api.runner.run).toHaveBeenCalledWith([host1.id, host2.id], 'uptime'))
-    expect(screen.getAllByText('running').length).toBe(2)
+    expect(screen.getAllByText('running')).toHaveLength(2)
 
     // Output for a stale run id is ignored
     act(() => emitOutput('stale-run', host1.id, 'IGNORED'))

@@ -26,7 +26,7 @@ type CloseCb = (id: string, error?: string) => void
 function setup(opts: {
   session?: ReturnType<typeof makeSession> | null
   password?: string
-  connectImpl?: (...args: any[]) => Promise<string>
+  connectImpl?: (...args: unknown[]) => Promise<string>
 } = {}) {
   const session = opts.session === undefined ? makeSession({ type: 'rdp', port: 3389 }) : opts.session
   let frameCb: FrameCb = () => {}

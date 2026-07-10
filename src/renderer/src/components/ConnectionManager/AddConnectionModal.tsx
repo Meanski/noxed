@@ -138,7 +138,7 @@ export default function AddConnectionModal({ onClose }: Props) {
     switch (type) {
       case 'ssh': return '22'
       case 'sftp': return '22'
-      case 'database': return form.dbType === 'mysql' ? '3306' : '5432'
+      case 'database': return form.dbType === 'mysql' || form.dbType === 'mariadb' ? '3306' : '5432'
       case 'redis': return '6379'
       case 'rdp': return '3389'
       default: return '443'
@@ -1188,19 +1188,18 @@ function MiniToggleRow({ on, onToggle, label, description }: Readonly<{
 }>) {
   return (
     <div className="flex items-center gap-3 p-3 rounded-md" style={{ background: 'var(--nox-bg)', border: '1px solid var(--nox-border)' }}>
-      <div
+      <button
+        type="button"
         className="relative flex-shrink-0 cursor-pointer"
-        role="button"
-        tabIndex={0}
+        aria-pressed={on}
         onClick={onToggle}
-        onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onToggle() } }}
       >
         <div className="w-8 h-4 rounded-full transition-colors" style={{ background: on ? '#3B5CCC' : 'var(--nox-border)' }} />
         <div
           className="w-3.5 h-3.5 bg-white rounded-full absolute top-[1px] transition-all shadow-sm"
           style={{ left: on ? 'calc(100% - 14px - 2px)' : 2 }}
         />
-      </div>
+      </button>
       <div>
         <span className="font-['Inter'] text-[12px] font-medium" style={{ color: 'var(--nox-text)' }}>{label}</span>
         <p className="font-['Inter'] text-[10.5px] mt-0.5" style={{ color: 'var(--nox-text-2)' }}>{description}</p>

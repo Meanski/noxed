@@ -873,11 +873,13 @@ function ChangeAuthModal({
     }
   }
 
-  const handleSetSubmit = async () => {
+  // `confirmPin` carries the just-completed confirm digits from SetPinInput —
+  // the `confirmDigits` state may not be committed yet when submit fires.
+  const handleSetSubmit = async (confirmPin?: string[]) => {
     if (!selectedMode) return
     if (selectedMode === 'pin') {
       const pin = newDigits.join('')
-      const conf = confirmDigits.join('')
+      const conf = (confirmPin ?? confirmDigits).join('')
       if (pin.length !== 4) { setError('Enter a 4-digit PIN'); return }
       if (pin !== conf) { setError('PINs do not match'); setConfirmDigits([]); setPinPhase('enter'); setNewDigits([]); return }
       applyNewMode(selectedMode, pin)
@@ -995,7 +997,7 @@ function ChangeAuthModal({
               onNewChange={setNewCredential}
               onConfirmChange={setConfirmCredential}
               onToggleShow={() => setShowNew(s => !s)}
-              onSubmit={handleSetSubmit}
+              onSubmit={() => handleSetSubmit()}
             />
           )}
         </div>
@@ -1039,11 +1041,7 @@ function VerifyPinInput({ loading, error, onSubmit }: Readonly<{
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (loading) return
-      if (/^\d$/.test(e.key) && digits.length < 4) {
-        const next = [...digits, e.key]
-        setDigits(next)
-        if (next.length === 4) { onSubmit(next.join('')); setDigits([]) }
-      }
+      if (/^\d$/.test(e.key)) pressKey(e.key)
       if (e.key === 'Backspace') setDigits(d => d.slice(0, -1))
     }
     window.addEventListener('keydown', handler)
@@ -1128,27 +1126,10 @@ function SetPinInput({ phase, enterDigits, confirmDigits, loading, error, onEnte
   onEnterChange: (d: string[]) => void
   onConfirmChange: (d: string[]) => void
   onPhaseChange: (p: 'enter' | 'confirm') => void
-  onSubmit: () => void
+  onSubmit: (confirmPin: string[]) => void
 }>) {
   const digits = phase === 'enter' ? enterDigits : confirmDigits
   const setDigits = phase === 'enter' ? onEnterChange : onConfirmChange
-
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (loading) return
-      if (/^[0-9]$/.test(e.key) && digits.length < 4) {
-        const next = [...digits, e.key]
-        setDigits(next)
-        if (next.length === 4) {
-          if (phase === 'enter') { onPhaseChange('confirm') }
-          else { onSubmit() }
-        }
-      }
-      if (e.key === 'Backspace') setDigits(digits.slice(0, -1))
-    }
-    window.addEventListener('keydown', handler)
-    return () => window.removeEventListener('keydown', handler)
-  }, [digits, loading, phase])
 
   const pressKey = (key: string) => {
     if (loading || digits.length >= 4) return
@@ -1157,10 +1138,20 @@ function SetPinInput({ phase, enterDigits, confirmDigits, loading, error, onEnte
     if (next.length === 4) {
       setTimeout(() => {
         if (phase === 'enter') { onPhaseChange('confirm') }
-        else { onSubmit() }
+        else { onSubmit(next) }
       }, 80)
     }
   }
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (loading) return
+      if (/^[0-9]$/.test(e.key)) pressKey(e.key)
+      if (e.key === 'Backspace') setDigits(digits.slice(0, -1))
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [digits, loading, phase])
 
   return (
     <div className="flex flex-col items-center gap-4">
@@ -1199,10 +1190,18 @@ function SetPinInput({ phase, enterDigits, confirmDigits, loading, error, onEnte
 /* ── Clear credentials modal ─────────────────────────────────────────────── */
 function ClearCredentialsModal({ onCancel, onConfirm }: Readonly<{ onCancel: () => void; onConfirm: () => Promise<void> }>) {
   const [clearing, setClearing] = useState(false)
+  const [error, setError] = useState('')
 
   const handleConfirm = async () => {
     setClearing(true)
-    await onConfirm()
+    setError('')
+    try {
+      await onConfirm()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to clear credentials')
+    } finally {
+      setClearing(false)
+    }
   }
 
   return (
@@ -1226,6 +1225,7 @@ function ClearCredentialsModal({ onCancel, onConfirm }: Readonly<{ onCancel: () 
           <p className="font-['Inter'] text-[13px] mb-6" style={{ color: 'var(--nox-text-2)' }}>
             This will permanently delete all stored passwords, SSH keys, database credentials, and connection configurations. Your data cannot be recovered after this action.
           </p>
+          {error && <p className="font-['Inter'] text-[12px] text-[#EF4444] mb-4">{error}</p>}
           <div className="flex items-center justify-end gap-3">
             <button
               onClick={onCancel}

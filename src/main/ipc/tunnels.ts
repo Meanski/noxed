@@ -144,12 +144,21 @@ function handleSocksConnect(entry: ActiveTunnel, socket: Socket, request: Buffer
     socket.end(socksConnectReply(parsed.errorCode))
     return
   }
+  // forwardOut's callback can hang indefinitely on an unresponsive target;
+  // reply connection-refused after a deadline and ignore a late callback.
+  let timedOut = false
+  const timer = setTimeout(() => {
+    timedOut = true
+    socket.end(socksConnectReply(SOCKS_REPLY.connectionRefused))
+  }, 30_000)
   entry.conn.client.forwardOut(
     socket.remoteAddress ?? '127.0.0.1',
     socket.remotePort ?? 0,
     parsed.host,
     parsed.port,
     (err, stream) => {
+      clearTimeout(timer)
+      if (timedOut) { stream?.destroy(); return }
       if (err) { socket.end(socksConnectReply(SOCKS_REPLY.connectionRefused)); return }
       socket.write(socksConnectReply(SOCKS_REPLY.success))
       pipeBoth(socket, stream)
@@ -241,7 +250,14 @@ export function listTunnels(): Array<TunnelDef & { status: TunnelStatus | 'stopp
 }
 
 export function disposeAllTunnels(): void {
-  for (const id of active.keys()) stopTunnel(id)
+  for (const id of active.keys()) {
+    try {
+      stopTunnel(id)
+    } catch (e) {
+      // One tunnel failing to clean up must not strand the rest on shutdown
+      console.error(`[tunnels] failed to stop ${id}:`, toMessage(e))
+    }
+  }
 }
 
 export function registerTunnelHandlers(): void {

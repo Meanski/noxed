@@ -108,7 +108,7 @@ describe('Settings — General', () => {
     api.sessions.import.mockResolvedValueOnce({ canceled: true, imported: 0, skipped: 0 })
     fireEvent.click(screen.getByText('Import'))
     await waitFor(() => expect(api.sessions.import).toHaveBeenCalledTimes(2))
-    expect(useAppStore.getState().notifications.length).toBe(before)
+    expect(useAppStore.getState().notifications).toHaveLength(before)
   })
 })
 
@@ -229,16 +229,14 @@ describe('Settings — Security', () => {
       fireEvent.keyDown(window, { key })
     }
     expect(await screen.findByText('Confirm new PIN')).toBeTruthy()
-    // Confirm via the numpad. NOTE: SetPinInput submits through a stale
-    // closure (the confirm digits committed after the callback was captured),
-    // so even a matching PIN currently trips the mismatch branch — auth.setup
-    // is never reached from this flow. This documents the observed behavior.
+    // Confirm the matching PIN via the numpad — setup is called with the
+    // verified password and the flow advances past PIN entry.
     const modal = modalRoot()
     fireEvent.click(within(modal).getByText('⌫')) // no-op delete on empty confirm
     for (const d of ['1', '2', '3', '4']) fireEvent.click(within(modal).getByText(d))
-    expect(await screen.findByText('PINs do not match')).toBeTruthy()
-    expect(api.auth.setup).not.toHaveBeenCalled()
-    expect(screen.getByText('Enter new PIN')).toBeTruthy()
+    await waitFor(() => expect(api.auth.setup).toHaveBeenCalledWith('pin', '1234', 'hunter2'))
+    await waitFor(() => expect(screen.queryByText('Set New PIN')).toBeNull())
+    expect(screen.queryByText('Enter new PIN')).toBeNull()
   })
 
   it('rejects mismatched PINs and restarts entry', async () => {

@@ -274,11 +274,7 @@ function KeyListPane({ keys, pattern, setPattern, loadingKeys, selectedKey, onQu
           keys.map(({ key }) => (
             <div
               key={key}
-              role="button"
-              tabIndex={0}
-              onClick={() => onSelect(key)}
-              onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelect(key) } }}
-              className="group flex items-center gap-2 px-3 py-2 cursor-pointer transition-colors"
+              className="group flex items-center gap-2 pr-3 transition-colors"
               style={{
                 background: selectedKey === key ? '#DC382D18' : 'transparent',
                 borderLeft: selectedKey === key ? '2px solid #DC382D' : '2px solid transparent',
@@ -286,14 +282,21 @@ function KeyListPane({ keys, pattern, setPattern, loadingKeys, selectedKey, onQu
               onMouseEnter={e => { if (selectedKey !== key) (e.currentTarget as HTMLElement).style.background = 'var(--nox-hover)' }}
               onMouseLeave={e => { if (selectedKey !== key) (e.currentTarget as HTMLElement).style.background = 'transparent' }}
             >
-              <span
-                className="font-mono text-[11px] flex-1 truncate"
-                style={{ color: selectedKey === key ? '#DC382D' : 'var(--nox-text)' }}
-              >
-                {key}
-              </span>
               <button
-                onClick={e => { e.stopPropagation(); onDelete(key) }}
+                type="button"
+                onClick={() => onSelect(key)}
+                className="flex-1 min-w-0 flex items-center text-left pl-3 py-2 cursor-pointer"
+              >
+                <span
+                  className="font-mono text-[11px] flex-1 truncate"
+                  style={{ color: selectedKey === key ? '#DC382D' : 'var(--nox-text)' }}
+                >
+                  {key}
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => onDelete(key)}
                 className="opacity-0 group-hover:opacity-100 p-0.5 rounded transition-opacity"
                 style={{ color: '#EF4444' }}
               >
