@@ -206,11 +206,18 @@ let notifCounter = 0
 
 // Fire-and-forget settings write, guarded so the store works in tests (no window)
 function persistSetting(key: string, value: unknown): void {
-  if (typeof window === 'undefined') return
+  if (typeof window === 'undefined') {
+    return
+  }
   ;(window as any).api?.settings?.set(key, value)
 }
 
 type SetState = (fn: (s: AppState) => Partial<AppState>) => void
+
+const TYPE_TO_VIEW: Record<string, TabView> = {
+  kubernetes: 'k8s', sftp: 'sftp', database: 'database', rdp: 'rdp', redis: 'redis',
+}
+const viewForSessionType = (type?: string): TabView => TYPE_TO_VIEW[type ?? ''] ?? 'terminal'
 
 // System views (dashboard, settings, …) only ever get one tab each.
 function openSingletonTab(set: SetState, view: TabView, label: string): void {
@@ -260,12 +267,9 @@ export const useAppStore = create<AppState>((set) => ({
     set((s) => {
       const existing = s.tabs.find((t) => t.sessionId === session.id && t.status !== 'error' && !t.paneOf)
       if (existing) return { activeTabId: existing.id, focusedPaneId: null }
-      const isK8s = session.type === 'kubernetes'
-      const isSftp = session.type === 'sftp'
-      const isDb = session.type === 'database'
-      const isRdp = session.type === 'rdp'
-      const isRedis = session.type === 'redis'
-      const view: TabView = isK8s ? 'k8s' : isSftp ? 'sftp' : isDb ? 'database' : isRdp ? 'rdp' : isRedis ? 'redis' : 'terminal'
+      const view = viewForSessionType(session.type)
+      const isK8s = view === 'k8s'
+      const isRdp = view === 'rdp'
       const tab: Tab = {
         id: `tab-${++tabCounter}`,
         sessionId: session.id,

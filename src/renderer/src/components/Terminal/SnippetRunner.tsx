@@ -20,7 +20,31 @@ function extractVars(cmd: string): string[] {
   return vars
 }
 
-export default function SnippetRunner({ hostSnippets, globalSnippets, hostname, onRun, onSave, onDelete, onClose }: {
+function VarInput({ name, value, autoFocus, onChange, onEnter, onCancel }: Readonly<{
+  name: string
+  value: string
+  autoFocus: boolean
+  onChange: (value: string) => void
+  onEnter: () => void
+  onCancel: () => void
+}>) {
+  return (
+    <div className="flex items-center gap-2">
+      <Variable className="w-3 h-3 flex-shrink-0" style={{ color: '#9d6ff8' }} />
+      <span className="text-[10px] font-mono flex-shrink-0" style={{ color: 'rgba(255,255,255,0.5)' }}>{name}</span>
+      <input value={value} onChange={e => onChange(e.target.value)}
+        onKeyDown={e => {
+          if (e.key === 'Enter') onEnter()
+          if (e.key === 'Escape') onCancel()
+        }}
+        autoFocus={autoFocus}
+        className="flex-1 bg-transparent text-[10px] font-mono px-1.5 py-0.5 rounded focus:outline-none"
+        style={{ color: '#eeeef2', border: '1px solid rgba(157,111,248,0.3)' }} placeholder="value…" />
+    </div>
+  )
+}
+
+export default function SnippetRunner({ hostSnippets, globalSnippets, hostname, onRun, onSave, onDelete, onClose }: Readonly<{
   hostSnippets: Snippet[]
   globalSnippets: Snippet[]
   hostname: string
@@ -28,7 +52,7 @@ export default function SnippetRunner({ hostSnippets, globalSnippets, hostname, 
   onSave: (snippet: Snippet) => void
   onDelete: (id: string, scope: SnippetScope) => void
   onClose: () => void
-}) {
+}>) {
   const [adding, setAdding] = useState(false)
   const [addScope, setAddScope] = useState<SnippetScope>('global')
   const [editLabel, setEditLabel] = useState('')
@@ -58,10 +82,12 @@ export default function SnippetRunner({ hostSnippets, globalSnippets, hostname, 
 
   function executeWithVars(snippet: Snippet) {
     let cmd = snippet.command
-    for (const [k, v] of Object.entries(varValues)) cmd = cmd.replace(new RegExp(`\\{\\{${k}\\}\\}`, 'g'), v)
+    for (const [k, v] of Object.entries(varValues)) cmd = cmd.replaceAll(`{{${k}}}`, v)
     onRun(cmd + '\n')
     setRunningId(null); setVarValues({})
   }
+
+  const setVar = (name: string, val: string) => setVarValues(p => ({ ...p, [name]: val }))
 
   function saveNew() {
     if (!editLabel.trim() || !editCmd.trim()) return
@@ -101,15 +127,11 @@ export default function SnippetRunner({ hostSnippets, globalSnippets, hostname, 
         {runningId === s.id && (
           <div className="px-3 pb-3 pt-1 space-y-2" style={{ background: 'rgba(157,111,248,0.04)' }}>
             {extractVars(s.command).map(v => (
-              <div key={v} className="flex items-center gap-2">
-                <Variable className="w-3 h-3 flex-shrink-0" style={{ color: '#9d6ff8' }} />
-                <span className="text-[10px] font-mono flex-shrink-0" style={{ color: 'rgba(255,255,255,0.5)' }}>{v}</span>
-                <input value={varValues[v] || ''} onChange={e => setVarValues(p => ({ ...p, [v]: e.target.value }))}
-                  onKeyDown={e => { if (e.key === 'Enter') executeWithVars(s); if (e.key === 'Escape') setRunningId(null) }}
-                  autoFocus={extractVars(s.command)[0] === v}
-                  className="flex-1 bg-transparent text-[10px] font-mono px-1.5 py-0.5 rounded focus:outline-none"
-                  style={{ color: '#eeeef2', border: '1px solid rgba(157,111,248,0.3)' }} placeholder="value…" />
-              </div>
+              <VarInput key={v} name={v} value={varValues[v] || ''}
+                autoFocus={extractVars(s.command)[0] === v}
+                onChange={val => setVar(v, val)}
+                onEnter={() => executeWithVars(s)}
+                onCancel={() => setRunningId(null)} />
             ))}
             <div className="flex items-center gap-2 pt-1">
               <button onClick={() => executeWithVars(s)} className="flex items-center gap-1 px-2 py-1 rounded text-[10px] font-medium" style={{ background: '#10b981', color: '#fff' }}>

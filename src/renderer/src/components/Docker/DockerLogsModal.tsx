@@ -87,7 +87,7 @@ export default function DockerLogsModal({ dockerId, containerName, containerId, 
           <div className="ml-auto flex items-center gap-2">
             <select
               value={tail}
-              onChange={e => setTail(parseInt(e.target.value))}
+              onChange={e => setTail(Number.parseInt(e.target.value))}
               className="rounded px-2 py-1 text-[11px] font-mono focus:outline-none"
               style={{ background: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.7)', border: '1px solid rgba(255,255,255,0.1)' }}
             >

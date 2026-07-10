@@ -1,10 +1,9 @@
 import { ipcMain, IpcMainInvokeEvent } from 'electron'
 import { Client, ClientChannel, SFTPWrapper, Stats } from 'ssh2'
-import { randomUUID } from 'crypto'
+import { randomUUID } from 'node:crypto'
 import { ConnectionError, NotFoundError, OwnershipError, ValidationError, toMessage } from './errors'
-import { getOwnedSshClient } from './ssh'
+import { getOwnedSshClient, SSH_CONNECT_DEFAULTS, sshConnectOptions } from './ssh'
 import { isInsideHome, isLikelyTextFile, validateHost, validatePort } from './security'
-import { SSH_CONNECT_DEFAULTS, sshConnectOptions } from './ssh'
 import { connectSessionClient, openJumpSocket, ManagedSshConnection } from './sshClients'
 
 interface SftpClient {
@@ -153,7 +152,11 @@ async function openSftp(event: IpcMainInvokeEvent, config: SftpConnectConfig): P
     const client = new Client()
     const clientId = randomUUID()
     let settled = false
-    const settle = (fn: () => void) => { if (settled) return; settled = true; fn() }
+    const settle = (fn: () => void) => {
+      if (settled) return
+      settled = true
+      fn()
+    }
 
     client.on('ready', () => {
       createSftpChannel(client, clientId, true, event.sender.id, upstream).then(
@@ -177,6 +180,47 @@ async function openSftp(event: IpcMainInvokeEvent, config: SftpConnectConfig): P
       tryKeyboard: true,
       ...sshConnectOptions(),
       algorithms: { ...SSH_CONNECT_DEFAULTS.algorithms },
+    })
+  })
+}
+
+function listDir(sftp: SFTPWrapper, path: string): Promise<unknown[]> {
+  return new Promise((resolve, reject) => {
+    sftp.readdir(path, (err, list) => {
+      if (err) return reject(new ConnectionError(toMessage(err)))
+      resolve(list.map((f) => ({
+        name: f.filename,
+        size: f.attrs.size,
+        mtime: f.attrs.mtime * 1000,
+        permissions: f.attrs.mode,
+        isDirectory: (f.attrs.mode & 0o170000) === 0o040000,
+      })))
+    })
+  })
+}
+
+function readTextFile(sftp: SFTPWrapper, remotePath: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    sftp.stat(remotePath, (statErr, stats: Stats) => {
+      if (statErr) return reject(new ConnectionError(toMessage(statErr)))
+
+      const filename = remotePath.split('/').pop() ?? ''
+      if (!isLikelyTextFile(filename, stats.size ?? 0)) {
+        return reject(new ValidationError('Cannot open binary file in editor. Use download instead.'))
+      }
+
+      const chunks: Buffer[] = []
+      const stream = sftp.createReadStream(remotePath)
+      stream.on('data', (c: Buffer) => chunks.push(c))
+      stream.on('end', () => {
+        const buf = Buffer.concat(chunks)
+        const sample = buf.subarray(0, 8192)
+        if (sample.includes(0)) {
+          return reject(new ValidationError('File appears to be binary. Use download instead.'))
+        }
+        resolve(buf.toString('utf8'))
+      })
+      stream.on('error', (err: unknown) => reject(new ConnectionError(toMessage(err))))
     })
   })
 }
@@ -205,48 +249,14 @@ export function registerSftpHandlers(): void {
 
   ipcMain.handle('sftp:list', (event, rawClientId: unknown, rawPath: unknown) => {
     const path = validateRemotePath(rawPath)
-    return new Promise((resolve, reject) => {
-      const entry = requireClient(event, rawClientId)
-      entry.sftp.readdir(path, (err, list) => {
-        if (err) return reject(new ConnectionError(toMessage(err)))
-        resolve(list.map((f) => ({
-          name: f.filename,
-          size: f.attrs.size,
-          mtime: f.attrs.mtime * 1000,
-          permissions: f.attrs.mode,
-          isDirectory: (f.attrs.mode & 0o170000) === 0o040000,
-        })))
-      })
-    })
+    const entry = requireClient(event, rawClientId)
+    return listDir(entry.sftp, path)
   })
 
   ipcMain.handle('sftp:readFile', (event, rawClientId: unknown, rawRemotePath: unknown) => {
     const remotePath = validateRemotePath(rawRemotePath)
-    return new Promise((resolve, reject) => {
-      const entry = requireClient(event, rawClientId)
-
-      entry.sftp.stat(remotePath, (statErr, stats: Stats) => {
-        if (statErr) return reject(new ConnectionError(toMessage(statErr)))
-
-        const filename = remotePath.split('/').pop() ?? ''
-        if (!isLikelyTextFile(filename, stats.size ?? 0)) {
-          return reject(new ValidationError('Cannot open binary file in editor. Use download instead.'))
-        }
-
-        const chunks: Buffer[] = []
-        const stream = entry.sftp.createReadStream(remotePath)
-        stream.on('data', (c: Buffer) => chunks.push(c))
-        stream.on('end', () => {
-          const buf = Buffer.concat(chunks)
-          const sample = buf.subarray(0, 8192)
-          if (sample.includes(0)) {
-            return reject(new ValidationError('File appears to be binary. Use download instead.'))
-          }
-          resolve(buf.toString('utf8'))
-        })
-        stream.on('error', (err: unknown) => reject(new ConnectionError(toMessage(err))))
-      })
-    })
+    const entry = requireClient(event, rawClientId)
+    return readTextFile(entry.sftp, remotePath)
   })
 
   ipcMain.handle('sftp:writeFile', (event, rawClientId: unknown, rawRemotePath: unknown, rawContent: unknown) => {

@@ -5,7 +5,7 @@ import { ipcErrorMessage } from '../../lib/format'
 import { connectSftp } from '../../lib/sftpConnect'
 import CodeEditor from './CodeEditor'
 
-export default function EditorTab({ tab }: { tab: Tab }) {
+export default function EditorTab({ tab }: Readonly<{ tab: Tab }>) {
   const sessions = useAppStore(s => s.sessions)
   const updateTab = useAppStore(s => s.updateTab)
   const addNotification = useAppStore(s => s.addNotification)
@@ -20,7 +20,7 @@ export default function EditorTab({ tab }: { tab: Tab }) {
   const clientRef = useRef<string | null>(null)
   const contentRef = useRef<string>('')
   // Latest save() lives in a ref so the global Cmd+S listener never goes stale
-  const saveRef = useRef<() => void>(() => {})
+  const saveRef = useRef<() => Promise<void> | void>(() => {})
 
   const isRemote = file?.source === 'remote'
 
@@ -157,14 +157,21 @@ export default function EditorTab({ tab }: { tab: Tab }) {
             : { color: 'var(--nox-text-3)', border: '1px solid transparent' }}
         >
           {saving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
-          {saving ? 'Saving' : tab.isDirty ? 'Save' : 'Saved'}
+          {saveLabel(saving, !!tab.isDirty)}
         </button>
       </div>
 
       {/* Body */}
-      {loading && content === null ? (
-        <CenteredMessage icon={<Loader2 className="w-5 h-5 animate-spin" style={{ color: '#3B5CCC' }} />} />
-      ) : error ? (
+      {renderBody(file.path)}
+    </div>
+  )
+
+  function renderBody(filePath: string) {
+    if (loading && content === null) {
+      return <CenteredMessage icon={<Loader2 className="w-5 h-5 animate-spin" style={{ color: '#3B5CCC' }} />} />
+    }
+    if (error) {
+      return (
         <div className="flex-1 flex items-center justify-center">
           <div className="text-center max-w-sm px-6">
             <AlertTriangle className="w-6 h-6 mx-auto mb-2" style={{ color: '#EF4444' }} />
@@ -178,21 +185,27 @@ export default function EditorTab({ tab }: { tab: Tab }) {
             </button>
           </div>
         </div>
-      ) : (
-        <div className="flex-1 min-h-0">
-          <CodeEditor
-            value={content ?? ''}
-            filename={file.path}
-            onChange={handleChange}
-            onSave={save}
-          />
-        </div>
-      )}
-    </div>
-  )
+      )
+    }
+    return (
+      <div className="flex-1 min-h-0">
+        <CodeEditor
+          value={content ?? ''}
+          filename={filePath}
+          onChange={handleChange}
+          onSave={save}
+        />
+      </div>
+    )
+  }
 }
 
-function CenteredMessage({ icon, text }: { icon: React.ReactNode; text?: string }) {
+function saveLabel(saving: boolean, dirty: boolean): string {
+  if (saving) return 'Saving'
+  return dirty ? 'Save' : 'Saved'
+}
+
+function CenteredMessage({ icon, text }: Readonly<{ icon: React.ReactNode; text?: string }>) {
   return (
     <div className="flex-1 flex flex-col items-center justify-center gap-2 h-full">
       {icon}

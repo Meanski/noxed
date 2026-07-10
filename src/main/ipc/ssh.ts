@@ -1,6 +1,6 @@
 import { ipcMain, IpcMainEvent, IpcMainInvokeEvent, WebContents } from 'electron'
 import { Client, ClientChannel } from 'ssh2'
-import { randomUUID } from 'crypto'
+import { randomUUID } from 'node:crypto'
 import { ConnectionError, OwnershipError, ValidationError, toMessage } from './errors'
 import { validateHost, validatePort } from './security'
 import {
@@ -146,6 +146,41 @@ function stopMetrics(streamId: string): void {
   prevCpuStats.delete(streamId)
 }
 
+function fetchAndEmit(streamId: string): void {
+  const live = streams.get(streamId)
+  if (!live) { stopMetrics(streamId); return }
+  const timers = metricsTimers.get(streamId)
+  if (!timers || timers.inFlight) return
+  timers.inFlight = true
+
+  live.client.exec(METRICS_COMMAND, (err, s) => {
+    if (err) { timers.inFlight = false; return }
+    let out = ''
+    s.on('data', (d: Buffer) => { out += d.toString() })
+    // stderr is intentionally drained to keep the channel from buffering;
+    // remote `cat`/`grep` may report 'no such file' on non-Linux hosts.
+    s.stderr.on('data', () => {})
+    s.on('close', () => {
+      const t = metricsTimers.get(streamId)
+      if (t) t.inFlight = false
+      try {
+        const { metrics, cpuStat } = parseMetricsOutput(out, prevCpuStats.get(streamId))
+        if (cpuStat) prevCpuStats.set(streamId, cpuStat)
+        sendMetrics(streamId, metrics)
+      } catch (parseErr) {
+        // Best-effort metrics: malformed remote output (non-Linux, BSD, etc.)
+        // must not crash or stop the shell stream.
+        console.error(`[ssh] metrics parse ${streamId}: ${toMessage(parseErr)}`)
+      }
+    })
+    s.on('error', (e: unknown) => {
+      const t = metricsTimers.get(streamId)
+      if (t) t.inFlight = false
+      console.error(`[ssh] metrics exec ${streamId}: ${toMessage(e)}`)
+    })
+  })
+}
+
 function disposeStream(streamId: string): void {
   stopMetrics(streamId)
   const entry = streams.get(streamId)
@@ -160,6 +195,42 @@ export function disposeSshStreamsForSender(senderId: number): void {
   for (const [id, entry] of streams) {
     if (entry.sender.id === senderId) disposeStream(id)
   }
+}
+
+// Opens the interactive shell once the client is ready and wires its stream
+// events through to the renderer. `settle` guards against double-settling the
+// connect promise when 'error' fires after 'ready'.
+function openShell(
+  client: Client,
+  streamId: string,
+  sender: WebContents,
+  upstream: ManagedSshConnection | undefined,
+  settle: (fn: () => void) => void,
+  resolve: (id: string) => void,
+  reject: (err: Error) => void,
+): void {
+  client.setNoDelay(true)
+  client.shell({ term: 'xterm-256color' }, (err, stream) => {
+    if (err) {
+      client.end()
+      upstream?.dispose()
+      settle(() => reject(new ConnectionError(toMessage(err))))
+      return
+    }
+    streams.set(streamId, { client, stream, sender, upstream })
+
+    stream.on('data', (data: Buffer) => sendData(streamId, data.toString('utf8')))
+    stream.stderr.on('data', (data: Buffer) => sendData(streamId, data.toString('utf8')))
+
+    stream.on('close', () => {
+      stopMetrics(streamId)
+      sendClosed(streamId)
+      streams.delete(streamId)
+      upstream?.dispose()
+    })
+
+    settle(() => resolve(streamId))
+  })
 }
 
 export function registerSshHandlers(): void {
@@ -186,37 +257,18 @@ export function registerSshHandlers(): void {
         const client = new Client()
         const streamId = randomUUID()
         let settled = false
-        const settle = (fn: () => void) => { if (settled) return; settled = true; fn() }
+        const settle = (fn: () => void) => {
+          if (settled) return
+          settled = true
+          fn()
+        }
 
         client.on('keyboard-interactive', (_name, _instructions, _instructionsLang, prompts, finish) => {
           if (!config.password) { finish([]); return }
           finish(prompts.map(() => config.password ?? ''))
         })
 
-        client.on('ready', () => {
-          client.setNoDelay(true)
-          client.shell({ term: 'xterm-256color' }, (err, stream) => {
-            if (err) {
-              client.end()
-              upstream?.dispose()
-              settle(() => reject(new ConnectionError(toMessage(err))))
-              return
-            }
-            streams.set(streamId, { client, stream, sender: event.sender, upstream })
-
-            stream.on('data', (data: Buffer) => sendData(streamId, data.toString('utf8')))
-            stream.stderr.on('data', (data: Buffer) => sendData(streamId, data.toString('utf8')))
-
-            stream.on('close', () => {
-              stopMetrics(streamId)
-              sendClosed(streamId)
-              streams.delete(streamId)
-              upstream?.dispose()
-            })
-
-            settle(() => resolve(streamId))
-          })
-        })
+        client.on('ready', () => openShell(client, streamId, event.sender, upstream, settle, resolve, reject))
 
         client.on('error', (err) => {
           if (!settled) {
@@ -289,41 +341,6 @@ export function registerSshHandlers(): void {
   })
 
   // ── Metrics ────────────────────────────────────────────────────────────────
-
-  function fetchAndEmit(streamId: string): void {
-    const live = streams.get(streamId)
-    if (!live) { stopMetrics(streamId); return }
-    const timers = metricsTimers.get(streamId)
-    if (!timers || timers.inFlight) return
-    timers.inFlight = true
-
-    live.client.exec(METRICS_COMMAND, (err, s) => {
-      if (err) { timers.inFlight = false; return }
-      let out = ''
-      s.on('data', (d: Buffer) => { out += d.toString() })
-      // stderr is intentionally drained to keep the channel from buffering;
-      // remote `cat`/`grep` may report 'no such file' on non-Linux hosts.
-      s.stderr.on('data', () => {})
-      s.on('close', () => {
-        const t = metricsTimers.get(streamId)
-        if (t) t.inFlight = false
-        try {
-          const { metrics, cpuStat } = parseMetricsOutput(out, prevCpuStats.get(streamId))
-          if (cpuStat) prevCpuStats.set(streamId, cpuStat)
-          sendMetrics(streamId, metrics)
-        } catch (parseErr) {
-          // Best-effort metrics: malformed remote output (non-Linux, BSD, etc.)
-          // must not crash or stop the shell stream.
-          console.error(`[ssh] metrics parse ${streamId}: ${toMessage(parseErr)}`)
-        }
-      })
-      s.on('error', (e: unknown) => {
-        const t = metricsTimers.get(streamId)
-        if (t) t.inFlight = false
-        console.error(`[ssh] metrics exec ${streamId}: ${toMessage(e)}`)
-      })
-    })
-  }
 
   ipcMain.handle('ssh:metrics-start', (event: IpcMainInvokeEvent, rawStreamId: unknown) => {
     const streamId = validateStreamId(rawStreamId)

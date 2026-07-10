@@ -25,15 +25,23 @@
  * This milestone is output-only (read-only desktop view). Input injection
  * (mouse/keyboard over stdin) is the next milestone.
  *
- * Usage: rdp-sidecar <host> <port> <user> <password> [width] [height]
+ * Usage: rdp-sidecar <host> <port> <user> [width] [height]
+ * The password is read as the first line of stdin so it never appears in the
+ * process list.
  */
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
+#ifdef _WIN32
+#include <io.h>
+#include <fcntl.h>
+#endif
+
 #include <freerdp/freerdp.h>
 #include <freerdp/client.h>
+#include <freerdp/error.h>
 #include <freerdp/gdi/gdi.h>
 #include <freerdp/codec/color.h>
 #include <winpr/synch.h>
@@ -151,6 +159,88 @@ static BOOL sidecar_end_paint(rdpContext* context)
 	return TRUE;
 }
 
+/* Certificate handling. The default client callbacks
+ * (client_cli_verify_certificate_ex) are interactive: they print the cert
+ * details to *stdout* — corrupting the binary frame channel — and then read a
+ * Y/N answer from *stdin*, which rdp.ts closes right after the password. The
+ * EOF rejects the certificate, so any host not already in
+ * ~/.config/freerdp/known_hosts2 failed to connect. This was the "works some
+ * of the time" bug: only hosts trusted during earlier interactive testing
+ * connected, and they broke again whenever Windows rotated its self-signed
+ * cert.
+ *
+ * Windows RDP hosts almost universally present self-signed certs, so we
+ * accept for the session (return 2 = temporary trust: nothing persisted, no
+ * stale known_hosts state to go bad later) and log the fingerprint to stderr.
+ * Same trust-on-use posture as the app's SSH host-key handling; an in-app
+ * verification UI is a later milestone for both. */
+static DWORD sidecar_verify_certificate(freerdp* instance, const char* host, UINT16 port,
+                                        const char* common_name, const char* subject,
+                                        const char* issuer, const char* fingerprint, DWORD flags)
+{
+	(void)instance;
+	(void)subject;
+	(void)issuer;
+	fprintf(stderr, "[sidecar] accepting certificate for %s:%u (CN=%s)\n", host, (unsigned)port,
+	        common_name ? common_name : "?");
+	if (fingerprint && !(flags & VERIFY_CERT_FLAG_FP_IS_PEM))
+		fprintf(stderr, "[sidecar] fingerprint: %s\n", fingerprint);
+	return 2; /* trust for this session only */
+}
+
+static DWORD sidecar_verify_changed_certificate(freerdp* instance, const char* host, UINT16 port,
+                                                const char* common_name, const char* subject,
+                                                const char* issuer, const char* new_fingerprint,
+                                                const char* old_subject, const char* old_issuer,
+                                                const char* old_fingerprint, DWORD flags)
+{
+	(void)old_subject;
+	(void)old_issuer;
+	(void)old_fingerprint;
+	return sidecar_verify_certificate(instance, host, port, common_name, subject, issuer,
+	                                  new_fingerprint, flags);
+}
+
+/* Map the common connect failures to messages a person can act on. rdp.ts
+ * surfaces the last "[sidecar] error: ..." stderr line in the RDP tab, so this
+ * is what the user sees when a connect fails. */
+static const char* connect_error_message(UINT32 code)
+{
+	switch (code)
+	{
+		case FREERDP_ERROR_CONNECT_LOGON_FAILURE:
+		case FREERDP_ERROR_AUTHENTICATION_FAILED:
+			return "Sign-in failed: the username or password is incorrect.";
+		case FREERDP_ERROR_CONNECT_ACCOUNT_LOCKED_OUT:
+			return "Sign-in failed: the account is locked out.";
+		case FREERDP_ERROR_CONNECT_ACCOUNT_DISABLED:
+			return "Sign-in failed: the account is disabled.";
+		case FREERDP_ERROR_CONNECT_ACCOUNT_EXPIRED:
+			return "Sign-in failed: the account has expired.";
+		case FREERDP_ERROR_CONNECT_ACCOUNT_RESTRICTION:
+			return "Sign-in failed: an account restriction blocked the logon.";
+		case FREERDP_ERROR_CONNECT_PASSWORD_EXPIRED:
+		case FREERDP_ERROR_CONNECT_PASSWORD_CERTAINLY_EXPIRED:
+			return "Sign-in failed: the password has expired and must be changed.";
+		case FREERDP_ERROR_CONNECT_PASSWORD_MUST_CHANGE:
+			return "Sign-in failed: the password must be changed before signing in.";
+		case FREERDP_ERROR_CONNECT_FAILED:
+		case FREERDP_ERROR_CONNECT_TRANSPORT_FAILED:
+			return "Could not reach the host. Check the address, port, and that Remote Desktop is enabled.";
+		case FREERDP_ERROR_DNS_NAME_NOT_FOUND:
+		case FREERDP_ERROR_DNS_ERROR:
+			return "Could not resolve the hostname. Check the address.";
+		case FREERDP_ERROR_TLS_CONNECT_FAILED:
+			return "TLS negotiation with the host failed.";
+		case FREERDP_ERROR_SECURITY_NEGO_CONNECT_FAILED:
+			return "Security negotiation failed. The host may require NLA settings this client did not offer.";
+		case FREERDP_ERROR_CONNECT_CANCELLED:
+			return "The connection was cancelled.";
+		default:
+			return NULL;
+	}
+}
+
 static BOOL sidecar_post_connect(freerdp* instance)
 {
 	if (!gdi_init(instance, PIXEL_FORMAT_BGRA32))
@@ -164,6 +254,10 @@ static BOOL sidecar_client_new(freerdp* instance, rdpContext* context)
 {
 	(void)context;
 	instance->PostConnect = sidecar_post_connect;
+	/* Replace the interactive CLI cert prompts (stdout/stdin) — see
+	 * sidecar_verify_certificate above. */
+	instance->VerifyCertificateEx = sidecar_verify_certificate;
+	instance->VerifyChangedCertificateEx = sidecar_verify_changed_certificate;
 	return TRUE;
 }
 
@@ -208,11 +302,31 @@ int main(int argc, char* argv[])
 		return 2;
 	}
 
+#ifdef _WIN32
+	/* stdout defaults to text mode on Windows and translates \n -> \r\n,
+	 * which corrupts the binary frame stream. */
+	_setmode(_fileno(stdout), _O_BINARY);
+#endif
+
 	const char* host = argv[1];
 	const UINT32 port = (UINT32)strtoul(argv[2], NULL, 10);
 	const char* user = argv[3];
 	const UINT32 width = (argc >= 5) ? (UINT32)strtoul(argv[4], NULL, 10) : 1280;
 	const UINT32 height = (argc >= 6) ? (UINT32)strtoul(argv[5], NULL, 10) : 800;
+
+	/* "DOMAIN\user" must go into separate Domain/Username settings for NLA;
+	 * xfreerdp does this split in its command-line layer, so we mirror it. UPN
+	 * form ("user@domain") is understood natively and passes through as-is. */
+	const char* domain = NULL;
+	char userbuf[256] = { 0 };
+	const char* backslash = strchr(user, '\\');
+	if (backslash && backslash != user && (size_t)(backslash - user) < sizeof(userbuf))
+	{
+		memcpy(userbuf, user, (size_t)(backslash - user));
+		userbuf[backslash - user] = '\0';
+		domain = userbuf;
+		user = backslash + 1;
+	}
 
 	/* Read password from stdin to avoid exposing it in process list */
 	char pass[256];
@@ -240,18 +354,45 @@ int main(int argc, char* argv[])
 	freerdp_settings_set_string(settings, FreeRDP_ServerHostname, host);
 	freerdp_settings_set_uint32(settings, FreeRDP_ServerPort, port);
 	freerdp_settings_set_string(settings, FreeRDP_Username, user);
+	if (domain)
+		freerdp_settings_set_string(settings, FreeRDP_Domain, domain);
 	freerdp_settings_set_string(settings, FreeRDP_Password, pass);
 	freerdp_settings_set_bool(settings, FreeRDP_IgnoreCertificate, FALSE);
 	freerdp_settings_set_uint32(settings, FreeRDP_DesktopWidth, width);
 	freerdp_settings_set_uint32(settings, FreeRDP_DesktopHeight, height);
 	freerdp_settings_set_uint32(settings, FreeRDP_ColorDepth, 32);
 
+	/* The static FreeRDP we ship is trimmed: channel addins (rdpgfx, rdpdr,
+	 * rdpsnd, cliprdr, ...) are not built in. FreeRDP's defaults still enable
+	 * the features backed by those channels, so freerdp_client_load_addins
+	 * tries to load them, fails, and pre-connect aborts before a TCP
+	 * connection is even attempted. Turn every channel-backed feature off —
+	 * this viewer is a plain GDI framebuffer and needs none of them. */
+	freerdp_settings_set_bool(settings, FreeRDP_SupportGraphicsPipeline, FALSE);
+	freerdp_settings_set_bool(settings, FreeRDP_NetworkAutoDetect, FALSE);
+	freerdp_settings_set_bool(settings, FreeRDP_SupportHeartbeatPdu, FALSE);
+	freerdp_settings_set_bool(settings, FreeRDP_SupportMultitransport, FALSE);
+	freerdp_settings_set_bool(settings, FreeRDP_DeviceRedirection, FALSE);
+	freerdp_settings_set_bool(settings, FreeRDP_RedirectClipboard, FALSE);
+	freerdp_settings_set_bool(settings, FreeRDP_AudioPlayback, FALSE);
+	freerdp_settings_set_bool(settings, FreeRDP_AudioCapture, FALSE);
+	freerdp_settings_set_bool(settings, FreeRDP_SupportDisplayControl, FALSE);
+	freerdp_settings_set_bool(settings, FreeRDP_SupportGeometryTracking, FALSE);
+	freerdp_settings_set_bool(settings, FreeRDP_SupportVideoOptimized, FALSE);
+	freerdp_settings_set_bool(settings, FreeRDP_MultiTouchInput, FALSE);
+
 	freerdp* instance = context->instance;
 
 	int rc = 0;
 	if (!freerdp_connect(instance))
 	{
-		fprintf(stderr, "[sidecar] connect failed err=0x%08X\n", freerdp_get_last_error(context));
+		const UINT32 err = freerdp_get_last_error(context);
+		const char* friendly = connect_error_message(err);
+		if (friendly)
+			fprintf(stderr, "[sidecar] error: %s\n", friendly);
+		else
+			fprintf(stderr, "[sidecar] error: connect failed — %s (0x%08X)\n",
+			        freerdp_get_last_error_string(err), err);
 		rc = 1;
 		goto cleanup;
 	}
@@ -277,6 +418,24 @@ int main(int argc, char* argv[])
 
 		if (!freerdp_check_event_handles(context))
 			break;
+	}
+
+	/* If the server ended the session, surface why instead of a silent drop.
+	 * A deliberate sign-out/disconnect is a normal end; everything else
+	 * (kicked by another connection, idle timeout, license/protocol errors)
+	 * exits nonzero so rdp.ts shows the reason in the tab. */
+	{
+		const UINT32 info = freerdp_error_info(instance);
+		const BOOL normalEnd = info == ERRINFO_SUCCESS ||
+		                       info == ERRINFO_RPC_INITIATED_DISCONNECT ||
+		                       info == ERRINFO_RPC_INITIATED_LOGOFF ||
+		                       info == ERRINFO_LOGOFF_BY_USER;
+		if (!normalEnd)
+		{
+			fprintf(stderr, "[sidecar] error: session ended by server — %s\n",
+			        freerdp_get_error_info_string(info));
+			rc = 1;
+		}
 	}
 
 	freerdp_disconnect(instance);

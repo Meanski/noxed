@@ -31,6 +31,24 @@ function readString(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim() ? value : undefined
 }
 
+function applyOptionalFields(session: ImportedSession, r: Record<string, unknown>): void {
+  session.keyPath = readString(r.keyPath)
+  session.group = readString(r.group)
+  session.color = readString(r.color)
+  session.dbType = readString(r.dbType)
+  session.databaseName = readString(r.databaseName)
+  session.sslMode = readString(r.sslMode)
+  session.kubeconfigPath = readString(r.kubeconfigPath)
+  if (Array.isArray(r.tags)) session.tags = r.tags.filter((t): t is string => typeof t === 'string')
+  if (typeof r.isFavorite === 'boolean') session.isFavorite = r.isFavorite
+  if (typeof r.pollingEnabled === 'boolean') session.pollingEnabled = r.pollingEnabled
+  if (typeof r.connectOnStart === 'boolean') session.connectOnStart = r.connectOnStart
+  if (typeof r.pollingIntervalSeconds === 'number' && Number.isFinite(r.pollingIntervalSeconds)) {
+    session.pollingIntervalSeconds = r.pollingIntervalSeconds
+  }
+  if (typeof r.redisDb === 'number' && Number.isInteger(r.redisDb)) session.redisDb = r.redisDb
+}
+
 function sanitizeConnection(raw: unknown): ImportedSession | null {
   if (typeof raw !== 'object' || raw === null) return null
   const r = raw as Record<string, unknown>
@@ -53,22 +71,8 @@ function sanitizeConnection(raw: unknown): ImportedSession | null {
     type,
   }
 
-  session.keyPath = readString(r.keyPath)
-  session.group = readString(r.group)
-  session.color = readString(r.color)
-  session.dbType = readString(r.dbType)
-  session.databaseName = readString(r.databaseName)
-  session.sslMode = readString(r.sslMode)
   session.contextName = contextName
-  session.kubeconfigPath = readString(r.kubeconfigPath)
-  if (Array.isArray(r.tags)) session.tags = r.tags.filter((t): t is string => typeof t === 'string')
-  if (typeof r.isFavorite === 'boolean') session.isFavorite = r.isFavorite
-  if (typeof r.pollingEnabled === 'boolean') session.pollingEnabled = r.pollingEnabled
-  if (typeof r.connectOnStart === 'boolean') session.connectOnStart = r.connectOnStart
-  if (typeof r.pollingIntervalSeconds === 'number' && Number.isFinite(r.pollingIntervalSeconds)) {
-    session.pollingIntervalSeconds = r.pollingIntervalSeconds
-  }
-  if (typeof r.redisDb === 'number' && Number.isInteger(r.redisDb)) session.redisDb = r.redisDb
+  applyOptionalFields(session, r)
 
   return session
 }

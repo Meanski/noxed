@@ -137,12 +137,12 @@ export default function UnlockScreen() {
 }
 
 /* ── Biometric view ─────────────────────────────────────────────────────── */
-function BiometricView({ loading, error, onRetry, touchIDAvailable }: {
+function BiometricView({ loading, error, onRetry, touchIDAvailable }: Readonly<{
   loading: boolean
   error: string
   onRetry: () => void
   touchIDAvailable: boolean
-}) {
+}>) {
   return (
     <div className="flex flex-col items-center gap-5 w-full">
       <div
@@ -184,18 +184,18 @@ function BiometricView({ loading, error, onRetry, touchIDAvailable }: {
 }
 
 /* ── PIN view ───────────────────────────────────────────────────────────── */
-function PinView({ loading, error, shake, onSubmit }: {
+function PinView({ loading, error, shake, onSubmit }: Readonly<{
   loading: boolean
   error: string
   shake: boolean
   onSubmit: (pin: string) => void
-}) {
+}>) {
   const [digits, setDigits] = useState<string[]>([])
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (loading) return
-      if (/^[0-9]$/.test(e.key) && digits.length < 4) {
+      if (/^\d$/.test(e.key) && digits.length < 4) {
         const next = [...digits, e.key]
         setDigits(next)
         if (next.length === 4) {
@@ -249,8 +249,8 @@ function PinView({ loading, error, shake, onSubmit }: {
 
       {/* Numpad */}
       <div className="grid grid-cols-3 gap-3 w-full">
-        {['1','2','3','4','5','6','7','8','9','','0','⌫'].map((key, i) => {
-          if (key === '') return <div key={i} />
+        {['1','2','3','4','5','6','7','8','9','','0','⌫'].map((key) => {
+          if (key === '') return <div key="numpad-gap" />
           const isDelete = key === '⌫'
           return (
             <button
@@ -280,12 +280,12 @@ function PinView({ loading, error, shake, onSubmit }: {
 }
 
 /* ── Password view ──────────────────────────────────────────────────────── */
-function PasswordView({ loading, error, shake, onSubmit }: {
+function PasswordView({ loading, error, shake, onSubmit }: Readonly<{
   loading: boolean
   error: string
   shake: boolean
   onSubmit: (pw: string) => void
-}) {
+}>) {
   const [value, setValue] = useState('')
   const [show, setShow] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -348,7 +348,7 @@ function PasswordView({ loading, error, shake, onSubmit }: {
 }
 
 /* ── Icons ──────────────────────────────────────────────────────────────── */
-function FingerprintIcon({ size = 24, active }: { size?: number; active?: boolean }) {
+function FingerprintIcon({ size = 24, active }: Readonly<{ size?: number; active?: boolean }>) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" strokeLinecap="round" strokeLinejoin="round">
       <path d="M4 8.5C4 6 6 4 8.5 4" stroke={active ? '#3B5CCC' : 'var(--nox-text-2)'} strokeWidth="1.5" />
@@ -363,7 +363,7 @@ function FingerprintIcon({ size = 24, active }: { size?: number; active?: boolea
   )
 }
 
-function EyeIcon({ size = 16 }: { size?: number }) {
+function EyeIcon({ size = 16 }: Readonly<{ size?: number }>) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
@@ -372,7 +372,7 @@ function EyeIcon({ size = 16 }: { size?: number }) {
   )
 }
 
-function EyeOffIcon({ size = 16 }: { size?: number }) {
+function EyeOffIcon({ size = 16 }: Readonly<{ size?: number }>) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/>

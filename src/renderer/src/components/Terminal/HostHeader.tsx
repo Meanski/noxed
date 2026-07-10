@@ -22,8 +22,23 @@ interface Props {
   onClosePane?: () => void
 }
 
+function StatusDot({ connecting, connected }: Readonly<{ connecting: boolean; connected: boolean }>) {
+  if (connecting) {
+    return (
+      <span className="relative w-1.5 h-1.5 flex-shrink-0">
+        <span className="absolute inset-0 rounded-full animate-pulse" style={{ background: 'rgba(99,102,241,0.5)' }} />
+        <span className="w-full h-full rounded-full block" style={{ background: '#6366f1' }} />
+      </span>
+    )
+  }
+  if (connected) {
+    return <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: '#22c55e', boxShadow: '0 0 6px rgba(34,197,94,0.5)' }} />
+  }
+  return <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: '#f87171' }} />
+}
+
 // Single bar above the terminal: identity, live metrics, and panel toggles.
-export default function HostHeader({ session, status, elapsed, metrics, cpuHistory, filesOpen, snippetsOpen, broadcastEnabled, onToggleFiles, onToggleSnippets, onToggleBroadcast, onSplitPick, onClosePane }: Props) {
+export default function HostHeader({ session, status, elapsed, metrics, cpuHistory, filesOpen, snippetsOpen, broadcastEnabled, onToggleFiles, onToggleSnippets, onToggleBroadcast, onSplitPick, onClosePane }: Readonly<Props>) {
   const connected = status === 'connected'
   const connecting = status === 'connecting'
   const spark = sparkline(cpuHistory.slice(-20))
@@ -34,17 +49,7 @@ export default function HostHeader({ session, status, elapsed, metrics, cpuHisto
       className="flex items-center gap-3 px-3 flex-shrink-0 select-none"
       style={{ height: 34, borderBottom: '1px solid rgba(255,255,255,0.05)', background: 'rgba(255,255,255,0.015)' }}
     >
-      {/* Status dot */}
-      {connecting ? (
-        <span className="relative w-1.5 h-1.5 flex-shrink-0">
-          <span className="absolute inset-0 rounded-full animate-pulse" style={{ background: 'rgba(99,102,241,0.5)' }} />
-          <span className="w-full h-full rounded-full block" style={{ background: '#6366f1' }} />
-        </span>
-      ) : connected ? (
-        <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: '#22c55e', boxShadow: '0 0 6px rgba(34,197,94,0.5)' }} />
-      ) : (
-        <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: '#f87171' }} />
-      )}
+      <StatusDot connecting={connecting} connected={connected} />
 
       {/* Host */}
       <span className="text-xs font-semibold font-mono" style={{ color: '#eeeef2', letterSpacing: '-0.01em' }}>
@@ -140,7 +145,7 @@ export default function HostHeader({ session, status, elapsed, metrics, cpuHisto
   )
 }
 
-function HeaderToggle({ on, onClick, title, activeColor, activeBackground, activeBorder, children }: {
+function HeaderToggle({ on, onClick, title, activeColor, activeBackground, activeBorder, children }: Readonly<{
   on: boolean
   onClick: () => void
   title: string
@@ -148,7 +153,7 @@ function HeaderToggle({ on, onClick, title, activeColor, activeBackground, activ
   activeBackground: string
   activeBorder: string
   children: React.ReactNode
-}) {
+}>) {
   return (
     <button
       onClick={onClick}
@@ -168,7 +173,7 @@ function HeaderToggle({ on, onClick, title, activeColor, activeBackground, activ
 }
 
 /* ── Split pane picker ───────────────────────────────────────────────────── */
-function SplitMenu({ currentSession, onPick }: { currentSession: Session; onPick: (session: Session) => void }) {
+function SplitMenu({ currentSession, onPick }: Readonly<{ currentSession: Session; onPick: (session: Session) => void }>) {
   const [open, setOpen] = useState(false)
   const sessions = useAppStore(s => s.sessions)
   const sshSessions = sessions.filter(s => (s.type ?? 'ssh') === 'ssh')
@@ -216,7 +221,7 @@ function SplitMenu({ currentSession, onPick }: { currentSession: Session; onPick
   )
 }
 
-function SplitMenuItem({ label, onClick }: { label: string; onClick: () => void }) {
+function SplitMenuItem({ label, onClick }: Readonly<{ label: string; onClick: () => void }>) {
   return (
     <button
       onClick={onClick}

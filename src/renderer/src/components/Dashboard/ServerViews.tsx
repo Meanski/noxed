@@ -54,7 +54,8 @@ export function HealthCard({
   const reachability = reachabilityInfo(isConnected)
 
   return (
-    <div
+    <button
+      type="button"
       draggable
       onDragStart={onDragStart}
       onDragOver={e => { e.preventDefault(); onDragOver() }}
@@ -62,7 +63,7 @@ export function HealthCard({
       onDragEnd={onDragEnd}
       onClick={onConnect}
       onContextMenu={onContextMenu}
-      className="rounded-lg overflow-hidden cursor-pointer transition-all hover:shadow-md min-h-[118px]"
+      className="w-full text-left rounded-lg overflow-hidden cursor-pointer transition-all hover:shadow-md min-h-[118px]"
       style={{
         background: 'var(--nox-shell)',
         border: isDropTarget ? `2px dashed ${color}` : '1px solid var(--nox-border)',
@@ -92,8 +93,7 @@ export function HealthCard({
             </div>
             <div className="flex items-center gap-1 flex-shrink-0">
               {!isConnected && (
-                <button
-                  onClick={e => { e.stopPropagation(); onConnect() }}
+                <span
                   className="flex items-center gap-1 px-2 py-1 rounded-md font-['Inter'] text-[10.5px] font-medium transition-colors flex-shrink-0"
                   style={{ background: color + '15', color, border: `1px solid ${color}30` }}
                   onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = color + '25' }}
@@ -101,7 +101,7 @@ export function HealthCard({
                 >
                   <Plug className="w-2.5 h-2.5" />
                   Connect
-                </button>
+                </span>
               )}
             </div>
           </div>
@@ -135,18 +135,39 @@ export function HealthCard({
                 </div>
               )}
             </div>
-          ) : isConnected && metricCapable ? (
-            <div className="space-y-2 animate-pulse">
-              <MetricBar label="CPU" value={0} color={color} sublabel="..." />
-              <MetricBar label="MEM" value={0} color={color} sublabel="waiting for metrics" />
-            </div>
           ) : (
-            <StatusBox metricCapable={metricCapable} isConnected={isConnected} />
+            <MetricsPlaceholder isConnected={isConnected} metricCapable={metricCapable} color={color} />
           )}
         </div>
       </div>
-    </div>
+    </button>
   )
+}
+
+// Like metricColor, but keeps the session accent below the warning thresholds.
+function thresholdColor(value: number, fallback: string): string {
+  if (value >= 80) return '#EF4444'
+  if (value >= 60) return '#F59E0B'
+  return fallback
+}
+
+function MetricsPlaceholder({ isConnected, metricCapable, color }: Readonly<{ isConnected: boolean; metricCapable: boolean; color: string }>) {
+  if (isConnected && metricCapable) {
+    return (
+      <div className="space-y-2 animate-pulse">
+        <MetricBar label="CPU" value={0} color={color} sublabel="..." />
+        <MetricBar label="MEM" value={0} color={color} sublabel="waiting for metrics" />
+      </div>
+    )
+  }
+  return <StatusBox metricCapable={metricCapable} isConnected={isConnected} />
+}
+
+// One-line status for the compact card, in priority order.
+function compactStatus(live: boolean | undefined, isConnected: boolean, metricCapable: boolean, cpuMem: string, reachLabel: string): string {
+  if (live) return cpuMem
+  if (!isConnected) return reachLabel
+  return metricCapable ? 'waiting for metrics' : 'Connected'
 }
 
 export function CompactServerCard({ session, metrics, isConnected, onConnect, onContextMenu }: ServerViewProps) {
@@ -174,11 +195,7 @@ export function CompactServerCard({ session, metrics, isConnected, onConnect, on
           </span>
         </div>
         <span className="font-mono text-[10.5px] block truncate mt-0.5" style={{ color: 'var(--nox-text-3)' }}>
-          {live
-            ? `cpu ${metrics!.cpu}% · mem ${memPct}%`
-            : isConnected
-              ? (metricCapable ? 'waiting for metrics' : 'Connected')
-              : reach.label}
+          {compactStatus(live, isConnected, metricCapable, `cpu ${metrics?.cpu}% · mem ${memPct}%`, reach.label)}
         </span>
       </div>
     </button>
@@ -193,10 +210,11 @@ export function ServerListRow({ session, metrics, isConnected, onConnect, onCont
   const diskPct = live && metrics?.diskTotal ? Math.round(((metrics.diskUsed ?? 0) / metrics.diskTotal) * 100) : null
 
   return (
-    <div
+    <button
+      type="button"
       onClick={onConnect}
       onContextMenu={onContextMenu}
-      className="group flex items-center gap-3 px-3 cursor-pointer transition-colors"
+      className="group w-full text-left flex items-center gap-3 px-3 cursor-pointer transition-colors"
       style={{ height: 38 }}
       onMouseEnter={e => { e.currentTarget.style.background = 'var(--nox-hover)' }}
       onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
@@ -223,26 +241,23 @@ export function ServerListRow({ session, metrics, isConnected, onConnect, onCont
 
       <div className="flex items-center gap-1 flex-shrink-0 w-8 justify-end">
         {!isConnected && (
-          <button
+          <span
             title="Connect"
-            onClick={e => { e.stopPropagation(); onConnect() }}
             className="p-1 rounded opacity-0 group-hover:opacity-100 transition-opacity"
             style={{ color }}
           >
             <Plug className="w-3 h-3" />
-          </button>
+          </span>
         )}
       </div>
-    </div>
+    </button>
   )
 }
 
-function StatusBox({ metricCapable, isConnected }: { metricCapable: boolean; isConnected: boolean }) {
-  const text = isConnected
-    ? 'Connected — click to open'
-    : metricCapable
-      ? 'Connect to start live metrics'
-      : 'Click to open'
+function StatusBox({ metricCapable, isConnected }: Readonly<{ metricCapable: boolean; isConnected: boolean }>) {
+  let text = 'Click to open'
+  if (isConnected) text = 'Connected — click to open'
+  else if (metricCapable) text = 'Connect to start live metrics'
   return (
     <div
       className="flex items-center justify-between gap-3 rounded-md px-2.5"
@@ -255,7 +270,7 @@ function StatusBox({ metricCapable, isConnected }: { metricCapable: boolean; isC
   )
 }
 
-function MetricCell({ label, value, pct }: { label: string; value: string | null; pct: number | null }) {
+function MetricCell({ label, value, pct }: Readonly<{ label: string; value: string | null; pct: number | null }>) {
   return (
     <span className="font-mono text-[11px] text-right tabular-nums flex-shrink-0 w-20">
       {value !== null ? (
@@ -270,8 +285,8 @@ function MetricCell({ label, value, pct }: { label: string; value: string | null
   )
 }
 
-function MetricBar({ label, value, color, sublabel }: { label: string; value: number; color: string; sublabel?: string }) {
-  const barColor = value >= 80 ? '#EF4444' : value >= 60 ? '#F59E0B' : color
+function MetricBar({ label, value, color, sublabel }: Readonly<{ label: string; value: number; color: string; sublabel?: string }>) {
+  const barColor = thresholdColor(value, color)
   return (
     <div>
       <div className="flex items-center justify-between mb-0.5">
@@ -292,7 +307,7 @@ function MetricBar({ label, value, color, sublabel }: { label: string; value: nu
   )
 }
 
-function ConnectionTypeIcon({ type }: { type?: string }) {
+function ConnectionTypeIcon({ type }: Readonly<{ type?: string }>) {
   const s = { className: 'w-3.5 h-3.5 flex-shrink-0' }
   switch (type) {
     case 'database': return <Database {...s} style={{ color: '#3B5CCC' }} />

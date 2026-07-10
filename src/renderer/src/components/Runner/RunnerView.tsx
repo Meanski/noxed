@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Check, ChevronDown, ChevronRight, Loader2, Play, Square, TerminalSquare } from 'lucide-react'
 import { useAppStore, Session } from '../../store'
 
@@ -19,35 +19,42 @@ export default function RunnerView() {
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [command, setCommand] = useState('')
   const [results, setResults] = useState<Map<string, HostResult>>(new Map())
-  const [running, setRunning] = useState(false)
+  const running = useMemo(() => [...results.values()].some(v => v.state === 'running'), [results])
   const runIdRef = useRef<string | null>(null)
+
+  const applyOutput = (sessionId: string, data: string) => {
+    setResults(prev => {
+      const next = new Map(prev)
+      const r = next.get(sessionId)
+      if (r) next.set(sessionId, { ...r, output: r.output + data })
+      return next
+    })
+  }
+
+  const applyDone = (sessionId: string, exitCode: number | null, error: string | null) => {
+    setResults(prev => {
+      const next = new Map(prev)
+      const r = next.get(sessionId)
+      if (r) {
+        next.set(sessionId, {
+          ...r,
+          state: error || exitCode !== 0 ? 'failed' : 'done',
+          exitCode,
+          error,
+        })
+      }
+      return next
+    })
+  }
 
   useEffect(() => {
     const offOutput = window.api.runner.onOutput((runId, sessionId, data) => {
       if (runId !== runIdRef.current) return
-      setResults(prev => {
-        const next = new Map(prev)
-        const r = next.get(sessionId)
-        if (r) next.set(sessionId, { ...r, output: r.output + data })
-        return next
-      })
+      applyOutput(sessionId, data)
     })
     const offDone = window.api.runner.onDone((runId, sessionId, exitCode, error) => {
       if (runId !== runIdRef.current) return
-      setResults(prev => {
-        const next = new Map(prev)
-        const r = next.get(sessionId)
-        if (r) {
-          next.set(sessionId, {
-            ...r,
-            state: error || exitCode !== 0 ? 'failed' : 'done',
-            exitCode,
-            error,
-          })
-        }
-        setRunning([...next.values()].some(v => v.state === 'running'))
-        return next
-      })
+      applyDone(sessionId, exitCode, error)
     })
     return () => {
       offOutput()
@@ -73,11 +80,9 @@ export default function RunnerView() {
     if (!command.trim() || selected.size === 0 || running) return
     const ids = [...selected]
     setResults(new Map(ids.map(id => [id, { state: 'running' as HostState, output: '', exitCode: null, error: null }])))
-    setRunning(true)
     try {
       runIdRef.current = await window.api.runner.run(ids, command)
     } catch (err: any) {
-      setRunning(false)
       setResults(new Map())
       addNotification({ type: 'error', message: err?.message ?? 'Run failed' })
     }
@@ -93,7 +98,6 @@ export default function RunnerView() {
       }
       return next
     })
-    setRunning(false)
   }
 
   const sessionById = (id: string) => sessions.find(s => s.id === id)
@@ -127,7 +131,9 @@ export default function RunnerView() {
                 onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'var(--nox-hover)' }}
                 onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent' }}
               >
-                <div
+                <button
+                  type="button"
+                  aria-pressed={checked}
                   className="w-4 h-4 rounded flex items-center justify-center flex-shrink-0"
                   style={{
                     border: `2px solid ${checked ? '#3B5CCC' : 'var(--nox-border)'}`,
@@ -136,7 +142,7 @@ export default function RunnerView() {
                   onClick={() => toggle(s.id)}
                 >
                   {checked && <Check className="w-3 h-3 text-white" />}
-                </div>
+                </button>
                 <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: s.color ?? '#3B5CCC' }} />
                 <span className="font-['Inter'] text-[12px] truncate" style={{ color: 'var(--nox-text)' }}>
                   {s.label || s.host}
@@ -218,15 +224,23 @@ export default function RunnerView() {
   )
 }
 
-function HostResultCard({ session, result }: { session?: Session; result: HostResult }) {
+function resultBadge(result: HostResult): { text: string; color: string } {
+  if (result.state === 'running') return { text: 'running', color: '#3B5CCC' }
+  if (result.state === 'done') return { text: 'exit 0', color: '#10B981' }
+  return { text: result.error ? 'error' : `exit ${result.exitCode}`, color: '#EF4444' }
+}
+
+function resultText(result: HostResult): string {
+  if (result.error) return result.error
+  if (result.output) return result.output
+  return result.state === 'running' ? '…' : '(no output)'
+}
+
+function HostResultCard({ session, result }: Readonly<{ session?: Session; result: HostResult }>) {
   const [open, setOpen] = useState(true)
   const label = session ? (session.label || session.host) : 'unknown host'
 
-  const badge = result.state === 'running'
-    ? { text: 'running', color: '#3B5CCC' }
-    : result.state === 'done'
-      ? { text: 'exit 0', color: '#10B981' }
-      : { text: result.error ? 'error' : `exit ${result.exitCode}`, color: '#EF4444' }
+  const badge = resultBadge(result)
 
   return (
     <div className="rounded-md overflow-hidden" style={{ background: 'var(--nox-shell)', border: '1px solid var(--nox-border)' }}>
@@ -252,7 +266,7 @@ function HostResultCard({ session, result }: { session?: Session; result: HostRe
           className="m-0 px-4 py-3 font-mono text-[11.5px] leading-relaxed whitespace-pre-wrap break-all max-h-72 overflow-y-auto select-text"
           style={{ background: 'var(--nox-bg)', color: 'var(--nox-text-2)', borderTop: '1px solid var(--nox-border)' }}
         >
-          {result.error ? result.error : result.output || (result.state === 'running' ? '…' : '(no output)')}
+          {resultText(result)}
         </pre>
       )}
     </div>

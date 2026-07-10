@@ -32,8 +32,8 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Run tests
-        run: npm test
+      - name: Run tests with coverage
+        run: npm run test:coverage
 
       - name: Run SonarQube scan
         if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository

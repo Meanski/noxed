@@ -25,7 +25,25 @@ interface DetailTarget { kind: string; name: string } // singular kind for IPC
 interface ScaleTarget { name: string; current: number }
 interface DeleteTarget { kind: ResourceKind; name: string }
 
-export default function K8sDashboard({ context, kubeconfigPath, tabId }: { context: string; kubeconfigPath?: string; tabId?: string }) {
+function restartsColor(restarts: number): string {
+  if (restarts > 5) return '#EF4444'
+  if (restarts > 0) return '#F59E0B'
+  return 'var(--nox-text-2)'
+}
+
+function jobDotColor(j: { failed: number; active: number }): string {
+  if (j.failed > 0) return '#EF4444'
+  if (j.active > 0) return '#F59E0B'
+  return '#10B981'
+}
+
+function connStateOf(error: string | null, loading: boolean, empty: boolean): { label: string; color: string } {
+  if (error) return { label: 'Connection error', color: '#EF4444' }
+  if (loading && empty) return { label: 'Loading…', color: '#F59E0B' }
+  return { label: 'Connected', color: '#10B981' }
+}
+
+export default function K8sDashboard({ context, kubeconfigPath, tabId }: Readonly<{ context: string; kubeconfigPath?: string; tabId?: string }>) {
   const [namespaces, setNamespaces] = useState<string[]>([])
   const [namespace, setNamespace] = useState('default')
   const [kind, setKind] = useState<ResourceKind>('pods')
@@ -155,11 +173,8 @@ export default function K8sDashboard({ context, kubeconfigPath, tabId }: { conte
     : data
 
   const count = data.length
-  const connState = error
-    ? { label: 'Connection error', color: '#EF4444' }
-    : loading && data.length === 0
-      ? { label: 'Loading…', color: '#F59E0B' }
-      : { label: 'Connected', color: '#10B981' }
+  const connState = connStateOf(error, loading, data.length === 0)
+  const countFor = (k: ResourceKind) => (kind === k ? data.length : undefined)
 
   // Keep the tab-bar dot honest: a failing cluster should not show as connected
   const updateTab = useAppStore(s => s.updateTab)
@@ -242,49 +257,49 @@ export default function K8sDashboard({ context, kubeconfigPath, tabId }: { conte
             {/* Workloads */}
             <SideSection label="Workloads" open={workloadsOpen} onToggle={() => setWorkloadsOpen(o => !o)}>
               <NavItem dot label="Pods"
-                count={kind === 'pods' ? data.length : undefined}
+                count={countFor('pods')}
                 active={kind === 'pods'} onClick={() => switchKind('pods')} />
               <NavItem dot label="Deployments"
-                count={kind === 'deployments' ? data.length : undefined}
+                count={countFor('deployments')}
                 active={kind === 'deployments'} onClick={() => switchKind('deployments')} />
               <NavItem dot label="StatefulSets"
-                count={kind === 'statefulsets' ? data.length : undefined}
+                count={countFor('statefulsets')}
                 active={kind === 'statefulsets'} onClick={() => switchKind('statefulsets')} />
               <NavItem dot label="DaemonSets"
-                count={kind === 'daemonsets' ? data.length : undefined}
+                count={countFor('daemonsets')}
                 active={kind === 'daemonsets'} onClick={() => switchKind('daemonsets')} />
               <NavItem dot label="ReplicaSets"
-                count={kind === 'replicasets' ? data.length : undefined}
+                count={countFor('replicasets')}
                 active={kind === 'replicasets'} onClick={() => switchKind('replicasets')} />
               <NavItem dot label="Jobs"
-                count={kind === 'jobs' ? data.length : undefined}
+                count={countFor('jobs')}
                 active={kind === 'jobs'} onClick={() => switchKind('jobs')} />
               <NavItem dot label="CronJobs"
-                count={kind === 'cronjobs' ? data.length : undefined}
+                count={countFor('cronjobs')}
                 active={kind === 'cronjobs'} onClick={() => switchKind('cronjobs')} />
             </SideSection>
 
             <SideSection label="Network">
               <NavItem dot label="Services"
-                count={kind === 'services' ? data.length : undefined}
+                count={countFor('services')}
                 active={kind === 'services'} onClick={() => switchKind('services')} />
               <NavItem dot label="Ingresses"
-                count={kind === 'ingresses' ? data.length : undefined}
+                count={countFor('ingresses')}
                 active={kind === 'ingresses'} onClick={() => switchKind('ingresses')} />
             </SideSection>
 
             <SideSection label="Config">
               <NavItem dot label="ConfigMaps"
-                count={kind === 'configmaps' ? data.length : undefined}
+                count={countFor('configmaps')}
                 active={kind === 'configmaps'} onClick={() => switchKind('configmaps')} />
               <NavItem dot label="Secrets"
-                count={kind === 'secrets' ? data.length : undefined}
+                count={countFor('secrets')}
                 active={kind === 'secrets'} onClick={() => switchKind('secrets')} />
             </SideSection>
 
             <SideSection label="Infrastructure" collapsed>
               <NavItem icon={<Server className="w-3.5 h-3.5" />} label="Nodes"
-                count={kind === 'nodes' ? data.length : undefined}
+                count={countFor('nodes')}
                 active={kind === 'nodes'} onClick={() => switchKind('nodes')} />
             </SideSection>
           </nav>
@@ -507,12 +522,12 @@ function ResourceTable(props: TableProps) {
 
 // ── Pods ──────────────────────────────────────────────────────────────────────
 
-function PodsTable({ rows, onLogs, onExec, onDetail, onDelete, onPortForward }: TableProps) {
+function PodsTable({ rows, onLogs, onExec, onDetail, onDelete, onPortForward }: Readonly<Pick<TableProps, 'rows' | 'onLogs' | 'onExec' | 'onDetail' | 'onDelete' | 'onPortForward'>>) {
   function promptPortForward(podName: string) {
     const raw = prompt('Container port to forward:')
     if (!raw) return
-    const port = parseInt(raw, 10)
-    if (!isNaN(port) && port >= 1 && port <= 65535) onPortForward(podName, port)
+    const port = Number.parseInt(raw, 10)
+    if (!Number.isNaN(port) && port >= 1 && port <= 65535) onPortForward(podName, port)
   }
   return (
     <table className="w-full">
@@ -534,7 +549,7 @@ function PodsTable({ rows, onLogs, onExec, onDetail, onDelete, onPortForward }: 
             <Td><PodStatusBadge status={pod.status} /></Td>
             <Td>
               <span className="font-['JetBrains_Mono'] text-[12px]"
-                style={{ color: pod.restarts > 5 ? '#EF4444' : pod.restarts > 0 ? '#F59E0B' : 'var(--nox-text-2)' }}>
+                style={{ color: restartsColor(pod.restarts) }}>
                 {pod.restarts}
               </span>
             </Td>
@@ -565,7 +580,7 @@ function PodsTable({ rows, onLogs, onExec, onDetail, onDelete, onPortForward }: 
 
 // ── Deployments ───────────────────────────────────────────────────────────────
 
-function DeploymentsTable({ rows, onDetail, onScale, onRestart }: TableProps) {
+function DeploymentsTable({ rows, onDetail, onScale, onRestart }: Readonly<Pick<TableProps, 'rows' | 'onDetail' | 'onScale' | 'onRestart'>>) {
   return (
     <table className="w-full">
       <thead>
@@ -576,7 +591,7 @@ function DeploymentsTable({ rows, onDetail, onScale, onRestart }: TableProps) {
       <tbody>
         {rows.map(d => {
           const [ready, total] = d.ready.split('/').map(Number)
-          const healthy = !isNaN(ready) && !isNaN(total) && ready === total
+          const healthy = !Number.isNaN(ready) && !Number.isNaN(total) && ready === total
           return (
             <Tr key={d.name} onClick={() => onDetail({ kind: 'deployment', name: d.name })}>
               <Td>
@@ -608,7 +623,7 @@ function DeploymentsTable({ rows, onDetail, onScale, onRestart }: TableProps) {
 
 // ── StatefulSets ──────────────────────────────────────────────────────────────
 
-function StatefulSetsTable({ rows, onDetail, onScale }: TableProps) {
+function StatefulSetsTable({ rows, onDetail, onScale }: Readonly<Pick<TableProps, 'rows' | 'onDetail' | 'onScale'>>) {
   return (
     <table className="w-full">
       <thead>
@@ -619,7 +634,7 @@ function StatefulSetsTable({ rows, onDetail, onScale }: TableProps) {
       <tbody>
         {rows.map(s => {
           const [ready, total] = s.ready.split('/').map(Number)
-          const healthy = !isNaN(ready) && !isNaN(total) && ready >= total
+          const healthy = !Number.isNaN(ready) && !Number.isNaN(total) && ready >= total
           return (
             <Tr key={s.name} onClick={() => onDetail({ kind: 'statefulset', name: s.name })}>
               <Td>
@@ -645,7 +660,7 @@ function StatefulSetsTable({ rows, onDetail, onScale }: TableProps) {
 
 // ── DaemonSets ────────────────────────────────────────────────────────────────
 
-function DaemonSetsTable({ rows, onDetail }: TableProps) {
+function DaemonSetsTable({ rows, onDetail }: Readonly<Pick<TableProps, 'rows' | 'onDetail'>>) {
   return (
     <table className="w-full">
       <thead>
@@ -675,7 +690,7 @@ function DaemonSetsTable({ rows, onDetail }: TableProps) {
 
 // ── ReplicaSets ───────────────────────────────────────────────────────────────
 
-function ReplicaSetsTable({ rows, onDetail }: TableProps) {
+function ReplicaSetsTable({ rows, onDetail }: Readonly<Pick<TableProps, 'rows' | 'onDetail'>>) {
   return (
     <table className="w-full">
       <thead>
@@ -704,7 +719,7 @@ function ReplicaSetsTable({ rows, onDetail }: TableProps) {
 
 // ── Jobs ──────────────────────────────────────────────────────────────────────
 
-function JobsTable({ rows, onDetail }: TableProps) {
+function JobsTable({ rows, onDetail }: Readonly<Pick<TableProps, 'rows' | 'onDetail'>>) {
   return (
     <table className="w-full">
       <thead>
@@ -717,7 +732,7 @@ function JobsTable({ rows, onDetail }: TableProps) {
           <Tr key={j.name} onClick={() => onDetail({ kind: 'job', name: j.name })}>
             <Td>
               <div className="flex items-center gap-2">
-                <span className="w-1.5 h-1.5 rounded-full" style={{ background: j.failed > 0 ? '#EF4444' : j.active > 0 ? '#F59E0B' : '#10B981' }} />
+                <span className="w-1.5 h-1.5 rounded-full" style={{ background: jobDotColor(j) }} />
                 <Mono>{j.name}</Mono>
               </div>
             </Td>
@@ -734,7 +749,7 @@ function JobsTable({ rows, onDetail }: TableProps) {
 
 // ── CronJobs ──────────────────────────────────────────────────────────────────
 
-function CronJobsTable({ rows, onDetail }: TableProps) {
+function CronJobsTable({ rows, onDetail }: Readonly<Pick<TableProps, 'rows' | 'onDetail'>>) {
   return (
     <table className="w-full">
       <thead>
@@ -764,7 +779,7 @@ function CronJobsTable({ rows, onDetail }: TableProps) {
 
 // ── Services ──────────────────────────────────────────────────────────────────
 
-function ServicesTable({ rows, onDetail, onServicePortForward }: TableProps) {
+function ServicesTable({ rows, onDetail, onServicePortForward }: Readonly<Pick<TableProps, 'rows' | 'onDetail' | 'onServicePortForward'>>) {
   return (
     <table className="w-full">
       <thead>
@@ -784,8 +799,8 @@ function ServicesTable({ rows, onDetail, onServicePortForward }: TableProps) {
             <Td align="right" stopPropagation>
               {svc.ports && (
                 <ActionBtn title="Port forward" onClick={() => {
-                  const port = parseInt(svc.ports.split(',')[0])
-                  if (!isNaN(port)) onServicePortForward(svc.name, port)
+                  const port = Number.parseInt(svc.ports.split(',')[0])
+                  if (!Number.isNaN(port)) onServicePortForward(svc.name, port)
                 }}>
                   <ExternalLink className="w-3.5 h-3.5" />
                 </ActionBtn>
@@ -800,7 +815,7 @@ function ServicesTable({ rows, onDetail, onServicePortForward }: TableProps) {
 
 // ── Ingresses ─────────────────────────────────────────────────────────────────
 
-function IngressesTable({ rows, onDetail }: TableProps) {
+function IngressesTable({ rows, onDetail }: Readonly<Pick<TableProps, 'rows' | 'onDetail'>>) {
   return (
     <table className="w-full">
       <thead>
@@ -825,7 +840,7 @@ function IngressesTable({ rows, onDetail }: TableProps) {
 
 // ── ConfigMaps ────────────────────────────────────────────────────────────────
 
-function ConfigMapsTable({ rows, onDetail }: TableProps) {
+function ConfigMapsTable({ rows, onDetail }: Readonly<Pick<TableProps, 'rows' | 'onDetail'>>) {
   return (
     <table className="w-full">
       <thead>
@@ -853,7 +868,7 @@ function ConfigMapsTable({ rows, onDetail }: TableProps) {
 
 // ── Secrets ───────────────────────────────────────────────────────────────────
 
-function SecretsTable({ rows, onDetail }: TableProps) {
+function SecretsTable({ rows, onDetail }: Readonly<Pick<TableProps, 'rows' | 'onDetail'>>) {
   return (
     <table className="w-full">
       <thead>
@@ -887,7 +902,7 @@ function SecretsTable({ rows, onDetail }: TableProps) {
 
 // ── Nodes ─────────────────────────────────────────────────────────────────────
 
-function NodesTable({ rows, onDetail }: TableProps) {
+function NodesTable({ rows, onDetail }: Readonly<Pick<TableProps, 'rows' | 'onDetail'>>) {
   return (
     <table className="w-full">
       <thead>
@@ -920,7 +935,7 @@ function NodesTable({ rows, onDetail }: TableProps) {
 
 // ── Events ────────────────────────────────────────────────────────────────────
 
-function EventsTable({ rows }: TableProps) {
+function EventsTable({ rows }: Readonly<Pick<TableProps, 'rows'>>) {
   return (
     <table className="w-full">
       <thead>
@@ -960,7 +975,7 @@ function EventsTable({ rows }: TableProps) {
 
 // ── Scale modal ───────────────────────────────────────────────────────────────
 
-function ScaleModal({ name, current, onConfirm, onClose }: { name: string; current: number; onConfirm: (r: number) => void; onClose: () => void }) {
+function ScaleModal({ name, current, onConfirm, onClose }: Readonly<{ name: string; current: number; onConfirm: (r: number) => void; onClose: () => void }>) {
   const [replicas, setReplicas] = useState(current)
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.6)' }}>
@@ -981,7 +996,7 @@ function ScaleModal({ name, current, onConfirm, onClose }: { name: string; curre
             type="number"
             min={0}
             value={replicas}
-            onChange={e => setReplicas(Math.max(0, parseInt(e.target.value) || 0))}
+            onChange={e => setReplicas(Math.max(0, Number.parseInt(e.target.value) || 0))}
             className="flex-1 text-center rounded-md px-3 py-2 font-['JetBrains_Mono'] text-[16px] font-semibold focus:outline-none focus:ring-2 focus:ring-[#8B5CF6]"
             style={{ background: 'var(--nox-shell)', border: '1px solid var(--nox-border)', color: 'var(--nox-text)' }}
           />
@@ -1016,7 +1031,7 @@ function ScaleModal({ name, current, onConfirm, onClose }: { name: string; curre
 
 // ── Delete modal ──────────────────────────────────────────────────────────────
 
-function DeleteModal({ kind, name, onConfirm, onClose }: { kind: ResourceKind; name: string; onConfirm: () => void; onClose: () => void }) {
+function DeleteModal({ kind, name, onConfirm, onClose }: Readonly<{ kind: ResourceKind; name: string; onConfirm: () => void; onClose: () => void }>) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.6)' }}>
       <div className="rounded-xl p-6 w-[360px] shadow-2xl" style={{ background: 'var(--nox-bg)', border: '1px solid var(--nox-border)' }}>
@@ -1050,10 +1065,10 @@ function DeleteModal({ kind, name, onConfirm, onClose }: { kind: ResourceKind; n
 
 // ── Sidebar helpers ───────────────────────────────────────────────────────────
 
-function SideSection({ label, children, open: openProp, onToggle, collapsed }: {
+function SideSection({ label, children, open: openProp, onToggle, collapsed }: Readonly<{
   label: string; children?: React.ReactNode; open?: boolean; onToggle?: () => void; collapsed?: boolean
-}) {
-  const [open, setOpen] = useState(openProp !== undefined ? openProp : !collapsed)
+}>) {
+  const [open, setOpen] = useState(openProp ?? !collapsed)
   const isControlled = openProp !== undefined
   const toggle = () => { if (isControlled) onToggle?.(); else setOpen(o => !o) }
   const isOpen = isControlled ? openProp : open
@@ -1073,9 +1088,9 @@ function SideSection({ label, children, open: openProp, onToggle, collapsed }: {
   )
 }
 
-function NavItem({ icon, dot, label, count, active, onClick, disabled }: {
+function NavItem({ icon, dot, label, count, active, onClick, disabled }: Readonly<{
   icon?: React.ReactNode; dot?: boolean; label: string; count?: number; active: boolean; onClick?: () => void; disabled?: boolean
-}) {
+}>) {
   return (
     <button
       onClick={onClick}
@@ -1110,7 +1125,7 @@ function NavItem({ icon, dot, label, count, active, onClick, disabled }: {
 
 // ── Table primitives ──────────────────────────────────────────────────────────
 
-function Th({ children, align }: { children: React.ReactNode; align?: 'right' }) {
+function Th({ children, align }: Readonly<{ children: React.ReactNode; align?: 'right' }>) {
   return (
     <th className={`px-4 py-2.5 font-['Plus_Jakarta_Sans'] text-[10.5px] uppercase tracking-wider font-semibold ${align === 'right' ? 'text-right' : 'text-left'}`}
       style={{ color: 'var(--nox-text-3)', whiteSpace: 'nowrap' }}>
@@ -1119,7 +1134,7 @@ function Th({ children, align }: { children: React.ReactNode; align?: 'right' })
   )
 }
 
-function Td({ children, align, stopPropagation }: { children: React.ReactNode; align?: 'right'; stopPropagation?: boolean }) {
+function Td({ children, align, stopPropagation }: Readonly<{ children: React.ReactNode; align?: 'right'; stopPropagation?: boolean }>) {
   return (
     <td className={`px-4 py-2.5 ${align === 'right' ? 'text-right' : ''}`}
       style={{ verticalAlign: 'middle' }}
@@ -1129,7 +1144,7 @@ function Td({ children, align, stopPropagation }: { children: React.ReactNode; a
   )
 }
 
-function Tr({ children, onClick }: { children: React.ReactNode; onClick?: () => void }) {
+function Tr({ children, onClick }: Readonly<{ children: React.ReactNode; onClick?: () => void }>) {
   return (
     <tr
       onClick={onClick}
@@ -1143,7 +1158,7 @@ function Tr({ children, onClick }: { children: React.ReactNode; onClick?: () => 
   )
 }
 
-function Mono({ children, color }: { children: React.ReactNode; color?: string }) {
+function Mono({ children, color }: Readonly<{ children: React.ReactNode; color?: string }>) {
   return (
     <span className="font-['JetBrains_Mono'] text-[12px]" style={{ color: color ?? 'var(--nox-text)' }}>
       {children}
@@ -1151,7 +1166,7 @@ function Mono({ children, color }: { children: React.ReactNode; color?: string }
   )
 }
 
-function ActionBtn({ children, title, danger, onClick }: { children: React.ReactNode; title?: string; danger?: boolean; onClick?: () => void }) {
+function ActionBtn({ children, title, danger, onClick }: Readonly<{ children: React.ReactNode; title?: string; danger?: boolean; onClick?: () => void }>) {
   return (
     <button
       className="p-1 rounded transition-colors"
@@ -1168,7 +1183,7 @@ function ActionBtn({ children, title, danger, onClick }: { children: React.React
 
 // ── Status badges ─────────────────────────────────────────────────────────────
 
-function PodStatusBadge({ status }: { status: string }) {
+function PodStatusBadge({ status }: Readonly<{ status: string }>) {
   const color = podStatusColor(status)
   return (
     <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md font-['Inter'] text-[11.5px] font-medium"
@@ -1179,7 +1194,7 @@ function PodStatusBadge({ status }: { status: string }) {
   )
 }
 
-function ServiceTypeBadge({ type }: { type: string }) {
+function ServiceTypeBadge({ type }: Readonly<{ type: string }>) {
   const colorMap: Record<string, string> = {
     LoadBalancer: '#8B5CF6', NodePort: '#F59E0B', ClusterIP: '#6B7280', ExternalName: '#06b6d4',
   }
@@ -1194,7 +1209,7 @@ function ServiceTypeBadge({ type }: { type: string }) {
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
 
-function AgeCell({ age }: { age: string | null | Date }) {
+function AgeCell({ age }: Readonly<{ age: string | null | Date }>) {
   if (!age) return <span className="font-['Inter'] text-[12px]" style={{ color: 'var(--nox-text-3)' }}>—</span>
   try {
     const date = typeof age === 'string' ? new Date(age) : age
@@ -1224,7 +1239,7 @@ function kindTitle(kind: ResourceKind): string {
   return map[kind] ?? kind
 }
 
-function TableSkeleton({ cols }: { cols: number }) {
+function TableSkeleton({ cols }: Readonly<{ cols: number }>) {
   return (
     <div className="p-5 space-y-2">
       {Array.from({ length: 6 }).map((_, i) => (
@@ -1238,7 +1253,7 @@ function TableSkeleton({ cols }: { cols: number }) {
   )
 }
 
-function EmptyState({ kind }: { kind: ResourceKind }) {
+function EmptyState({ kind }: Readonly<{ kind: ResourceKind }>) {
   return (
     <div className="flex flex-col items-center justify-center py-20 gap-2">
       <div className="w-10 h-10 rounded-xl flex items-center justify-center mb-1"
@@ -1251,7 +1266,7 @@ function EmptyState({ kind }: { kind: ResourceKind }) {
   )
 }
 
-function ErrorBanner({ message, onRetry }: { message: string; onRetry: () => void }) {
+function ErrorBanner({ message, onRetry }: Readonly<{ message: string; onRetry: () => void }>) {
   return (
     <div className="m-5 rounded-md p-4 flex items-start gap-3" style={{ background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.25)' }}>
       <AlertTriangle className="w-4 h-4 text-[#EF4444] flex-shrink-0 mt-0.5" />

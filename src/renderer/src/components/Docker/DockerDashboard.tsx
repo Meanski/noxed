@@ -4,6 +4,7 @@ import {
   Boxes, AlertTriangle, ChevronRight, ChevronDown, HardDrive,
 } from 'lucide-react'
 import { useAppStore, Tab } from '../../store'
+import { containerStateColor } from '../../lib/colors'
 import DockerLogsModal from './DockerLogsModal'
 
 interface ContainerRow {
@@ -259,16 +260,16 @@ export default function DockerDashboard({ tab }: Props) {
   )
 }
 
-function ContainerTableRow({ container, stat, last, busy, onAction, onLogs }: {
+function ContainerTableRow({ container, stat, last, busy, onAction, onLogs }: Readonly<{
   container: ContainerRow
   stat?: StatsRow
   last: boolean
   busy: boolean
   onAction: (action: 'start' | 'stop' | 'restart' | 'rm') => void
   onLogs: () => void
-}) {
+}>) {
   const isRunning = container.State === 'running'
-  const stateColor = isRunning ? '#10B981' : container.State === 'exited' ? 'var(--nox-text-3)' : '#F59E0B'
+  const stateColor = containerStateColor(container.State)
 
   return (
     <tr
@@ -322,12 +323,12 @@ function ContainerTableRow({ container, stat, last, busy, onAction, onLogs }: {
   )
 }
 
-function RowAction({ title, onClick, danger, children }: {
+function RowAction({ title, onClick, danger, children }: Readonly<{
   title: string
   onClick: () => void
   danger?: boolean
   children: React.ReactNode
-}) {
+}>) {
   return (
     <button
       title={title}

@@ -141,14 +141,19 @@ function routeText(t: TunnelInfo): string {
   return `127.0.0.1:${t.listenPort} → ${t.targetHost}:${t.targetPort}`
 }
 
-function TunnelCard({ tunnel, via, busy, onToggle, onEdit, onDelete }: {
+function toggleIcon(busy: boolean, active: boolean) {
+  if (busy) return <Loader2 className="w-3.5 h-3.5 animate-spin" />
+  return active ? <Square className="w-3 h-3" /> : <Play className="w-3 h-3" />
+}
+
+function TunnelCard({ tunnel, via, busy, onToggle, onEdit, onDelete }: Readonly<{
   tunnel: TunnelInfo
   via: string
   busy: boolean
   onToggle: () => void
   onEdit: () => void
   onDelete: () => void
-}) {
+}>) {
   const meta = TYPE_META[tunnel.type]
   const active = tunnel.status === 'active'
 
@@ -214,7 +219,7 @@ function TunnelCard({ tunnel, via, busy, onToggle, onEdit, onDelete }: {
             ? { background: 'rgba(239,68,68,0.1)', color: '#EF4444' }
             : { background: 'rgba(16,185,129,0.1)', color: '#10B981' }}
         >
-          {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : active ? <Square className="w-3 h-3" /> : <Play className="w-3 h-3" />}
+          {toggleIcon(busy, active)}
           {active ? 'Stop' : 'Start'}
         </button>
         <IconButton title="Edit" onClick={onEdit}><Pencil className="w-3.5 h-3.5" /></IconButton>
@@ -224,12 +229,12 @@ function TunnelCard({ tunnel, via, busy, onToggle, onEdit, onDelete }: {
   )
 }
 
-function IconButton({ title, onClick, danger, children }: {
+function IconButton({ title, onClick, danger, children }: Readonly<{
   title: string
   onClick: () => void
   danger?: boolean
   children: React.ReactNode
-}) {
+}>) {
   return (
     <button
       title={title}
@@ -250,12 +255,12 @@ function IconButton({ title, onClick, danger, children }: {
   )
 }
 
-function TunnelEditor({ tunnel, sshSessions, onClose, onSaved }: {
+function TunnelEditor({ tunnel, sshSessions, onClose, onSaved }: Readonly<{
   tunnel: TunnelInfo | null
   sshSessions: Session[]
   onClose: () => void
   onSaved: () => void
-}) {
+}>) {
   const [form, setForm] = useState({
     sessionId: tunnel?.sessionId ?? sshSessions[0]?.id ?? '',
     type: tunnel?.type ?? 'local' as TunnelInfo['type'],
@@ -281,11 +286,11 @@ function TunnelEditor({ tunnel, sshSessions, onClose, onSaved }: {
   async function save(e: React.FormEvent) {
     e.preventDefault()
     if (!form.sessionId) return setError('Choose an SSH connection')
-    const listenPort = parseInt(form.listenPort)
+    const listenPort = Number.parseInt(form.listenPort)
     if (!listenPort || listenPort < 1 || listenPort > 65535) return setError('Listen port must be 1–65535')
     if (form.type !== 'dynamic') {
       if (!form.targetHost.trim()) return setError('Target host is required')
-      const targetPort = parseInt(form.targetPort)
+      const targetPort = Number.parseInt(form.targetPort)
       if (!targetPort || targetPort < 1 || targetPort > 65535) return setError('Target port must be 1–65535')
     }
 
@@ -298,7 +303,7 @@ function TunnelEditor({ tunnel, sshSessions, onClose, onSaved }: {
           label: form.label.trim() || undefined,
           listenPort,
           targetHost: form.type !== 'dynamic' ? form.targetHost.trim() : undefined,
-          targetPort: form.type !== 'dynamic' ? parseInt(form.targetPort) : undefined,
+          targetPort: form.type !== 'dynamic' ? Number.parseInt(form.targetPort) : undefined,
         },
         tunnel?.id,
       )
@@ -444,7 +449,7 @@ function TunnelEditor({ tunnel, sshSessions, onClose, onSaved }: {
   )
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({ label, children }: Readonly<{ label: string; children: React.ReactNode }>) {
   return (
     <div>
       <label className="font-['Plus_Jakarta_Sans'] text-[10px] uppercase tracking-wider font-semibold block mb-1.5" style={{ color: 'var(--nox-text-3)' }}>

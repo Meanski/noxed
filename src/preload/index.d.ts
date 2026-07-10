@@ -161,7 +161,7 @@ declare global {
       database: {
         connect: (config: { dbType: string; host: string; port: number; username: string; password?: string; database: string; ssl?: string }) => Promise<string>
         disconnect: (id: string) => Promise<void>
-        query: (id: string, sql: string) => Promise<{ columns: string[]; rows: any[]; rowCount: number; duration: number }>
+        query: (id: string, sql: string, params?: (string | number | boolean | null)[]) => Promise<{ columns: string[]; rows: any[]; rowCount: number; duration: number }>
         tables: (id: string) => Promise<string[]>
         tableInfo: (id: string, table: string) => Promise<{ columns: { name: string; type: string; nullable: boolean }[] }>
       }

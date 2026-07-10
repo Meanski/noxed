@@ -15,7 +15,12 @@ interface Props {
   onClose: () => void
 }
 
-export default function TerminalSearchBar({ addon, onClose }: Props) {
+function resultsLabel(results: { index: number; count: number } | null): string {
+  if (!results) return ''
+  return results.count > 0 ? `${results.index + 1}/${results.count}` : '0/0'
+}
+
+export default function TerminalSearchBar({ addon, onClose }: Readonly<Props>) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<{ index: number; count: number } | null>(null)
@@ -73,7 +78,7 @@ export default function TerminalSearchBar({ addon, onClose }: Props) {
         style={{ color: 'var(--nox-text)' }}
       />
       <span className="text-2xs tabular-nums min-w-[40px] text-right" style={{ color: 'var(--nox-text-3)' }}>
-        {results ? (results.count > 0 ? `${results.index + 1}/${results.count}` : '0/0') : ''}
+        {resultsLabel(results)}
       </span>
       <SearchNavButton title="Previous match (Shift+Enter)" onClick={() => search(query, 'previous')}>
         <ChevronUp className="w-3.5 h-3.5" />
@@ -88,11 +93,11 @@ export default function TerminalSearchBar({ addon, onClose }: Props) {
   )
 }
 
-function SearchNavButton({ title, onClick, children }: {
+function SearchNavButton({ title, onClick, children }: Readonly<{
   title: string
   onClick: () => void
   children: React.ReactNode
-}) {
+}>) {
   return (
     <button
       title={title}

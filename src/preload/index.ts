@@ -100,7 +100,8 @@ contextBridge.exposeInMainWorld('api', {
     connect: (config: { dbType: string; host: string; port: number; username: string; password?: string; database: string; ssl?: string }) =>
       ipcRenderer.invoke('db:connect', config),
     disconnect: (id: string) => ipcRenderer.invoke('db:disconnect', id),
-    query: (id: string, sql: string) => ipcRenderer.invoke('db:query', id, sql),
+    query: (id: string, sql: string, params?: (string | number | boolean | null)[]) =>
+      ipcRenderer.invoke('db:query', id, sql, params),
     tables: (id: string) => ipcRenderer.invoke('db:tables', id),
     tableInfo: (id: string, table: string) => ipcRenderer.invoke('db:tableInfo', id, table),
   },

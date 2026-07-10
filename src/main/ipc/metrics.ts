@@ -60,16 +60,16 @@ export function parseMetricsOutput(
   }
   const cpuStat = total > 0 ? { idle, total } : undefined
 
-  const memTotal = parseInt(memStr.match(/MemTotal:\s+(\d+)/)?.[1] ?? '0') * 1024
-  const memAvail = parseInt(memStr.match(/MemAvailable:\s+(\d+)/)?.[1] ?? '0') * 1024
+  const memTotal = Number.parseInt(/MemTotal:\s+(\d+)/.exec(memStr)?.[1] ?? '0') * 1024
+  const memAvail = Number.parseInt(/MemAvailable:\s+(\d+)/.exec(memStr)?.[1] ?? '0') * 1024
 
   // df -kP: filesystem, 1k-blocks, used, available, capacity, mount
   const diskParts = diskStr.trim().split(/\s+/)
-  const diskTotal = (parseInt(diskParts[1] ?? '0') || 0) * 1024
-  const diskUsed = (parseInt(diskParts[2] ?? '0') || 0) * 1024
+  const diskTotal = (Number.parseInt(diskParts[1] ?? '0') || 0) * 1024
+  const diskUsed = (Number.parseInt(diskParts[2] ?? '0') || 0) * 1024
 
-  const load1 = parseFloat(loadStr.trim().split(/\s+/)[0] ?? '0') || 0
-  const uptimeSec = Math.floor(parseFloat(upStr.trim().split(/\s+/)[0] ?? '0')) || 0
+  const load1 = Number.parseFloat(loadStr.trim().split(/\s+/)[0] ?? '0') || 0
+  const uptimeSec = Math.floor(Number.parseFloat(upStr.trim().split(/\s+/)[0] ?? '0')) || 0
 
   return {
     metrics: {

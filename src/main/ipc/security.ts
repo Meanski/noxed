@@ -1,6 +1,6 @@
-import { homedir } from 'os'
-import { resolve, normalize } from 'path'
-import { statSync } from 'fs'
+import { homedir } from 'node:os'
+import { resolve, normalize } from 'node:path'
+import { statSync } from 'node:fs'
 
 const MAX_KEY_FILE_SIZE = 64 * 1024
 const MAX_KUBECONFIG_FILE_SIZE = 1024 * 1024
@@ -90,7 +90,7 @@ export function isBlockedRedisCommand(command: string): boolean {
 }
 
 export function getBlockedRedisCommands(): string[] {
-  return [...BLOCKED_REDIS_COMMANDS].sort()
+  return [...BLOCKED_REDIS_COMMANDS].sort((a, b) => a.localeCompare(b))
 }
 
 // Extension check is only a cheap pre-filter to avoid streaming large binaries;

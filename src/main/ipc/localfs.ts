@@ -1,8 +1,8 @@
 import { ipcMain } from 'electron'
-import { readdirSync, statSync } from 'fs'
-import { readFile, writeFile } from 'fs/promises'
-import { homedir } from 'os'
-import { join } from 'path'
+import { readdirSync, statSync } from 'node:fs'
+import { readFile, writeFile } from 'node:fs/promises'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
 import { isInsideHome, isLikelyTextFile } from './security'
 import { ValidationError } from './errors'
 

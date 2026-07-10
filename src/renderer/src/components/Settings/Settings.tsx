@@ -82,7 +82,7 @@ export default function Settings() {
 }
 
 /* ── Toggle switch ───────────────────────────────────────────────────────── */
-function Toggle({ on, onChange }: { on: boolean; onChange: (v: boolean) => void }) {
+function Toggle({ on, onChange }: Readonly<{ on: boolean; onChange: (v: boolean) => void }>) {
   return (
     <button
       onClick={() => onChange(!on)}
@@ -101,7 +101,7 @@ function Toggle({ on, onChange }: { on: boolean; onChange: (v: boolean) => void 
 const Divider = () => <div style={{ borderTop: '1px solid var(--nox-border)' }} />
 
 /* ── Small bordered action button ────────────────────────────────────────── */
-function ActionButton({ icon, label, onClick }: { icon: React.ReactNode; label: string; onClick: () => void }) {
+function ActionButton({ icon, label, onClick }: Readonly<{ icon: React.ReactNode; label: string; onClick: () => void }>) {
   return (
     <button
       onClick={onClick}
@@ -117,7 +117,7 @@ function ActionButton({ icon, label, onClick }: { icon: React.ReactNode; label: 
 }
 
 /* ── Section card ────────────────────────────────────────────────────────── */
-function Card({ label, children }: { label: string; children: React.ReactNode }) {
+function Card({ label, children }: Readonly<{ label: string; children: React.ReactNode }>) {
   return (
     <div
       className="rounded-md p-5"
@@ -137,11 +137,11 @@ function Card({ label, children }: { label: string; children: React.ReactNode })
 }
 
 /* ── Row ─────────────────────────────────────────────────────────────────── */
-function Row({ label, description, children }: {
+function Row({ label, description, children }: Readonly<{
   label: string
   description?: string
   children: React.ReactNode
-}) {
+}>) {
   return (
     <div className="flex items-center justify-between gap-4">
       <div className="min-w-0">
@@ -155,7 +155,7 @@ function Row({ label, description, children }: {
   )
 }
 
-function Select({ options, value, onChange }: { options: string[]; value: string; onChange: (v: string) => void }) {
+function Select({ options, value, onChange }: Readonly<{ options: string[]; value: string; onChange: (v: string) => void }>) {
   return (
     <select
       value={value}
@@ -207,8 +207,10 @@ function GeneralSettings() {
       const result = await window.api.sessions.import()
       if (result.canceled) return
       setSessions(await window.api.sessions.list())
-      const skippedNote = result.skipped > 0 ? ` (${result.skipped} duplicate${result.skipped !== 1 ? 's' : ''} skipped)` : ''
-      addNotification({ type: 'success', message: `Imported ${result.imported} connection${result.imported !== 1 ? 's' : ''}${skippedNote}` })
+      const dupWord = result.skipped === 1 ? 'duplicate' : 'duplicates'
+      const skippedNote = result.skipped > 0 ? ` (${result.skipped} ${dupWord} skipped)` : ''
+      const connWord = result.imported === 1 ? 'connection' : 'connections'
+      addNotification({ type: 'success', message: `Imported ${result.imported} ${connWord}${skippedNote}` })
     } catch (err: any) {
       addNotification({ type: 'error', message: err?.message ?? 'Import failed' })
     }
@@ -310,7 +312,7 @@ function GeneralSettings() {
 }
 
 /* ── Security settings ───────────────────────────────────────────────────── */
-function SecuritySettings({ onClear }: { onClear: () => void }) {
+function SecuritySettings({ onClear }: Readonly<{ onClear: () => void }>) {
   const { settings, loaded, update } = useSettings()
   const [showAuthModal, setShowAuthModal] = useState(false)
   const [currentMode, setCurrentMode] = useState<'none' | 'pin' | 'password' | 'biometrics' | null>(null)
@@ -458,8 +460,8 @@ function TerminalSettings() {
     setScrollbackDraft(raw)
     if (scrollbackTimer.current) clearTimeout(scrollbackTimer.current)
     scrollbackTimer.current = setTimeout(() => {
-      const n = parseInt(raw, 10)
-      if (!isNaN(n) && n >= 100 && n <= 100000) update('scrollbackSize', n)
+      const n = Number.parseInt(raw, 10)
+      if (!Number.isNaN(n) && n >= 100 && n <= 100000) update('scrollbackSize', n)
     }, 600)
   }
 
@@ -581,11 +583,15 @@ function AboutSettings() {
     }
   })()
 
-  const statusColor =
-    status?.state === 'error' ? '#EF4444'
-    : status?.state === 'not-available' ? '#10B981'
-    : status?.state === 'available' || status?.state === 'downloaded' ? '#3B5CCC'
-    : 'var(--nox-text-2)'
+  const statusColor = (() => {
+    switch (status?.state) {
+      case 'error': return '#EF4444'
+      case 'not-available': return '#10B981'
+      case 'available':
+      case 'downloaded': return '#3B5CCC'
+      default: return 'var(--nox-text-2)'
+    }
+  })()
 
   // Primary action depends on where we are: download is opt-in, not automatic.
   const action = (() => {
@@ -685,15 +691,102 @@ function AboutSettings() {
 /* ── Change auth modal ───────────────────────────────────────────────────── */
 type AuthMode = 'none' | 'pin' | 'password' | 'biometrics'
 
+type AuthStep = 'verify' | 'select' | 'set'
+
+function authModalTitle(step: AuthStep, selectedMode: AuthMode | null): string {
+  if (step === 'verify') return 'Confirm Your Identity'
+  if (step === 'select') return 'Choose Lock Method'
+  return `Set New ${selectedMode === 'pin' ? 'PIN' : 'Password'}`
+}
+
+function authModalSubtitle(step: AuthStep, selectedMode: AuthMode | null): string {
+  if (step === 'verify') return 'Enter your current credential to continue'
+  if (step === 'select') return 'How should noxed lock on startup?'
+  return selectedMode === 'pin' ? 'Choose a 4-digit PIN' : 'Choose a strong password'
+}
+
+function BiometricVerify({ loading, error, onRetry }: Readonly<{
+  loading: boolean; error: string; onRetry: () => void
+}>) {
+  return (
+    <div className="flex flex-col items-center gap-4">
+      <div
+        className="w-16 h-16 rounded-2xl flex items-center justify-center"
+        style={{ background: 'var(--nox-surface)', border: '1px solid var(--nox-border)' }}
+      >
+        <Fingerprint
+          className="w-9 h-9"
+          style={{ color: loading ? '#3B5CCC' : 'var(--nox-text-2)' }}
+        />
+      </div>
+      <p className="font-['Inter'] text-[12.5px] text-center" style={{ color: 'var(--nox-text-2)' }}>
+        {loading ? 'Waiting for Touch ID…' : 'Place your finger on the sensor'}
+      </p>
+      {error && <p className="font-['Inter'] text-[12px] text-[#EF4444] text-center">{error}</p>}
+      {!loading && (
+        <button
+          onClick={onRetry}
+          className="w-full py-2 rounded-lg font-['Inter'] text-[13px] font-semibold text-white"
+          style={{ background: '#3B5CCC' }}
+        >
+          Try Again
+        </button>
+      )}
+    </div>
+  )
+}
+
+function SetPasswordInput({ loading, error, newCredential, confirmCredential, showNew, onNewChange, onConfirmChange, onToggleShow, onSubmit }: Readonly<{
+  loading: boolean; error: string; newCredential: string; confirmCredential: string; showNew: boolean
+  onNewChange: (v: string) => void; onConfirmChange: (v: string) => void; onToggleShow: () => void; onSubmit: () => void
+}>) {
+  return (
+    <div className="space-y-3">
+      <div className="relative">
+        <input
+          type={showNew ? 'text' : 'password'}
+          value={newCredential}
+          onChange={e => onNewChange(e.target.value)}
+          placeholder="New password"
+          autoFocus
+          className="w-full rounded-lg px-4 py-2.5 font-['Inter'] text-[13px] focus:outline-none focus:ring-2 focus:ring-[#3B5CCC]"
+          style={{ background: 'var(--nox-bg)', border: '1px solid var(--nox-border)', color: 'var(--nox-text)' }}
+        />
+        <button type="button" onClick={onToggleShow} className="absolute right-3 top-1/2 -translate-y-1/2" style={{ color: 'var(--nox-text-3)' }}>
+          {showNew ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+        </button>
+      </div>
+      <input
+        type="password"
+        value={confirmCredential}
+        onChange={e => onConfirmChange(e.target.value)}
+        onKeyDown={e => { if (e.key === 'Enter') onSubmit() }}
+        placeholder="Confirm password"
+        className="w-full rounded-lg px-4 py-2.5 font-['Inter'] text-[13px] focus:outline-none focus:ring-2 focus:ring-[#3B5CCC]"
+        style={{ background: 'var(--nox-bg)', border: '1px solid var(--nox-border)', color: 'var(--nox-text)' }}
+      />
+      {error && <p className="font-['Inter'] text-[12px] text-[#EF4444]">{error}</p>}
+      <button
+        onClick={onSubmit}
+        disabled={loading || !newCredential || !confirmCredential}
+        className="w-full py-2.5 rounded-lg font-['Inter'] text-[13px] font-semibold text-white transition-all disabled:opacity-40"
+        style={{ background: '#3B5CCC' }}
+      >
+        {loading ? 'Saving…' : 'Set Password'}
+      </button>
+    </div>
+  )
+}
+
 function ChangeAuthModal({
   currentMode,
   onClose,
   onDone,
-}: {
+}: Readonly<{
   currentMode: AuthMode
   onClose: () => void
   onDone: (mode: AuthMode) => void
-}) {
+}>) {
   // step: 'verify' (verify current) → 'select' (pick new mode) → 'set' (enter new credential)
   const [step, setStep] = useState<'verify' | 'select' | 'set'>(
     currentMode === 'none' ? 'select' : 'verify'
@@ -780,11 +873,13 @@ function ChangeAuthModal({
     }
   }
 
-  const handleSetSubmit = async () => {
+  // `confirmPin` carries the just-completed confirm digits from SetPinInput —
+  // the `confirmDigits` state may not be committed yet when submit fires.
+  const handleSetSubmit = async (confirmPin?: string[]) => {
     if (!selectedMode) return
     if (selectedMode === 'pin') {
       const pin = newDigits.join('')
-      const conf = confirmDigits.join('')
+      const conf = (confirmPin ?? confirmDigits).join('')
       if (pin.length !== 4) { setError('Enter a 4-digit PIN'); return }
       if (pin !== conf) { setError('PINs do not match'); setConfirmDigits([]); setPinPhase('enter'); setNewDigits([]); return }
       applyNewMode(selectedMode, pin)
@@ -796,7 +891,11 @@ function ChangeAuthModal({
   }
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+    <div
+      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+      onClick={e => { if (e.target === e.currentTarget) onClose() }}
+      onKeyDown={e => { if (e.key === 'Escape') onClose() }}
+    >
       <div
         className="rounded-xl shadow-2xl w-full max-w-sm mx-4 overflow-hidden"
         style={{ background: 'var(--nox-shell)', border: '1px solid var(--nox-border)' }}
@@ -804,40 +903,17 @@ function ChangeAuthModal({
         {/* Header */}
         <div className="px-6 pt-5 pb-4" style={{ borderBottom: '1px solid var(--nox-border)' }}>
           <h2 className="font-['Plus_Jakarta_Sans'] font-bold text-[17px]" style={{ color: 'var(--nox-text)' }}>
-            {step === 'verify' ? 'Confirm Your Identity' : step === 'select' ? 'Choose Lock Method' : 'Set New ' + (selectedMode === 'pin' ? 'PIN' : 'Password')}
+            {authModalTitle(step, selectedMode)}
           </h2>
           <p className="font-['Inter'] text-[12px] mt-0.5" style={{ color: 'var(--nox-text-2)' }}>
-            {step === 'verify' ? 'Enter your current credential to continue' : step === 'select' ? 'How should noxed lock on startup?' : selectedMode === 'pin' ? 'Choose a 4-digit PIN' : 'Choose a strong password'}
+            {authModalSubtitle(step, selectedMode)}
           </p>
         </div>
 
         <div className="p-6 space-y-4">
           {/* ── VERIFY STEP ── */}
           {step === 'verify' && currentMode === 'biometrics' && (
-            <div className="flex flex-col items-center gap-4">
-              <div
-                className="w-16 h-16 rounded-2xl flex items-center justify-center"
-                style={{ background: 'var(--nox-surface)', border: '1px solid var(--nox-border)' }}
-              >
-                <Fingerprint
-                  className="w-9 h-9"
-                  style={{ color: loading ? '#3B5CCC' : 'var(--nox-text-2)' }}
-                />
-              </div>
-              <p className="font-['Inter'] text-[12.5px] text-center" style={{ color: 'var(--nox-text-2)' }}>
-                {loading ? 'Waiting for Touch ID…' : 'Place your finger on the sensor'}
-              </p>
-              {error && <p className="font-['Inter'] text-[12px] text-[#EF4444] text-center">{error}</p>}
-              {!loading && (
-                <button
-                  onClick={handleBiometricVerify}
-                  className="w-full py-2 rounded-lg font-['Inter'] text-[13px] font-semibold text-white"
-                  style={{ background: '#3B5CCC' }}
-                >
-                  Try Again
-                </button>
-              )}
-            </div>
+            <BiometricVerify loading={loading} error={error} onRetry={handleBiometricVerify} />
           )}
 
           {step === 'verify' && currentMode === 'pin' && (
@@ -912,40 +988,17 @@ function ChangeAuthModal({
           )}
 
           {step === 'set' && selectedMode === 'password' && (
-            <div className="space-y-3">
-              <div className="relative">
-                <input
-                  type={showNew ? 'text' : 'password'}
-                  value={newCredential}
-                  onChange={e => setNewCredential(e.target.value)}
-                  placeholder="New password"
-                  autoFocus
-                  className="w-full rounded-lg px-4 py-2.5 font-['Inter'] text-[13px] focus:outline-none focus:ring-2 focus:ring-[#3B5CCC]"
-                  style={{ background: 'var(--nox-bg)', border: '1px solid var(--nox-border)', color: 'var(--nox-text)' }}
-                />
-                <button type="button" onClick={() => setShowNew(s => !s)} className="absolute right-3 top-1/2 -translate-y-1/2" style={{ color: 'var(--nox-text-3)' }}>
-                  {showNew ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
-              </div>
-              <input
-                type="password"
-                value={confirmCredential}
-                onChange={e => setConfirmCredential(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter') handleSetSubmit() }}
-                placeholder="Confirm password"
-                className="w-full rounded-lg px-4 py-2.5 font-['Inter'] text-[13px] focus:outline-none focus:ring-2 focus:ring-[#3B5CCC]"
-                style={{ background: 'var(--nox-bg)', border: '1px solid var(--nox-border)', color: 'var(--nox-text)' }}
-              />
-              {error && <p className="font-['Inter'] text-[12px] text-[#EF4444]">{error}</p>}
-              <button
-                onClick={handleSetSubmit}
-                disabled={loading || !newCredential || !confirmCredential}
-                className="w-full py-2.5 rounded-lg font-['Inter'] text-[13px] font-semibold text-white transition-all disabled:opacity-40"
-                style={{ background: '#3B5CCC' }}
-              >
-                {loading ? 'Saving…' : 'Set Password'}
-              </button>
-            </div>
+            <SetPasswordInput
+              loading={loading}
+              error={error}
+              newCredential={newCredential}
+              confirmCredential={confirmCredential}
+              showNew={showNew}
+              onNewChange={setNewCredential}
+              onConfirmChange={setConfirmCredential}
+              onToggleShow={() => setShowNew(s => !s)}
+              onSubmit={() => handleSetSubmit()}
+            />
           )}
         </div>
 
@@ -967,19 +1020,28 @@ function ChangeAuthModal({
 }
 
 /* ── Verify PIN input (compact numpad for modal) ─────────────────────────── */
-function VerifyPinInput({ loading, error, onSubmit }: {
+function VerifyPinInput({ loading, error, onSubmit }: Readonly<{
   loading: boolean; error: string; onSubmit: (pin: string) => void
-}) {
+}>) {
   const [digits, setDigits] = useState<string[]>([])
+
+  const pressKey = (key: string) => {
+    if (key === '⌫') {
+      setDigits(d => d.slice(0, -1))
+      return
+    }
+    if (loading || digits.length >= 4) return
+    const next = [...digits, key]
+    setDigits(next)
+    if (next.length === 4) {
+      setTimeout(() => { onSubmit(next.join('')); setDigits([]) }, 80)
+    }
+  }
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (loading) return
-      if (/^[0-9]$/.test(e.key) && digits.length < 4) {
-        const next = [...digits, e.key]
-        setDigits(next)
-        if (next.length === 4) { onSubmit(next.join('')); setDigits([]) }
-      }
+      if (/^\d$/.test(e.key)) pressKey(e.key)
       if (e.key === 'Backspace') setDigits(d => d.slice(0, -1))
     }
     window.addEventListener('keydown', handler)
@@ -996,17 +1058,12 @@ function VerifyPinInput({ loading, error, onSubmit }: {
       </div>
       {error && <p className="font-['Inter'] text-[12px] text-[#EF4444] text-center">{error}</p>}
       <div className="grid grid-cols-3 gap-2 w-full">
-        {['1','2','3','4','5','6','7','8','9','','0','⌫'].map((key, i) => {
-          if (key === '') return <div key={i} />
+        {['1','2','3','4','5','6','7','8','9','','0','⌫'].map((key) => {
+          if (key === '') return <div key="numpad-gap" />
           const isDel = key === '⌫'
           return (
             <button key={key}
-              onClick={() => isDel ? setDigits(d => d.slice(0,-1)) : (() => {
-                if (loading || digits.length >= 4) return
-                const next = [...digits, key]
-                setDigits(next)
-                if (next.length === 4) { setTimeout(() => { onSubmit(next.join('')); setDigits([]) }, 80) }
-              })()}
+              onClick={() => pressKey(key)}
               disabled={loading}
               className="h-11 rounded-lg font-['Plus_Jakarta_Sans'] text-[16px] font-semibold transition-all active:scale-95 disabled:opacity-40"
               style={{
@@ -1023,9 +1080,9 @@ function VerifyPinInput({ loading, error, onSubmit }: {
 }
 
 /* ── Verify password input ───────────────────────────────────────────────── */
-function VerifyPasswordInput({ loading, error, show, onToggleShow, onSubmit }: {
+function VerifyPasswordInput({ loading, error, show, onToggleShow, onSubmit }: Readonly<{
   loading: boolean; error: string; show: boolean; onToggleShow: () => void; onSubmit: (v: string) => void
-}) {
+}>) {
   const [value, setValue] = useState('')
   const ref = useRef<HTMLInputElement>(null)
   useEffect(() => { ref.current?.focus() }, [])
@@ -1060,7 +1117,7 @@ function VerifyPasswordInput({ loading, error, show, onToggleShow, onSubmit }: {
 }
 
 /* ── Set PIN input (two-phase: enter + confirm) ──────────────────────────── */
-function SetPinInput({ phase, enterDigits, confirmDigits, loading, error, onEnterChange, onConfirmChange, onPhaseChange, onSubmit }: {
+function SetPinInput({ phase, enterDigits, confirmDigits, loading, error, onEnterChange, onConfirmChange, onPhaseChange, onSubmit }: Readonly<{
   phase: 'enter' | 'confirm'
   enterDigits: string[]
   confirmDigits: string[]
@@ -1069,27 +1126,10 @@ function SetPinInput({ phase, enterDigits, confirmDigits, loading, error, onEnte
   onEnterChange: (d: string[]) => void
   onConfirmChange: (d: string[]) => void
   onPhaseChange: (p: 'enter' | 'confirm') => void
-  onSubmit: () => void
-}) {
+  onSubmit: (confirmPin: string[]) => void
+}>) {
   const digits = phase === 'enter' ? enterDigits : confirmDigits
   const setDigits = phase === 'enter' ? onEnterChange : onConfirmChange
-
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (loading) return
-      if (/^[0-9]$/.test(e.key) && digits.length < 4) {
-        const next = [...digits, e.key]
-        setDigits(next)
-        if (next.length === 4) {
-          if (phase === 'enter') { onPhaseChange('confirm') }
-          else { onSubmit() }
-        }
-      }
-      if (e.key === 'Backspace') setDigits(digits.slice(0, -1))
-    }
-    window.addEventListener('keydown', handler)
-    return () => window.removeEventListener('keydown', handler)
-  }, [digits, loading, phase])
 
   const pressKey = (key: string) => {
     if (loading || digits.length >= 4) return
@@ -1098,10 +1138,20 @@ function SetPinInput({ phase, enterDigits, confirmDigits, loading, error, onEnte
     if (next.length === 4) {
       setTimeout(() => {
         if (phase === 'enter') { onPhaseChange('confirm') }
-        else { onSubmit() }
+        else { onSubmit(next) }
       }, 80)
     }
   }
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (loading) return
+      if (/^[0-9]$/.test(e.key)) pressKey(e.key)
+      if (e.key === 'Backspace') setDigits(digits.slice(0, -1))
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [digits, loading, phase])
 
   return (
     <div className="flex flex-col items-center gap-4">
@@ -1116,8 +1166,8 @@ function SetPinInput({ phase, enterDigits, confirmDigits, loading, error, onEnte
       </div>
       {error && <p className="font-['Inter'] text-[12px] text-[#EF4444] text-center">{error}</p>}
       <div className="grid grid-cols-3 gap-2 w-full">
-        {['1','2','3','4','5','6','7','8','9','','0','⌫'].map((key, i) => {
-          if (key === '') return <div key={i} />
+        {['1','2','3','4','5','6','7','8','9','','0','⌫'].map((key) => {
+          if (key === '') return <div key="numpad-gap" />
           const isDel = key === '⌫'
           return (
             <button key={key}
@@ -1138,12 +1188,20 @@ function SetPinInput({ phase, enterDigits, confirmDigits, loading, error, onEnte
 }
 
 /* ── Clear credentials modal ─────────────────────────────────────────────── */
-function ClearCredentialsModal({ onCancel, onConfirm }: { onCancel: () => void; onConfirm: () => void }) {
+function ClearCredentialsModal({ onCancel, onConfirm }: Readonly<{ onCancel: () => void; onConfirm: () => Promise<void> }>) {
   const [clearing, setClearing] = useState(false)
+  const [error, setError] = useState('')
 
   const handleConfirm = async () => {
     setClearing(true)
-    await onConfirm()
+    setError('')
+    try {
+      await onConfirm()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to clear credentials')
+    } finally {
+      setClearing(false)
+    }
   }
 
   return (
@@ -1167,6 +1225,7 @@ function ClearCredentialsModal({ onCancel, onConfirm }: { onCancel: () => void; 
           <p className="font-['Inter'] text-[13px] mb-6" style={{ color: 'var(--nox-text-2)' }}>
             This will permanently delete all stored passwords, SSH keys, database credentials, and connection configurations. Your data cannot be recovered after this action.
           </p>
+          {error && <p className="font-['Inter'] text-[12px] text-[#EF4444] mb-4">{error}</p>}
           <div className="flex items-center justify-end gap-3">
             <button
               onClick={onCancel}

@@ -277,7 +277,7 @@ export default function Sidebar() {
       </div>
 
       {/* Context menu */}
-      {ctxMenu && ctxMenu.session && (
+      {ctxMenu?.session && (
         <ServerContextMenu
           x={ctxMenu.x}
           y={ctxMenu.y}
@@ -311,7 +311,7 @@ export default function Sidebar() {
 }
 
 /* ── Draggable section ───────────────────────────────────────────────────── */
-function DraggableSection({ label, sessions, connectedIds, renamingId, onContextMenu, onOpen, onRename, onRenameCancel, onReorder }: {
+function DraggableSection({ label, sessions, connectedIds, renamingId, onContextMenu, onOpen, onRename, onRenameCancel, onReorder }: Readonly<{
   label: string
   sessions: Session[]
   connectedIds: Set<string | undefined>
@@ -321,7 +321,7 @@ function DraggableSection({ label, sessions, connectedIds, renamingId, onContext
   onRename: (s: Session, label: string) => void
   onRenameCancel: () => void
   onReorder: (ids: string[]) => void
-}) {
+}>) {
   const dragSrc = useRef<string | null>(null)
   const [dragOver, setDragOver] = useState<string | null>(null)
   const [order, setOrder] = useState<string[]>([])
@@ -383,23 +383,24 @@ function DraggableSection({ label, sessions, connectedIds, renamingId, onContext
 }
 
 /* ── Nav item ────────────────────────────────────────────────────────────── */
-function NavItem({ icon, label, active, onClick }: { icon: React.ReactNode; label: string; active: boolean; onClick: () => void }) {
+function NavItem({ icon, label, active, onClick }: Readonly<{ icon: React.ReactNode; label: string; active: boolean; onClick: () => void }>) {
   return (
-    <div
+    <button
+      type="button"
       onClick={onClick}
-      className="flex items-center gap-2 px-2 py-1.5 rounded-md cursor-pointer mb-0.5 transition-colors"
+      className="w-full text-left flex items-center gap-2 px-2 py-1.5 rounded-md cursor-pointer mb-0.5 transition-colors"
       style={active ? { background: 'var(--nox-active)', color: 'var(--nox-active-t)' } : { color: 'var(--nox-text)' }}
       onMouseEnter={e => { if (!active) (e.currentTarget as HTMLElement).style.background = 'var(--nox-hover)' }}
       onMouseLeave={e => { if (!active) (e.currentTarget as HTMLElement).style.background = '' }}
     >
       <span style={{ color: active ? 'var(--nox-active-t)' : 'var(--nox-text-2)' }}>{icon}</span>
       <span className="font-['Inter'] text-[12.5px]" style={{ fontWeight: active ? 500 : 400 }}>{label}</span>
-    </div>
+    </button>
   )
 }
 
 /* ── Section group ───────────────────────────────────────────────────────── */
-function SectionGroup({ label, icon, children }: { label: string; icon?: React.ReactNode; children: React.ReactNode }) {
+function SectionGroup({ label, icon, children }: Readonly<{ label: string; icon?: React.ReactNode; children: React.ReactNode }>) {
   return (
     <div className="mt-3 mb-1">
       <div className="flex items-center justify-between px-2 py-1.5">
@@ -414,7 +415,7 @@ function SectionGroup({ label, icon, children }: { label: string; icon?: React.R
 }
 
 /* ── Connection item ─────────────────────────────────────────────────────── */
-function ConnectionItem({ session, connected, isRenaming, onContextMenu, onClick, onRename, onRenameCancel }: {
+function ConnectionItem({ session, connected, isRenaming, onContextMenu, onClick, onRename, onRenameCancel }: Readonly<{
   session: Session
   connected: boolean
   isRenaming: boolean
@@ -422,7 +423,7 @@ function ConnectionItem({ session, connected, isRenaming, onContextMenu, onClick
   onClick: () => void
   onRename: (label: string) => void
   onRenameCancel: () => void
-}) {
+}>) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [draft, setDraft] = useState(session.label || session.host)
 
@@ -454,10 +455,11 @@ function ConnectionItem({ session, connected, isRenaming, onContextMenu, onClick
   }
 
   return (
-    <div
+    <button
+      type="button"
       onClick={onClick}
       onContextMenu={onContextMenu}
-      className="flex items-center gap-2 px-2 py-1 rounded-md cursor-pointer transition-colors"
+      className="w-full text-left flex items-center gap-2 px-2 py-1 rounded-md cursor-pointer transition-colors"
       onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'var(--nox-hover)' }}
       onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = '' }}
     >
@@ -466,20 +468,20 @@ function ConnectionItem({ session, connected, isRenaming, onContextMenu, onClick
         {session.label || session.host}
       </span>
       {connected && <span className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-[#10B981]" />}
-    </div>
+    </button>
   )
 }
 
 
 /* ── Project view ────────────────────────────────────────────────────────── */
-function ProjectView({ sessions, onConnect, onContextMenu, onMoveToProject, groupOrder, onGroupOrderChange }: {
+function ProjectView({ sessions, onConnect, onContextMenu, onMoveToProject, groupOrder, onGroupOrderChange }: Readonly<{
   sessions: Session[]
   onConnect: (s: Session) => void
   onContextMenu: (e: React.MouseEvent, s: Session) => void
   onMoveToProject: (session: Session, group: string) => void
   groupOrder: string[]
   onGroupOrderChange: (order: string[]) => void
-}) {
+}>) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [groupMenu, setGroupMenu] = useState<{ group: string; x: number; y: number } | null>(null)
   const groupColors = useAppStore(s => s.groupColors)
@@ -605,14 +607,15 @@ function ProjectView({ sessions, onConnect, onContextMenu, onMoveToProject, grou
             }}
           >
             {/* Group header */}
-            <div
+            <button
+              type="button"
               onClick={() => toggle(group)}
               onContextMenu={e => {
                 e.preventDefault()
                 e.stopPropagation()
                 setGroupMenu({ group, x: e.clientX, y: e.clientY })
               }}
-              className="group flex items-center gap-1.5 px-2 py-1.5 rounded-md cursor-pointer transition-colors"
+              className="group w-full text-left flex items-center gap-1.5 px-2 py-1.5 rounded-md cursor-pointer transition-colors"
               style={{
                 background: isGroupTarget || isItemTarget ? 'var(--nox-hover)' : '',
                 outline: isItemTarget ? '1px dashed var(--nox-active-t)' : 'none',
@@ -629,6 +632,7 @@ function ProjectView({ sessions, onConnect, onContextMenu, onMoveToProject, grou
                 onDragStart={e => { e.stopPropagation(); dragGroupSrc.current = group }}
                 onDragEnd={() => { dragGroupSrc.current = null; setDragOverGroup(null) }}
                 onClick={e => e.stopPropagation()}
+                onKeyDown={e => e.stopPropagation()}
               >
                 <GripVertical className="w-3 h-3" />
               </span>
@@ -643,12 +647,13 @@ function ProjectView({ sessions, onConnect, onContextMenu, onMoveToProject, grou
               <span className="text-[10px] px-1.5 py-0.5 rounded" style={{ color: 'var(--nox-text-3)', background: 'var(--nox-border)' }}>
                 {items.length}
               </span>
-            </div>
+            </button>
 
             {isExpanded && (
               <div className="ml-5 mt-0.5 space-y-0.5">
                 {items.map(s => (
-                  <div
+                  <button
+                    type="button"
                     key={s.id}
                     draggable
                     onDragStart={e => { e.stopPropagation(); dragItemSrc.current = s }}
@@ -672,7 +677,7 @@ function ProjectView({ sessions, onConnect, onContextMenu, onMoveToProject, grou
                     }}
                     onClick={() => onConnect(s)}
                     onContextMenu={e => onContextMenu(e, s)}
-                    className="flex items-center gap-2 px-2 py-1 rounded-md cursor-pointer transition-colors"
+                    className="w-full text-left flex items-center gap-2 px-2 py-1 rounded-md cursor-pointer transition-colors"
                     style={{ outline: reorderTarget === s.id ? '1px dashed var(--nox-active-t)' : 'none' }}
                     onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'var(--nox-hover)' }}
                     onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = '' }}
@@ -681,7 +686,7 @@ function ProjectView({ sessions, onConnect, onContextMenu, onMoveToProject, grou
                     <span className="font-['Inter'] text-[11.5px] flex-1 truncate" style={{ color: 'var(--nox-text)' }}>
                       {s.label || s.host}
                     </span>
-                  </div>
+                  </button>
                 ))}
               </div>
             )}
@@ -705,7 +710,7 @@ function ProjectView({ sessions, onConnect, onContextMenu, onMoveToProject, grou
 }
 
 /* ── Project context menu ────────────────────────────────────────────────── */
-function GroupContextMenu({ x, y, group, current, onNewConnection, onPick, onClose }: {
+function GroupContextMenu({ x, y, group, current, onNewConnection, onPick, onClose }: Readonly<{
   x: number
   y: number
   group: string
@@ -713,7 +718,7 @@ function GroupContextMenu({ x, y, group, current, onNewConnection, onPick, onClo
   onNewConnection: () => void
   onPick: (color: string | null) => void
   onClose: () => void
-}) {
+}>) {
   const { menuRef, pos } = useMenuBehavior(x, y, onClose)
 
   useEffect(() => {
@@ -742,7 +747,7 @@ function GroupContextMenu({ x, y, group, current, onNewConnection, onPick, onClo
 
       <MenuItem
         icon={<Plus className="w-3.5 h-3.5" />}
-        label={`New Connection in ${group === 'Ungrouped' ? 'Ungrouped' : `"${group}"`}`}
+        label={group === 'Ungrouped' ? 'New Connection in Ungrouped' : `New Connection in "${group}"`}
         onClick={onNewConnection}
       />
 
@@ -781,7 +786,7 @@ function GroupContextMenu({ x, y, group, current, onNewConnection, onPick, onClo
 }
 
 /* ── Connection type icon ────────────────────────────────────────────────── */
-function ConnectionTypeIcon({ type, size = 12 }: { type?: string; size?: number }) {
+function ConnectionTypeIcon({ type, size = 12 }: Readonly<{ type?: string; size?: number }>) {
   const color = 'var(--nox-text-3)'
   switch (type) {
     case 'sftp': return <FolderOpen size={size} style={{ color }} className="flex-shrink-0" />
@@ -793,9 +798,9 @@ function ConnectionTypeIcon({ type, size = 12 }: { type?: string; size?: number 
   }
 }
 
-function EmptyAreaMenu({ x, y, onNewConnection, onClose }: {
+function EmptyAreaMenu({ x, y, onNewConnection, onClose }: Readonly<{
   x: number; y: number; onNewConnection: () => void; onClose: () => void
-}) {
+}>) {
   const { menuRef, pos } = useMenuBehavior(x, y, onClose)
 
   return (

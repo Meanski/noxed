@@ -193,12 +193,10 @@ export default function CommandPalette({ onClose }: Props) {
   return (
     <div
       className="fixed inset-0 z-50 flex items-start justify-center pt-[16vh] bg-black/50 backdrop-blur-sm animate-fade-in"
-      onClick={onClose}
+      onClick={(e) => { if (e.target === e.currentTarget) onClose() }}
+      onKeyDown={(e) => { if (e.key === 'Escape') onClose() }}
     >
-      <div
-        className="w-[620px] bg-surface/95 backdrop-blur-xl border border-border-strong rounded-2xl shadow-palette overflow-hidden animate-modal-in"
-        onClick={(e) => e.stopPropagation()}
-      >
+      <div className="w-[620px] bg-surface/95 backdrop-blur-xl border border-border-strong rounded-2xl shadow-palette overflow-hidden animate-modal-in">
         {/* Search input */}
         <div className="flex items-center gap-3 px-4 py-3.5 border-b border-border/60">
           <span className="text-text-muted flex-shrink-0">
@@ -328,7 +326,7 @@ export default function CommandPalette({ onClose }: Props) {
   )
 }
 
-function SectionLabel({ children }: { children: React.ReactNode }) {
+function SectionLabel({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <div className="px-4 pt-3 pb-1.5">
       <span className="text-2xs font-semibold uppercase tracking-[0.08em] text-text-muted">
@@ -441,7 +439,7 @@ const CommandRow = forwardRef<
   </button>
 ))
 
-function Pip({ connected, connecting }: { connected: boolean; connecting: boolean }) {
+function Pip({ connected, connecting }: Readonly<{ connected: boolean; connecting: boolean }>) {
   if (connecting) {
     return (
       <span className="relative flex items-center justify-center w-2 h-2 flex-shrink-0">
@@ -456,7 +454,7 @@ function Pip({ connected, connecting }: { connected: boolean; connecting: boolea
   return <span className="w-2 h-2 rounded-full border border-text-faint flex-shrink-0" />
 }
 
-function GroupChip({ name }: { name: string }) {
+function GroupChip({ name }: Readonly<{ name: string }>) {
   const groupColors = useAppStore(s => s.groupColors)
   const color = groupColor(name, groupColors)
   return (
@@ -476,12 +474,12 @@ function GroupChip({ name }: { name: string }) {
 
 function HintKey({
   icon, secondIcon, text, label,
-}: {
+}: Readonly<{
   icon?: React.ReactNode
   secondIcon?: React.ReactNode
   text?: string
   label: string
-}) {
+}>) {
   return (
     <div className="flex items-center gap-1.5">
       <div className="flex items-center gap-0.5">

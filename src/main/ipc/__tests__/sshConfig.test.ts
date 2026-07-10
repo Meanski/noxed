@@ -1,5 +1,23 @@
-import { describe, it, expect } from 'vitest'
-import { parseSshConfig } from '../sshConfig'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+
+const { ipc, readFileMock } = vi.hoisted(() => ({
+  ipc: { handlers: new Map<string, (...args: unknown[]) => unknown>() },
+  readFileMock: vi.fn(),
+}))
+
+vi.mock('electron', () => ({
+  ipcMain: {
+    handle: vi.fn((channel: string, fn: (...args: unknown[]) => unknown) => {
+      ipc.handlers.set(channel, fn)
+    }),
+    on: vi.fn(),
+  },
+}))
+vi.mock('node:fs/promises', () => ({
+  readFile: readFileMock,
+}))
+
+import { parseSshConfig, registerSshConfigHandlers } from '../sshConfig'
 
 describe('parseSshConfig', () => {
   it('parses a basic host block', () => {
@@ -100,5 +118,66 @@ Host direct
   it('returns an empty list for empty or comment-only content', () => {
     expect(parseSshConfig('')).toEqual([])
     expect(parseSshConfig('# nothing here\n')).toEqual([])
+  })
+
+  it('skips directives without a value', () => {
+    // A bare keyword ("Host" with no argument) is not a valid directive
+    const hosts = parseSshConfig('Host\nHost real\n  HostName\n  Port\n')
+    expect(hosts).toEqual([
+      { alias: 'real', host: 'real', port: 22, username: undefined, keyPath: undefined },
+    ])
+  })
+
+  it('ignores unrelated directives inside a host block', () => {
+    const hosts = parseSshConfig('Host web\n  ServerAliveInterval 60\n  Compression yes\n')
+    expect(hosts).toEqual([
+      { alias: 'web', host: 'web', port: 22, username: undefined, keyPath: undefined },
+    ])
+  })
+
+  it('drops quoted wildcard patterns and keeps quoted concrete aliases', () => {
+    const hosts = parseSshConfig('Host "web prod" "*"\n  HostName 10.0.0.4\n')
+    // "web prod" splits on whitespace before unquoting, so each token is checked on its own
+    expect(hosts.every(h => h.host === '10.0.0.4')).toBe(true)
+    expect(hosts.some(h => h.alias.includes('*'))).toBe(false)
+  })
+})
+
+describe('sshconfig:hosts handler', () => {
+  registerSshConfigHandlers()
+  const invoke = () => {
+    const handler = ipc.handlers.get('sshconfig:hosts')
+    if (!handler) throw new Error('sshconfig:hosts handler not registered')
+    return handler() as Promise<unknown>
+  }
+
+  beforeEach(() => {
+    readFileMock.mockReset()
+  })
+
+  it('reads ~/.ssh/config and returns parsed hosts', async () => {
+    readFileMock.mockResolvedValue('Host web\n  HostName web.example.com\n  Port 2200\n')
+    await expect(invoke()).resolves.toEqual([
+      { alias: 'web', host: 'web.example.com', port: 2200, username: undefined, keyPath: undefined },
+    ])
+    expect(readFileMock).toHaveBeenCalledWith(
+      expect.stringMatching(/[/\\]\.ssh[/\\]config$/),
+      'utf-8'
+    )
+  })
+
+  it('returns an empty list when the config file does not exist', async () => {
+    readFileMock.mockRejectedValue(Object.assign(new Error('missing'), { code: 'ENOENT' }))
+    await expect(invoke()).resolves.toEqual([])
+  })
+
+  it('wraps other read errors with a descriptive message', async () => {
+    readFileMock.mockRejectedValue(Object.assign(new Error('permission denied'), { code: 'EACCES' }))
+    await expect(invoke()).rejects.toThrow('Cannot read ~/.ssh/config: permission denied')
+  })
+
+  it('stringifies non-Error rejection reasons', async () => {
+    readFileMock.mockRejectedValue('disk on fire')
+    await expect(invoke()).rejects.toThrow('Cannot read ~/.ssh/config: disk on fire')
   })
 })

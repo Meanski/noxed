@@ -10,7 +10,13 @@ interface Props {
   onClose: () => void
 }
 
-export default function DisconnectedOverlay({ message, onReconnect, connecting, cooldown, failCount, onDismiss, onClose }: Props) {
+function reconnectLabel(connecting: boolean, cooldown: number) {
+  if (connecting) return <><IconRefresh size={13} className="animate-spin" />Reconnecting…</>
+  if (cooldown > 0) return <><IconRefresh size={13} />Retry in {cooldown}s</>
+  return <><IconWifi size={13} />Reconnect</>
+}
+
+export default function DisconnectedOverlay({ message, onReconnect, connecting, cooldown, failCount, onDismiss, onClose }: Readonly<Props>) {
   const blocked = connecting || cooldown > 0
   const showFail2banHint = failCount >= 2 && message?.toLowerCase().includes('timeout')
   return (
@@ -47,13 +53,7 @@ export default function DisconnectedOverlay({ message, onReconnect, connecting, 
             onMouseEnter={(e) => { if (!blocked) e.currentTarget.style.background = '#818cf8' }}
             onMouseLeave={(e) => { if (!blocked) e.currentTarget.style.background = '#6366f1' }}
           >
-            {connecting ? (
-              <><IconRefresh size={13} className="animate-spin" />Reconnecting…</>
-            ) : cooldown > 0 ? (
-              <><IconRefresh size={13} />Retry in {cooldown}s</>
-            ) : (
-              <><IconWifi size={13} />Reconnect</>
-            )}
+            {reconnectLabel(connecting, cooldown)}
           </button>
           <button
             onClick={onClose}

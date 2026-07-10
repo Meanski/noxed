@@ -10,7 +10,7 @@ import { ipcErrorMessage } from '../../lib/format'
 interface K8sContextEntry {
   name: string
   server: string
-  source: 'default' | string  // 'default' or file path
+  source: string  // 'default' or a kubeconfig file path
 }
 
 type ConnectionType = 'ssh' | 'sftp' | 'database' | 'kubernetes' | 'redis' | 'rdp'
@@ -138,7 +138,7 @@ export default function AddConnectionModal({ onClose }: Props) {
     switch (type) {
       case 'ssh': return '22'
       case 'sftp': return '22'
-      case 'database': return form.dbType === 'postgresql' ? '5432' : form.dbType === 'mysql' ? '3306' : '5432'
+      case 'database': return form.dbType === 'mysql' || form.dbType === 'mariadb' ? '3306' : '5432'
       case 'redis': return '6379'
       case 'rdp': return '3389'
       default: return '443'
@@ -193,12 +193,35 @@ export default function AddConnectionModal({ onClose }: Props) {
 
   const parsedPort = (): number => {
     const raw = form.port.trim()
-    if (!raw) return parseInt(getDefaultPort(selectedType))
-    return parseInt(raw)
+    if (!raw) return Number.parseInt(getDefaultPort(selectedType))
+    return Number.parseInt(raw)
   }
 
   // One source of truth for "is this form submittable" — Test and Save must
   // never disagree about what a valid connection looks like.
+  const validateTypeFields = (): string | null => {
+    switch (selectedType) {
+      case 'ssh':
+      case 'sftp':
+        if (!form.username.trim()) return 'Username is required'
+        if (form.authType === 'key' && !form.keyPath.trim()) return 'Private key path is required'
+        return null
+      case 'database':
+        if (!form.username.trim()) return 'Username is required'
+        if (!form.databaseName.trim()) return 'Database name is required'
+        return null
+      case 'redis': {
+        const db = Number.parseInt(form.redisDb)
+        if (!Number.isInteger(db) || db < 0 || db > 15) return 'DB index must be 0–15'
+        return null
+      }
+      case 'rdp':
+        return form.username.trim() ? null : 'Username is required'
+      default:
+        return null
+    }
+  }
+
   const validateConfigForm = (): string | null => {
     if (selectedType === 'kubernetes') {
       return k8sSelected ? null : 'Select a context to continue'
@@ -206,22 +229,7 @@ export default function AddConnectionModal({ onClose }: Props) {
     if (!form.host.trim()) return 'Host is required'
     const port = parsedPort()
     if (!Number.isInteger(port) || port < 1 || port > 65535) return 'Port must be between 1 and 65535'
-    if (selectedType === 'ssh' || selectedType === 'sftp') {
-      if (!form.username.trim()) return 'Username is required'
-      if (form.authType === 'key' && !form.keyPath.trim()) return 'Private key path is required'
-    }
-    if (selectedType === 'database') {
-      if (!form.username.trim()) return 'Username is required'
-      if (!form.databaseName.trim()) return 'Database name is required'
-    }
-    if (selectedType === 'redis') {
-      const db = parseInt(form.redisDb)
-      if (!Number.isInteger(db) || db < 0 || db > 15) return 'DB index must be 0–15'
-    }
-    if (selectedType === 'rdp') {
-      if (!form.username.trim()) return 'Username is required'
-    }
-    return null
+    return validateTypeFields()
   }
 
   // When editing without retyping the password, fall back to the stored one
@@ -279,7 +287,7 @@ export default function AddConnectionModal({ onClose }: Props) {
           await window.api.sftp.disconnect(clientId)
         }
       } else if (selectedType === 'redis') {
-        const id = await window.api.redis.connect({ host, port, password, db: parseInt(form.redisDb) })
+        const id = await window.api.redis.connect({ host, port, password, db: Number.parseInt(form.redisDb) })
         await window.api.redis.disconnect(id)
       } else if (selectedType === 'database') {
         const id = await window.api.database.connect({
@@ -303,6 +311,57 @@ export default function AddConnectionModal({ onClose }: Props) {
     }
   }
 
+  const parsedTags = (): string[] =>
+    form.tags ? form.tags.split(',').map((t: string) => t.trim()).filter(Boolean) : []
+
+  const k8sSessionData = (): any => ({
+    type: 'kubernetes',
+    label: form.label.trim() || k8sSelected!.name,
+    host: k8sSelected!.server || k8sSelected!.name,
+    port: 0,
+    username: '',
+    authType: 'password',
+    color: form.color,
+    tags: parsedTags(),
+    contextName: k8sSelected!.name,
+    kubeconfigPath: k8sSelected!.source !== 'default' ? k8sSelected!.source : undefined,
+  })
+
+  const sessionData = (): any => {
+    const includePassword = !editingConnectionId || passwordDirty
+    return {
+      type: selectedType,
+      label: form.label.trim() || undefined,
+      host: form.host.trim(),
+      port: parsedPort(),
+      username: form.username.trim() || undefined,
+      authType: form.authType,
+      password: includePassword && form.authType === 'password' ? form.password : undefined,
+      keyPath: form.authType === 'key' ? form.keyPath.trim() : undefined,
+      jumpHostId: (selectedType === 'ssh' || selectedType === 'sftp') && form.jumpHostId ? form.jumpHostId : undefined,
+      group: form.group || undefined,
+      color: form.color,
+      tags: parsedTags(),
+      pollingEnabled: selectedType === 'ssh' ? form.pollingEnabled : undefined,
+      pollingIntervalSeconds: selectedType === 'ssh' ? Number.parseInt(form.pollingIntervalSeconds) : undefined,
+      connectOnStart: selectedType === 'ssh' ? form.connectOnStart : undefined,
+      dbType: selectedType === 'database' ? form.dbType : undefined,
+      databaseName: selectedType === 'database' ? form.databaseName : undefined,
+      sslMode: selectedType === 'database' ? form.sslMode : undefined,
+      redisDb: selectedType === 'redis' ? Number.parseInt(form.redisDb) : undefined,
+    }
+  }
+
+  const persistSession = async (data: any) => {
+    if (editingConnectionId) {
+      const updated = await window.api.sessions.update(editingConnectionId, data)
+      useAppStore.getState().updateSession(editingConnectionId, updated)
+    } else {
+      const session = await window.api.sessions.create(data)
+      addSession(session)
+    }
+  }
+
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault()
 
@@ -312,70 +371,9 @@ export default function AddConnectionModal({ onClose }: Props) {
       return setError(invalid)
     }
 
-    if (selectedType === 'kubernetes') {
-      if (!k8sSelected) return setError('Select a context to continue')
-      setSaving(true)
-      try {
-        const data: any = {
-          type: 'kubernetes',
-          label: form.label.trim() || k8sSelected.name,
-          host: k8sSelected.server || k8sSelected.name,
-          port: 0,
-          username: '',
-          authType: 'password',
-          color: form.color,
-          tags: form.tags ? form.tags.split(',').map(t => t.trim()).filter(Boolean) : [],
-          contextName: k8sSelected.name,
-          kubeconfigPath: k8sSelected.source !== 'default' ? k8sSelected.source : undefined,
-        }
-        if (editingConnectionId) {
-          const updated = await window.api.sessions.update(editingConnectionId, data)
-          useAppStore.getState().updateSession(editingConnectionId, updated)
-        } else {
-          const session = await window.api.sessions.create(data)
-          addSession(session)
-        }
-        handleClose()
-      } catch (err: any) {
-        setError(ipcErrorMessage(err, 'Failed to save'))
-      } finally {
-        setSaving(false)
-      }
-      return
-    }
-
     setSaving(true)
     try {
-      const includePassword = !editingConnectionId || passwordDirty
-      const data: any = {
-        type: selectedType,
-        label: form.label.trim() || undefined,
-        host: form.host.trim(),
-        port: parsedPort(),
-        username: form.username.trim() || undefined,
-        authType: form.authType,
-        password: includePassword && form.authType === 'password' ? form.password : undefined,
-        keyPath: form.authType === 'key' ? form.keyPath.trim() : undefined,
-        jumpHostId: (selectedType === 'ssh' || selectedType === 'sftp') && form.jumpHostId ? form.jumpHostId : undefined,
-        group: form.group || undefined,
-        color: form.color,
-        tags: form.tags ? form.tags.split(',').map(t => t.trim()).filter(Boolean) : [],
-        pollingEnabled: selectedType === 'ssh' ? form.pollingEnabled : undefined,
-        pollingIntervalSeconds: selectedType === 'ssh' ? parseInt(form.pollingIntervalSeconds) : undefined,
-        connectOnStart: selectedType === 'ssh' ? form.connectOnStart : undefined,
-        dbType: selectedType === 'database' ? form.dbType : undefined,
-        databaseName: selectedType === 'database' ? form.databaseName : undefined,
-        sslMode: selectedType === 'database' ? form.sslMode : undefined,
-        redisDb: selectedType === 'redis' ? parseInt(form.redisDb) : undefined,
-      }
-
-      if (editingConnectionId) {
-        const updated = await window.api.sessions.update(editingConnectionId, data)
-        useAppStore.getState().updateSession(editingConnectionId, updated)
-      } else {
-        const session = await window.api.sessions.create(data)
-        addSession(session)
-      }
+      await persistSession(selectedType === 'kubernetes' ? k8sSessionData() : sessionData())
       handleClose()
     } catch (err: any) {
       setTestResult(null)
@@ -389,7 +387,8 @@ export default function AddConnectionModal({ onClose }: Props) {
     <div
       className="fixed inset-0 z-50 flex items-center justify-center"
       style={{ background: 'rgba(0,0,0,0.5)' }}
-      onClick={handleClose}
+      onClick={e => { if (e.target === e.currentTarget) handleClose() }}
+      onKeyDown={e => { if (e.key === 'Escape') handleClose() }}
     >
       <div
         className="rounded-xl w-full max-w-lg max-h-[90vh] flex flex-col overflow-hidden"
@@ -398,7 +397,6 @@ export default function AddConnectionModal({ onClose }: Props) {
           border: '1px solid var(--nox-border)',
           boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
         }}
-        onClick={e => e.stopPropagation()}
       >
         {/* Modal header */}
         <div className="px-6 py-4 flex-shrink-0" style={{ borderBottom: '1px solid var(--nox-border)' }}>
@@ -439,7 +437,7 @@ export default function AddConnectionModal({ onClose }: Props) {
                     <div
                       className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold"
                       style={{
-                        background: done ? '#3B5CCC' : active ? '#3B5CCC' : 'var(--nox-border)',
+                        background: done || active ? '#3B5CCC' : 'var(--nox-border)',
                         color: done || active ? '#fff' : 'var(--nox-text-2)',
                       }}
                     >
@@ -543,7 +541,7 @@ export default function AddConnectionModal({ onClose }: Props) {
                   onMouseLeave={e => { e.currentTarget.style.background = '#3B5CCC' }}
                 >
                   <Check className="w-3.5 h-3.5" />
-                  {saving ? 'Saving…' : editingConnectionId ? 'Save Changes' : 'Save Connection'}
+                  {saveButtonLabel(saving, !!editingConnectionId)}
                 </button>
               </div>
             </>
@@ -555,10 +553,10 @@ export default function AddConnectionModal({ onClose }: Props) {
 }
 
 /* ── Type selector ───────────────────────────────────────────────────────── */
-function TypeSelector({ selected, onSelect }: {
+function TypeSelector({ selected, onSelect }: Readonly<{
   selected: ConnectionType
   onSelect: (t: ConnectionType) => void
-}) {
+}>) {
   // RDP needs the bundled FreeRDP sidecar, which currently ships on macOS only.
   // Hide the type elsewhere so we never offer a connection that can't run.
   const options = TYPE_OPTIONS.filter(o => o.type !== 'rdp' || window.api.platform === 'darwin')
@@ -598,7 +596,342 @@ function TypeSelector({ selected, onSelect }: {
 }
 
 /* ── Config form ─────────────────────────────────────────────────────────── */
-function ConfigForm({ type, form, set, error, testResult, isEditing, hasExistingPassword, k8sContexts, k8sLoading, k8sSelected, onK8sSelect, onK8sImport, onK8sRefresh }: {
+function saveButtonLabel(saving: boolean, editing: boolean): string {
+  if (saving) return 'Saving…'
+  return editing ? 'Save Changes' : 'Save Connection'
+}
+
+function storedPasswordPlaceholder(isEditing: boolean, hasExistingPassword: boolean, fallback: string): string {
+  return isEditing && hasExistingPassword ? '••••••••  (leave blank to keep)' : fallback
+}
+
+function PasswordInput({ form, set, placeholder }: Readonly<{ form: any; set: (f: string, v: any) => void; placeholder: string }>) {
+  return (
+    <div className="relative">
+      <FormInput
+        type={form.showPassword ? 'text' : 'password'}
+        placeholder={placeholder}
+        value={form.password}
+        onChange={e => set('password', e.target.value)}
+      />
+      <button
+        type="button"
+        onClick={() => set('showPassword', !form.showPassword)}
+        className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded transition-colors"
+        style={{ color: 'var(--nox-text-3)' }}
+        onMouseEnter={e => { e.currentTarget.style.color = 'var(--nox-text-2)' }}
+        onMouseLeave={e => { e.currentTarget.style.color = 'var(--nox-text-3)' }}
+      >
+        {form.showPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+      </button>
+    </div>
+  )
+}
+
+function SshFields({ form, set, isEditing, hasExistingPassword, jumpHostCandidates }: Readonly<{
+  form: any
+  set: (f: string, v: any) => void
+  isEditing: boolean
+  hasExistingPassword: boolean
+  jumpHostCandidates: { id: string; label?: string; host: string }[]
+}>) {
+  return (
+    <>
+      <FormField label="Username">
+        <FormInput
+          placeholder="root"
+          value={form.username}
+          onChange={e => set('username', e.target.value)}
+        />
+      </FormField>
+
+      <div>
+        <label className="font-['Plus_Jakarta_Sans'] text-[10px] uppercase tracking-wider font-semibold block mb-2" style={{ color: 'var(--nox-text-3)' }}>
+          Authentication Method
+        </label>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => set('authType', 'key')}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md font-['Inter'] text-[12px] font-medium transition-colors"
+            style={form.authType === 'key'
+              ? { background: '#3B5CCC', color: '#fff' }
+              : { border: '1px solid var(--nox-border)', color: 'var(--nox-text-2)' }}
+          >
+            <Key className="w-3.5 h-3.5" /> Private Key
+          </button>
+          <button
+            type="button"
+            onClick={() => set('authType', 'password')}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md font-['Inter'] text-[12px] font-medium transition-colors"
+            style={form.authType === 'password'
+              ? { background: '#3B5CCC', color: '#fff' }
+              : { border: '1px solid var(--nox-border)', color: 'var(--nox-text-2)' }}
+          >
+            <Lock className="w-3.5 h-3.5" /> Password
+          </button>
+        </div>
+      </div>
+
+      {form.authType === 'password' && (
+        <FormField label="Password">
+          <PasswordInput form={form} set={set} placeholder={storedPasswordPlaceholder(isEditing, hasExistingPassword, 'Enter password')} />
+        </FormField>
+      )}
+
+      {form.authType === 'key' && (
+        <FormField label="Private Key Path">
+          <FormInput
+            placeholder="~/.ssh/id_ed25519"
+            value={form.keyPath}
+            onChange={e => set('keyPath', e.target.value)}
+          />
+        </FormField>
+      )}
+
+      {jumpHostCandidates.length > 0 && (
+        <FormField label="Connect via (jump host)">
+          <FormSelect value={form.jumpHostId} onChange={e => set('jumpHostId', e.target.value)}>
+            <option value="">None — connect directly</option>
+            {jumpHostCandidates.map(s => (
+              <option key={s.id} value={s.id}>{s.label || s.host}</option>
+            ))}
+          </FormSelect>
+        </FormField>
+      )}
+    </>
+  )
+}
+
+function DatabaseFields({ form, set, isEditing, hasExistingPassword }: Readonly<{
+  form: any
+  set: (f: string, v: any) => void
+  isEditing: boolean
+  hasExistingPassword: boolean
+}>) {
+  return (
+    <>
+      <FormField label="Database Type">
+        <FormSelect value={form.dbType} onChange={e => set('dbType', e.target.value)}>
+          <option value="postgresql">PostgreSQL</option>
+          <option value="mysql">MySQL</option>
+          <option value="mariadb">MariaDB</option>
+        </FormSelect>
+      </FormField>
+      <FormField label="Database Name">
+        <FormInput
+          placeholder="mydb"
+          value={form.databaseName}
+          onChange={e => set('databaseName', e.target.value)}
+        />
+      </FormField>
+      <FormField label="Username">
+        <FormInput
+          placeholder="postgres"
+          value={form.username}
+          onChange={e => set('username', e.target.value)}
+        />
+      </FormField>
+      <FormField label="Password">
+        <FormInput
+          type="password"
+          placeholder={storedPasswordPlaceholder(isEditing, hasExistingPassword, 'Enter password')}
+          value={form.password}
+          onChange={e => set('password', e.target.value)}
+        />
+      </FormField>
+      <FormField label="SSL Mode">
+        <FormSelect value={form.sslMode} onChange={e => set('sslMode', e.target.value)}>
+          <option value="disable">Disable</option>
+          <option value="require">Require</option>
+          <option value="verify-ca">Verify CA</option>
+          <option value="verify-full">Verify Full</option>
+        </FormSelect>
+      </FormField>
+    </>
+  )
+}
+
+function K8sContextList({ k8sContexts, k8sLoading, k8sSelected, dropActive, onK8sSelect }: Readonly<{
+  k8sContexts: K8sContextEntry[]
+  k8sLoading: boolean
+  k8sSelected: K8sContextEntry | null
+  dropActive: boolean
+  onK8sSelect: (ctx: K8sContextEntry) => void
+}>) {
+  if (k8sLoading && k8sContexts.length === 0) {
+    return (
+      <div className="flex items-center justify-center py-8 gap-2" style={{ color: 'var(--nox-text-3)' }}>
+        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+        <span className="font-['Inter'] text-[12px]">Reading kubeconfig…</span>
+      </div>
+    )
+  }
+  if (k8sContexts.length === 0) {
+    return (
+      <div className="py-8 text-center">
+        {dropActive ? (
+          <>
+            <FileCode2 className="w-6 h-6 mx-auto mb-2 text-[#3B5CCC]" />
+            <p className="font-['Inter'] text-[12px] text-[#3B5CCC] font-medium">Drop to import</p>
+          </>
+        ) : (
+          <>
+            <p className="font-['Inter'] text-[12px]" style={{ color: 'var(--nox-text-3)' }}>No contexts found</p>
+            <p className="font-['Inter'] text-[11px] mt-1" style={{ color: 'var(--nox-text-3)', opacity: 0.6 }}>
+              Click "Import file" or drag a kubeconfig here
+            </p>
+          </>
+        )}
+      </div>
+    )
+  }
+  const defaultContexts = k8sContexts.filter(c => c.source === 'default')
+  const importedFiles = [...new Set(k8sContexts.filter(c => c.source !== 'default').map(c => c.source))]
+  return (
+    <>
+      {dropActive && (
+        <div className="flex items-center justify-center gap-2 py-2 text-[#3B5CCC]" style={{ background: 'var(--nox-active)', borderBottom: '1px solid var(--nox-border)' }}>
+          <FileCode2 className="w-3.5 h-3.5" />
+          <span className="font-['Inter'] text-[11.5px] font-medium">Drop to import file</span>
+        </div>
+      )}
+      {defaultContexts.length > 0 && (
+        <ContextGroup
+          label="Default (~/.kube/config)"
+          contexts={defaultContexts}
+          selected={k8sSelected}
+          onSelect={onK8sSelect}
+        />
+      )}
+      {importedFiles.map(filePath => (
+        <ContextGroup
+          key={filePath}
+          label={filePath.split('/').pop() ?? filePath}
+          labelTitle={filePath}
+          contexts={k8sContexts.filter(c => c.source === filePath)}
+          selected={k8sSelected}
+          onSelect={onK8sSelect}
+        />
+      ))}
+    </>
+  )
+}
+
+function K8sContextForm({ form, set, error, k8sContexts, k8sLoading, k8sSelected, onK8sSelect, onK8sImport, onK8sRefresh }: Readonly<{
+  form: any
+  set: (f: string, v: any) => void
+  error: string
+  k8sContexts: K8sContextEntry[]
+  k8sLoading: boolean
+  k8sSelected: K8sContextEntry | null
+  onK8sSelect: (ctx: K8sContextEntry) => void
+  onK8sImport: (filePath?: string) => void
+  onK8sRefresh: () => void
+}>) {
+  const [dropActive, setDropActive] = useState(false)
+
+  return (
+    <div
+      className="px-6 py-4 space-y-4"
+      onDragOver={e => { e.preventDefault(); setDropActive(true) }}
+      onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDropActive(false) }}
+      onDrop={e => {
+        e.preventDefault()
+        setDropActive(false)
+        const file = e.dataTransfer.files[0]
+        if (!file) return
+        const filePath = (file as any).path as string | undefined
+        if (filePath) onK8sImport(filePath)
+      }}
+      style={dropActive ? { outline: '2px dashed #3B5CCC', outlineOffset: -2, borderRadius: 6 } : undefined}
+    >
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="font-['Plus_Jakarta_Sans'] font-semibold text-[13.5px]" style={{ color: 'var(--nox-text)' }}>Select a context</p>
+          <p className="font-['Inter'] text-[11.5px] mt-0.5" style={{ color: 'var(--nox-text-2)' }}>
+            Auto-discovered from <code className="font-mono text-[10.5px] px-1 py-0.5 rounded" style={{ background: 'var(--nox-hover)', color: 'var(--nox-text-2)' }}>~/.kube/config</code>
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={onK8sRefresh}
+            disabled={k8sLoading}
+            className="p-1.5 rounded-md transition-colors disabled:opacity-40"
+            style={{ color: 'var(--nox-text-2)' }}
+            onMouseEnter={e => { e.currentTarget.style.background = 'var(--nox-hover)' }}
+            onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
+            title="Refresh"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${k8sLoading ? 'animate-spin' : ''}`} />
+          </button>
+          <button
+            type="button"
+            onClick={() => onK8sImport()}
+            disabled={k8sLoading}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md font-['Inter'] text-[12px] transition-colors disabled:opacity-40"
+            style={{ border: '1px solid var(--nox-border)', color: 'var(--nox-text-2)' }}
+            onMouseEnter={e => { e.currentTarget.style.background = 'var(--nox-hover)' }}
+            onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
+          >
+            <FileCode2 className="w-3.5 h-3.5" />
+            Import file
+          </button>
+        </div>
+      </div>
+
+      {/* Context list / drop zone */}
+      <div
+        className="rounded-md overflow-hidden"
+        style={{ border: dropActive ? '1px dashed #3B5CCC' : '1px solid var(--nox-border)', maxHeight: 280, overflowY: 'auto' }}
+      >
+        <K8sContextList k8sContexts={k8sContexts} k8sLoading={k8sLoading} k8sSelected={k8sSelected} dropActive={dropActive} onK8sSelect={onK8sSelect} />
+      </div>
+
+      {error && (
+        <div className="flex items-center gap-2 px-3 py-2.5 rounded-md" style={{ background: '#FEF2F2', border: '1px solid #FECACA' }}>
+          <span className="text-[#EF4444] text-[12px]">✗</span>
+          <p className="font-['Inter'] text-[12px] text-[#EF4444]">{error}</p>
+        </div>
+      )}
+
+      {/* Optional label + color for selected context */}
+      {k8sSelected && (
+        <div className="space-y-3 pt-1">
+          <FormField label="Display Name">
+            <FormInput
+              placeholder={k8sSelected.name}
+              value={form.label}
+              onChange={e => set('label', e.target.value)}
+            />
+          </FormField>
+          <FormField label="Color">
+            <div className="flex items-center gap-2">
+              {COLORS.map(c => (
+                <button
+                  key={c}
+                  type="button"
+                  onClick={() => set('color', c)}
+                  className="w-6 h-6 rounded-full transition-all"
+                  style={{
+                    background: c,
+                    border: form.color === c ? '2px solid var(--nox-text)' : '2px solid transparent',
+                    outline: form.color === c ? '2px solid rgba(128,128,128,0.3)' : 'none',
+                    outlineOffset: 1,
+                  }}
+                />
+              ))}
+            </div>
+          </FormField>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ConfigForm({ type, form, set, error, testResult, isEditing, hasExistingPassword, k8sContexts, k8sLoading, k8sSelected, onK8sSelect, onK8sImport, onK8sRefresh }: Readonly<{
   type: ConnectionType
   form: any
   set: (f: string, v: any) => void
@@ -612,162 +945,19 @@ function ConfigForm({ type, form, set, error, testResult, isEditing, hasExisting
   onK8sSelect: (ctx: K8sContextEntry) => void
   onK8sImport: (filePath?: string) => void
   onK8sRefresh: () => void
-}) {
-  const [dropActive, setDropActive] = useState(false)
+}>) {
   const sessions = useAppStore(s => s.sessions)
   const editingConnectionId = useAppStore(s => s.editingConnectionId)
   const jumpHostCandidates = sessions.filter(s => (s.type ?? 'ssh') === 'ssh' && s.id !== editingConnectionId)
   const projectNames = [...new Set(sessions.map(s => s.group).filter(Boolean))] as string[]
 
   if (type === 'kubernetes') {
-    const defaultContexts = k8sContexts.filter(c => c.source === 'default')
-    const importedFiles = [...new Set(k8sContexts.filter(c => c.source !== 'default').map(c => c.source))]
-
     return (
-      <div
-        className="px-6 py-4 space-y-4"
-        onDragOver={e => { e.preventDefault(); setDropActive(true) }}
-        onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDropActive(false) }}
-        onDrop={async e => {
-          e.preventDefault()
-          setDropActive(false)
-          const file = e.dataTransfer.files[0]
-          if (!file) return
-          const filePath = (file as any).path as string | undefined
-          if (filePath) onK8sImport(filePath)
-        }}
-        style={dropActive ? { outline: '2px dashed #3B5CCC', outlineOffset: -2, borderRadius: 6 } : undefined}
-      >
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="font-['Plus_Jakarta_Sans'] font-semibold text-[13.5px]" style={{ color: 'var(--nox-text)' }}>Select a context</p>
-            <p className="font-['Inter'] text-[11.5px] mt-0.5" style={{ color: 'var(--nox-text-2)' }}>
-              Auto-discovered from <code className="font-mono text-[10.5px] px-1 py-0.5 rounded" style={{ background: 'var(--nox-hover)', color: 'var(--nox-text-2)' }}>~/.kube/config</code>
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={onK8sRefresh}
-              disabled={k8sLoading}
-              className="p-1.5 rounded-md transition-colors disabled:opacity-40"
-              style={{ color: 'var(--nox-text-2)' }}
-              onMouseEnter={e => { e.currentTarget.style.background = 'var(--nox-hover)' }}
-              onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
-              title="Refresh"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${k8sLoading ? 'animate-spin' : ''}`} />
-            </button>
-            <button
-              type="button"
-              onClick={() => onK8sImport()}
-              disabled={k8sLoading}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md font-['Inter'] text-[12px] transition-colors disabled:opacity-40"
-              style={{ border: '1px solid var(--nox-border)', color: 'var(--nox-text-2)' }}
-              onMouseEnter={e => { e.currentTarget.style.background = 'var(--nox-hover)' }}
-              onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
-            >
-              <FileCode2 className="w-3.5 h-3.5" />
-              Import file
-            </button>
-          </div>
-        </div>
-
-        {/* Context list / drop zone */}
-        <div
-          className="rounded-md overflow-hidden"
-          style={{ border: dropActive ? '1px dashed #3B5CCC' : '1px solid var(--nox-border)', maxHeight: 280, overflowY: 'auto' }}
-        >
-          {k8sLoading && k8sContexts.length === 0 ? (
-            <div className="flex items-center justify-center py-8 gap-2" style={{ color: 'var(--nox-text-3)' }}>
-              <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-              <span className="font-['Inter'] text-[12px]">Reading kubeconfig…</span>
-            </div>
-          ) : k8sContexts.length === 0 ? (
-            <div className="py-8 text-center">
-              {dropActive ? (
-                <>
-                  <FileCode2 className="w-6 h-6 mx-auto mb-2 text-[#3B5CCC]" />
-                  <p className="font-['Inter'] text-[12px] text-[#3B5CCC] font-medium">Drop to import</p>
-                </>
-              ) : (
-                <>
-                  <p className="font-['Inter'] text-[12px]" style={{ color: 'var(--nox-text-3)' }}>No contexts found</p>
-                  <p className="font-['Inter'] text-[11px] mt-1" style={{ color: 'var(--nox-text-3)', opacity: 0.6 }}>
-                    Click "Import file" or drag a kubeconfig here
-                  </p>
-                </>
-              )}
-            </div>
-          ) : (
-            <>
-              {dropActive && (
-                <div className="flex items-center justify-center gap-2 py-2 text-[#3B5CCC]" style={{ background: 'var(--nox-active)', borderBottom: '1px solid var(--nox-border)' }}>
-                  <FileCode2 className="w-3.5 h-3.5" />
-                  <span className="font-['Inter'] text-[11.5px] font-medium">Drop to import file</span>
-                </div>
-              )}
-              {defaultContexts.length > 0 && (
-                <ContextGroup
-                  label="Default (~/.kube/config)"
-                  contexts={defaultContexts}
-                  selected={k8sSelected}
-                  onSelect={onK8sSelect}
-                />
-              )}
-              {importedFiles.map(filePath => (
-                <ContextGroup
-                  key={filePath}
-                  label={filePath.split('/').pop() ?? filePath}
-                  labelTitle={filePath}
-                  contexts={k8sContexts.filter(c => c.source === filePath)}
-                  selected={k8sSelected}
-                  onSelect={onK8sSelect}
-                />
-              ))}
-            </>
-          )}
-        </div>
-
-        {error && (
-          <div className="flex items-center gap-2 px-3 py-2.5 rounded-md" style={{ background: '#FEF2F2', border: '1px solid #FECACA' }}>
-            <span className="text-[#EF4444] text-[12px]">✗</span>
-            <p className="font-['Inter'] text-[12px] text-[#EF4444]">{error}</p>
-          </div>
-        )}
-
-        {/* Optional label + color for selected context */}
-        {k8sSelected && (
-          <div className="space-y-3 pt-1">
-            <FormField label="Display Name">
-              <FormInput
-                placeholder={k8sSelected.name}
-                value={form.label}
-                onChange={e => set('label', e.target.value)}
-              />
-            </FormField>
-            <FormField label="Color">
-              <div className="flex items-center gap-2">
-                {COLORS.map(c => (
-                  <button
-                    key={c}
-                    type="button"
-                    onClick={() => set('color', c)}
-                    className="w-6 h-6 rounded-full transition-all"
-                    style={{
-                      background: c,
-                      border: form.color === c ? '2px solid var(--nox-text)' : '2px solid transparent',
-                      outline: form.color === c ? '2px solid rgba(128,128,128,0.3)' : 'none',
-                      outlineOffset: 1,
-                    }}
-                  />
-                ))}
-              </div>
-            </FormField>
-          </div>
-        )}
-      </div>
+      <K8sContextForm
+        form={form} set={set} error={error}
+        k8sContexts={k8sContexts} k8sLoading={k8sLoading} k8sSelected={k8sSelected}
+        onK8sSelect={onK8sSelect} onK8sImport={onK8sImport} onK8sRefresh={onK8sRefresh}
+      />
     )
   }
 
@@ -805,129 +995,11 @@ function ConfigForm({ type, form, set, error, testResult, isEditing, hasExisting
 
       {/* Type-specific fields */}
       {(type === 'ssh' || type === 'sftp') && (
-        <>
-          <FormField label="Username">
-            <FormInput
-              placeholder="root"
-              value={form.username}
-              onChange={e => set('username', e.target.value)}
-            />
-          </FormField>
-
-          <div>
-            <label className="font-['Plus_Jakarta_Sans'] text-[10px] uppercase tracking-wider font-semibold block mb-2" style={{ color: 'var(--nox-text-3)' }}>
-              Authentication Method
-            </label>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => set('authType', 'key')}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-md font-['Inter'] text-[12px] font-medium transition-colors"
-                style={form.authType === 'key'
-                  ? { background: '#3B5CCC', color: '#fff' }
-                  : { border: '1px solid var(--nox-border)', color: 'var(--nox-text-2)' }}
-              >
-                <Key className="w-3.5 h-3.5" /> Private Key
-              </button>
-              <button
-                type="button"
-                onClick={() => set('authType', 'password')}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-md font-['Inter'] text-[12px] font-medium transition-colors"
-                style={form.authType === 'password'
-                  ? { background: '#3B5CCC', color: '#fff' }
-                  : { border: '1px solid var(--nox-border)', color: 'var(--nox-text-2)' }}
-              >
-                <Lock className="w-3.5 h-3.5" /> Password
-              </button>
-            </div>
-          </div>
-
-          {form.authType === 'password' && (
-            <FormField label="Password">
-              <div className="relative">
-                <FormInput
-                  type={form.showPassword ? 'text' : 'password'}
-                  placeholder={isEditing && hasExistingPassword ? '••••••••  (leave blank to keep)' : 'Enter password'}
-                  value={form.password}
-                  onChange={e => set('password', e.target.value)}
-                />
-                <button
-                  type="button"
-                  onClick={() => set('showPassword', !form.showPassword)}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded transition-colors"
-                  style={{ color: 'var(--nox-text-3)' }}
-                  onMouseEnter={e => { e.currentTarget.style.color = 'var(--nox-text-2)' }}
-                  onMouseLeave={e => { e.currentTarget.style.color = 'var(--nox-text-3)' }}
-                >
-                  {form.showPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                </button>
-              </div>
-            </FormField>
-          )}
-
-          {form.authType === 'key' && (
-            <FormField label="Private Key Path">
-              <FormInput
-                placeholder="~/.ssh/id_ed25519"
-                value={form.keyPath}
-                onChange={e => set('keyPath', e.target.value)}
-              />
-            </FormField>
-          )}
-
-          {jumpHostCandidates.length > 0 && (
-            <FormField label="Connect via (jump host)">
-              <FormSelect value={form.jumpHostId} onChange={e => set('jumpHostId', e.target.value)}>
-                <option value="">None — connect directly</option>
-                {jumpHostCandidates.map(s => (
-                  <option key={s.id} value={s.id}>{s.label || s.host}</option>
-                ))}
-              </FormSelect>
-            </FormField>
-          )}
-        </>
+        <SshFields form={form} set={set} isEditing={isEditing} hasExistingPassword={hasExistingPassword} jumpHostCandidates={jumpHostCandidates} />
       )}
 
       {type === 'database' && (
-        <>
-          <FormField label="Database Type">
-            <FormSelect value={form.dbType} onChange={e => set('dbType', e.target.value)}>
-              <option value="postgresql">PostgreSQL</option>
-              <option value="mysql">MySQL</option>
-              <option value="mariadb">MariaDB</option>
-            </FormSelect>
-          </FormField>
-          <FormField label="Database Name">
-            <FormInput
-              placeholder="mydb"
-              value={form.databaseName}
-              onChange={e => set('databaseName', e.target.value)}
-            />
-          </FormField>
-          <FormField label="Username">
-            <FormInput
-              placeholder="postgres"
-              value={form.username}
-              onChange={e => set('username', e.target.value)}
-            />
-          </FormField>
-          <FormField label="Password">
-            <FormInput
-              type="password"
-              placeholder={isEditing && hasExistingPassword ? '••••••••  (leave blank to keep)' : 'Enter password'}
-              value={form.password}
-              onChange={e => set('password', e.target.value)}
-            />
-          </FormField>
-          <FormField label="SSL Mode">
-            <FormSelect value={form.sslMode} onChange={e => set('sslMode', e.target.value)}>
-              <option value="disable">Disable</option>
-              <option value="require">Require</option>
-              <option value="verify-ca">Verify CA</option>
-              <option value="verify-full">Verify Full</option>
-            </FormSelect>
-          </FormField>
-        </>
+        <DatabaseFields form={form} set={set} isEditing={isEditing} hasExistingPassword={hasExistingPassword} />
       )}
 
       {type === 'rdp' && (
@@ -940,24 +1012,7 @@ function ConfigForm({ type, form, set, error, testResult, isEditing, hasExisting
             />
           </FormField>
           <FormField label="Password">
-            <div className="relative">
-              <FormInput
-                type={form.showPassword ? 'text' : 'password'}
-                placeholder={isEditing && hasExistingPassword ? '••••••••  (leave blank to keep)' : 'Enter password'}
-                value={form.password}
-                onChange={e => set('password', e.target.value)}
-              />
-              <button
-                type="button"
-                onClick={() => set('showPassword', !form.showPassword)}
-                className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded transition-colors"
-                style={{ color: 'var(--nox-text-3)' }}
-                onMouseEnter={e => { e.currentTarget.style.color = 'var(--nox-text-2)' }}
-                onMouseLeave={e => { e.currentTarget.style.color = 'var(--nox-text-3)' }}
-              >
-                {form.showPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-              </button>
-            </div>
+            <PasswordInput form={form} set={set} placeholder={storedPasswordPlaceholder(isEditing, hasExistingPassword, 'Enter password')} />
           </FormField>
         </>
       )}
@@ -967,7 +1022,7 @@ function ConfigForm({ type, form, set, error, testResult, isEditing, hasExisting
           <FormField label="Password (optional)">
             <FormInput
               type="password"
-              placeholder={isEditing && hasExistingPassword ? '••••••••  (leave blank to keep)' : 'Leave blank if no auth'}
+              placeholder={storedPasswordPlaceholder(isEditing, hasExistingPassword, 'Leave blank if no auth')}
               value={form.password}
               onChange={e => set('password', e.target.value)}
             />
@@ -1077,13 +1132,13 @@ function ConfigForm({ type, form, set, error, testResult, isEditing, hasExisting
   )
 }
 
-function ContextGroup({ label, labelTitle, contexts, selected, onSelect }: {
+function ContextGroup({ label, labelTitle, contexts, selected, onSelect }: Readonly<{
   label: string
   labelTitle?: string
   contexts: K8sContextEntry[]
   selected: K8sContextEntry | null
   onSelect: (ctx: K8sContextEntry) => void
-}) {
+}>) {
   return (
     <div>
       <div className="px-3 py-1.5" style={{ background: 'var(--nox-bg)', borderBottom: '1px solid var(--nox-border)' }}>
@@ -1128,13 +1183,15 @@ function ContextGroup({ label, labelTitle, contexts, selected, onSelect }: {
   )
 }
 
-function MiniToggleRow({ on, onToggle, label, description }: {
+function MiniToggleRow({ on, onToggle, label, description }: Readonly<{
   on: boolean; onToggle: () => void; label: string; description: string
-}) {
+}>) {
   return (
     <div className="flex items-center gap-3 p-3 rounded-md" style={{ background: 'var(--nox-bg)', border: '1px solid var(--nox-border)' }}>
-      <div
+      <button
+        type="button"
         className="relative flex-shrink-0 cursor-pointer"
+        aria-pressed={on}
         onClick={onToggle}
       >
         <div className="w-8 h-4 rounded-full transition-colors" style={{ background: on ? '#3B5CCC' : 'var(--nox-border)' }} />
@@ -1142,7 +1199,7 @@ function MiniToggleRow({ on, onToggle, label, description }: {
           className="w-3.5 h-3.5 bg-white rounded-full absolute top-[1px] transition-all shadow-sm"
           style={{ left: on ? 'calc(100% - 14px - 2px)' : 2 }}
         />
-      </div>
+      </button>
       <div>
         <span className="font-['Inter'] text-[12px] font-medium" style={{ color: 'var(--nox-text)' }}>{label}</span>
         <p className="font-['Inter'] text-[10.5px] mt-0.5" style={{ color: 'var(--nox-text-2)' }}>{description}</p>
@@ -1151,7 +1208,7 @@ function MiniToggleRow({ on, onToggle, label, description }: {
   )
 }
 
-function FormField({ label, children }: { label: string; children: React.ReactNode }) {
+function FormField({ label, children }: Readonly<{ label: string; children: React.ReactNode }>) {
   return (
     <div>
       <label className="font-['Plus_Jakarta_Sans'] text-[10px] uppercase tracking-wider font-semibold block mb-1.5" style={{ color: 'var(--nox-text-3)' }}>
@@ -1171,7 +1228,7 @@ function FormInput({ className = '', ...props }: React.InputHTMLAttributes<HTMLI
         background: 'var(--nox-bg)',
         border: '1px solid var(--nox-border)',
         color: 'var(--nox-text)',
-        ...((props as any).style ?? {}),
+        ...(props as any).style,
       }}
     />
   )

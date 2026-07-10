@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { LayoutDashboard, List, Settings, Terminal, Boxes, Database, FolderOpen, X, Layers, Plus, FileCode, Monitor } from 'lucide-react'
+import { LayoutDashboard, List, Settings, Terminal, Boxes, Database, FolderOpen, X, Layers, Plus, FileCode, Monitor, Cable, TerminalSquare } from 'lucide-react'
 import { useAppStore, Tab } from '../../store'
 
 export default function TabBar() {
@@ -99,9 +99,13 @@ export default function TabBar() {
   )
 }
 
-function CloseConfirmDialog({ tabLabel, unsavedEdits, onConfirm, onCancel }: { tabLabel: string; unsavedEdits?: boolean; onConfirm: () => void; onCancel: () => void }) {
+function CloseConfirmDialog({ tabLabel, unsavedEdits, onConfirm, onCancel }: Readonly<{ tabLabel: string; unsavedEdits?: boolean; onConfirm: () => void; onCancel: () => void }>) {
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={e => { if (e.target === e.currentTarget) onCancel() }}>
+    <div
+      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+      onClick={e => { if (e.target === e.currentTarget) onCancel() }}
+      onKeyDown={e => { if (e.key === 'Escape') onCancel() }}
+    >
       <div
         className="rounded-lg shadow-xl max-w-sm w-full mx-4 p-5"
         style={{ background: 'var(--nox-shell)', border: '1px solid var(--nox-border)' }}
@@ -139,27 +143,29 @@ function CloseConfirmDialog({ tabLabel, unsavedEdits, onConfirm, onCancel }: { t
   )
 }
 
-function tabIcon(view: Tab['view'], active: boolean) {
-  const color = active ? '#3B5CCC' : 'var(--nox-text-2)'
-  const size = 11
-  switch (view) {
-    case 'dashboard': return <LayoutDashboard size={size} style={{ color }} />
-    case 'connections': return <List size={size} style={{ color }} />
-    case 'settings': return <Settings size={size} style={{ color }} />
-    case 'terminal': return <Terminal size={size} style={{ color }} />
-    case 'k8s': return <Boxes size={size} style={{ color: active ? '#8B5CF6' : 'var(--nox-text-2)' }} />
-    case 'database': return <Database size={size} style={{ color: active ? '#10B981' : 'var(--nox-text-2)' }} />
-    case 'sftp': return <FolderOpen size={size} style={{ color: active ? '#EC4899' : 'var(--nox-text-2)' }} />
-    case 'redis': return <Layers size={size} style={{ color: active ? '#DC382D' : 'var(--nox-text-2)' }} />
-    case 'rdp': return <Monitor size={size} style={{ color: active ? '#06B6D4' : 'var(--nox-text-2)' }} />
-    case 'editor': return <FileCode size={size} style={{ color: active ? '#F59E0B' : 'var(--nox-text-2)' }} />
-    case 'docker': return <Boxes size={size} style={{ color: active ? '#2496ED' : 'var(--nox-text-2)' }} />
-    case 'local-term': return <Terminal size={size} style={{ color: active ? '#10B981' : 'var(--nox-text-2)' }} />
-    default: return <Terminal size={size} style={{ color }} />
-  }
+const VIEW_ICONS: Partial<Record<Tab['view'], { Icon: typeof Terminal; activeColor: string }>> = {
+  dashboard: { Icon: LayoutDashboard, activeColor: '#3B5CCC' },
+  connections: { Icon: List, activeColor: '#3B5CCC' },
+  settings: { Icon: Settings, activeColor: '#3B5CCC' },
+  terminal: { Icon: Terminal, activeColor: '#3B5CCC' },
+  k8s: { Icon: Boxes, activeColor: '#8B5CF6' },
+  database: { Icon: Database, activeColor: '#10B981' },
+  sftp: { Icon: FolderOpen, activeColor: '#EC4899' },
+  redis: { Icon: Layers, activeColor: '#DC382D' },
+  rdp: { Icon: Monitor, activeColor: '#06B6D4' },
+  editor: { Icon: FileCode, activeColor: '#F59E0B' },
+  docker: { Icon: Boxes, activeColor: '#2496ED' },
+  'local-term': { Icon: Terminal, activeColor: '#10B981' },
+  tunnels: { Icon: Cable, activeColor: '#3B5CCC' },
+  runner: { Icon: TerminalSquare, activeColor: '#3B5CCC' },
 }
 
-function TabPill({ tab, active, draggable, isDragging, isDropTarget, onActivate, onClose, onDragStart, onDragEnd, onDragOver, onDrop }: {
+function tabIcon(view: Tab['view'], active: boolean) {
+  const { Icon, activeColor } = VIEW_ICONS[view] ?? { Icon: Terminal, activeColor: '#3B5CCC' }
+  return <Icon size={11} style={{ color: active ? activeColor : 'var(--nox-text-2)' }} />
+}
+
+function TabPill({ tab, active, draggable, isDragging, isDropTarget, onActivate, onClose, onDragStart, onDragEnd, onDragOver, onDrop }: Readonly<{
   tab: Tab
   active: boolean
   draggable: boolean
@@ -171,7 +177,7 @@ function TabPill({ tab, active, draggable, isDragging, isDropTarget, onActivate,
   onDragEnd: () => void
   onDragOver: (e: React.DragEvent) => void
   onDrop: () => void
-}) {
+}>) {
   return (
     <button
       onClick={onActivate}
@@ -220,6 +226,7 @@ function TabPill({ tab, active, draggable, isDragging, isDropTarget, onActivate,
         <span
           role="button"
           onClick={onClose}
+          onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClose(e as unknown as React.MouseEvent) } }}
           className="w-4 h-4 flex items-center justify-center rounded transition-colors opacity-0 group-hover:opacity-100 flex-shrink-0 hover:bg-[#E5E7EB]"
           style={{ color: 'var(--nox-text-3)' }}
         >

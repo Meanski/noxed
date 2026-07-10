@@ -1,7 +1,7 @@
 import { ipcMain, systemPreferences, BrowserWindow } from 'electron'
 import Store from 'electron-store'
 import keytar from 'keytar'
-import { pbkdf2Sync, randomBytes } from 'crypto'
+import { pbkdf2Sync, randomBytes } from 'node:crypto'
 
 export type AuthMode = 'none' | 'pin' | 'password' | 'biometrics'
 
