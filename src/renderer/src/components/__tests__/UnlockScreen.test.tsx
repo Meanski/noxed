@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { act, render, screen, fireEvent, waitFor } from '@testing-library/react'
 import UnlockScreen from '../UnlockScreen'
 import { installWindowApi, seedStore, WindowApiMock } from '../../__tests__/harness'
 import { useAppStore } from '../../store'
@@ -21,37 +21,45 @@ function typeDigits(digits: string) {
   for (const d of digits) fireEvent.keyDown(window, { key: d })
 }
 
+// 'Enter PIN' can appear in the DOM before PinView's passive keydown-listener
+// effect has flushed (mode resolves from a promise outside act), so keystrokes
+// fired immediately after waitFor can be lost. Flush effects first.
+async function waitForPinPad() {
+  await waitFor(() => expect(screen.getByText('Enter PIN')).toBeTruthy())
+  await act(async () => {})
+}
+
 describe('UnlockScreen (PIN mode)', () => {
   beforeEach(() => setupPinMode({ success: true }))
 
   it('submits after four keyboard digits and unlocks', async () => {
     render(<UnlockScreen />)
-    await waitFor(() => expect(screen.getByText('Enter PIN')).toBeTruthy())
+    await waitForPinPad()
 
     typeDigits('1234')
-    await waitFor(() => expect(api.auth.unlock).toHaveBeenCalledWith('1234'))
+    await waitFor(() => expect(api.auth.unlock).toHaveBeenCalledWith('1234'), { timeout: 3000 })
     await waitFor(() => expect(useAppStore.getState().isLocked).toBe(false))
   })
 
   it('ignores non-digit keys and honors Backspace', async () => {
     render(<UnlockScreen />)
-    await waitFor(() => expect(screen.getByText('Enter PIN')).toBeTruthy())
+    await waitForPinPad()
 
     fireEvent.keyDown(window, { key: 'x' })
     typeDigits('9')
     fireEvent.keyDown(window, { key: 'Backspace' })
     typeDigits('5678')
 
-    await waitFor(() => expect(api.auth.unlock).toHaveBeenCalledWith('5678'))
+    await waitFor(() => expect(api.auth.unlock).toHaveBeenCalledWith('5678'), { timeout: 3000 })
   })
 
   it('shows the error and keeps the lock on failure', async () => {
     setupPinMode({ success: false, error: 'Wrong PIN' })
     render(<UnlockScreen />)
-    await waitFor(() => expect(screen.getByText('Enter PIN')).toBeTruthy())
+    await waitForPinPad()
 
     typeDigits('0000')
-    await waitFor(() => expect(screen.getByText('Wrong PIN')).toBeTruthy())
+    await waitFor(() => expect(screen.getByText('Wrong PIN')).toBeTruthy(), { timeout: 3000 })
     expect(useAppStore.getState().isLocked).toBe(true)
   })
 

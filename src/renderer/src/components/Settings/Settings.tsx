@@ -1146,7 +1146,7 @@ function SetPinInput({ phase, enterDigits, confirmDigits, loading, error, onEnte
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (loading) return
-      if (/^[0-9]$/.test(e.key)) pressKey(e.key)
+      if (/^\d$/.test(e.key)) pressKey(e.key)
       if (e.key === 'Backspace') setDigits(digits.slice(0, -1))
     }
     window.addEventListener('keydown', handler)

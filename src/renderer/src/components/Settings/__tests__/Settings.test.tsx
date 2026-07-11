@@ -293,12 +293,15 @@ describe('Settings — Security', () => {
     fireEvent.click(within(modal).getByText('9'))
     fireEvent.click(within(modal).getByText('⌫'))
     for (const d of ['1', '1', '1', '2']) fireEvent.click(within(modal).getByText(d))
-    expect(await screen.findByText('Wrong PIN')).toBeTruthy()
+    // PIN submit fires on a short setTimeout; allow headroom under parallel load
+    expect(await screen.findByText('Wrong PIN', undefined, { timeout: 3000 })).toBeTruthy()
     expect(api.auth.unlock).toHaveBeenCalledWith('1112')
 
-    // Retry with the correct PIN via the keyboard path
+    // Retry with the correct PIN via the keyboard path. Flush effects first so
+    // the keydown listener re-registered after the error render is attached.
+    await act(async () => {})
     for (const key of ['4', '3', '2', '1']) fireEvent.keyDown(window, { key })
-    expect(await screen.findByText('Choose Lock Method')).toBeTruthy()
+    expect(await screen.findByText('Choose Lock Method', undefined, { timeout: 3000 })).toBeTruthy()
     expect(api.auth.unlock).toHaveBeenLastCalledWith('4321')
   })
 

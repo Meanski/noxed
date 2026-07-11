@@ -311,7 +311,7 @@ describe('DatabaseExplorer — results grid', () => {
   it('selects rows via click and Enter/Space keydown and shows the detail panel', async () => {
     const { api } = await renderConnected()
     await runSql(api, 'SELECT * FROM users')
-    const aliceRow = (await screen.findByText('alice')).closest('div.grid') as HTMLElement
+    const aliceRow = (await screen.findByText('alice')).closest('tr') as HTMLElement
     fireEvent.click(aliceRow)
     fireEvent.click(screen.getByTitle('Row detail'))
     const detail = screen.getByText('Row 1').parentElement!.parentElement as HTMLElement
@@ -321,7 +321,7 @@ describe('DatabaseExplorer — results grid', () => {
     fireEvent.click(aliceRow)
     expect(screen.queryByText('Row 1')).toBeNull()
     // select bob via Enter key: NULL meta shown in detail
-    const bobRow = screen.getByText('bob').closest('div.grid') as HTMLElement
+    const bobRow = screen.getByText('bob').closest('tr') as HTMLElement
     fireEvent.keyDown(bobRow, { key: 'Enter' })
     await screen.findByText('Row 2')
     // deselect via Space key
@@ -424,7 +424,7 @@ describe('DatabaseExplorer — cell editing', () => {
 
   it('edits a cell (object value uses JSON.stringify) and issues an UPDATE', async () => {
     const { api } = await browseUsers()
-    const metaBadge = screen.getByText('{1}').closest('div')!
+    const metaBadge = screen.getByText('{1}').closest('td')!
     fireEvent.doubleClick(metaBadge)
     const input = await screen.findByDisplayValue('{"role":"admin"}')
     fireEvent.change(input, { target: { value: '{"role":"user"}' } })
@@ -620,13 +620,13 @@ describe('DatabaseExplorer — watch mode', () => {
 
     // first tick: changed cell highlighted
     await act(async () => { await vi.advanceTimersByTimeAsync(1000) })
-    const changed = screen.getByText('alicia').closest('div') as HTMLElement
+    const changed = screen.getByText('alicia').closest('td') as HTMLElement
     expect(changed.style.background).toContain('245')
 
     // highlight clears after 3s (next tick at 4s adds a row first)
     await act(async () => { await vi.advanceTimersByTimeAsync(2000) })
     // findBy* hangs under fake timers — the advance above already flushed the tick
-    const added = screen.getByText('bob').closest('div') as HTMLElement
+    const added = screen.getByText('bob').closest('td') as HTMLElement
     expect(added.style.background).toContain('245')
 
     // stop watching
@@ -635,7 +635,7 @@ describe('DatabaseExplorer — watch mode', () => {
     const callsAfterStop = api.database.query.mock.calls.length
     await act(async () => { await vi.advanceTimersByTimeAsync(6000) })
     expect(api.database.query.mock.calls).toHaveLength(callsAfterStop)
-    expect((screen.getByText('bob').closest('div') as HTMLElement).style.background).not.toContain('245')
+    expect((screen.getByText('bob').closest('td') as HTMLElement).style.background).not.toContain('245')
   })
 
   it('keeps polling silently through query errors and clears timers on unmount', async () => {
