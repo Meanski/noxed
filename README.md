@@ -8,6 +8,16 @@
   SSH sessions, SFTP, databases, Redis, and Kubernetes — one desktop app.
 </p>
 
+<p align="center">
+  <a href="https://github.com/Meanski/noxed/actions/workflows/ci.yml"><img src="https://github.com/Meanski/noxed/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
+  <img src="docs/badges/quality_gate.svg" alt="Quality gate" />
+  <img src="docs/badges/coverage.svg" alt="Coverage" />
+  <img src="docs/badges/maintainability.svg" alt="Maintainability" />
+  <img src="docs/badges/reliability.svg" alt="Reliability" />
+  <img src="docs/badges/security.svg" alt="Security" />
+  <img src="docs/badges/loc.svg" alt="Lines of code" />
+</p>
+
 noxed is a connection manager for people who live in terminals. Open an SSH
 session with live CPU/memory metrics in the header, browse the same server
 over SFTP in a side drawer, run queries against Postgres or MySQL, inspect
@@ -16,6 +26,10 @@ Redis keys, and watch a Kubernetes cluster — all in tabs of a single window.
 I built noxed because I wanted this product to exist. Yes, big chunks of it were built
 with AI assistance, and that is intentional: the goal is a useful, inspectable
 tool, not the golden standard when it comes to software development. If you want to improve it, patches are welcome.
+
+<p align="center">
+  <img src="docs/screenshot.png" width="820" alt="noxed — an SSH session with live CPU/memory metrics in the header, the connection sidebar, and tabs for a database, a Kubernetes cluster, and SFTP" />
+</p>
 
 ## Features
 

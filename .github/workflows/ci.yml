@@ -41,3 +41,32 @@ jobs:
         env:
           SONAR_HOST_URL: ${{ secrets.SONAR_URL }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
+  badges:
+    name: Refresh badges
+    needs: test-and-sonarqube
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Generate SonarQube badges
+        env:
+          SONAR_HOST_URL: ${{ secrets.SONAR_URL }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: bash scripts/gen-badges.sh
+
+      - name: Commit refreshed badges
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/badges
+          if git diff --staged --quiet; then
+            echo "Badges unchanged."
+          else
+            git commit -m "chore(badges): refresh SonarQube badges [skip ci]"
+            git push origin "HEAD:${GITHUB_REF_NAME}"
+          fi
