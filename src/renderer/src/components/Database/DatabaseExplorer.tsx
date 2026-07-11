@@ -527,14 +527,14 @@ function ResultsGrid({ results, sortedRows, resultSort, onToggleSort, selectedRo
               </button>
             ))}
           </div>
-          {/* Rows can contain interactive cells (JsonCell buttons), so the row
-              itself stays a div; keyboard selection goes through the row-number
-              button. The row keydown ignores bubbled events from those child
-              buttons so Enter there doesn't both activate and select. */}
+          {/* Rows contain interactive cells (JsonCell buttons), so the row keydown
+              ignores bubbled events from those child buttons so Enter there
+              doesn't both activate and select. tabIndex={-1} lets a clicked row
+              take focus so Enter/Space toggles selection on the row itself. */}
           {sortedRows.map((row, i) => (
-            <div key={rowKeys[i]}
+            <div key={rowKeys[i]} role="row" tabIndex={-1} aria-selected={selectedRow === i}
               onClick={() => onSelectRow(i === selectedRow ? null : i)}
-              onKeyDown={e => { if (e.target !== e.currentTarget) return; if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelectRow(i === selectedRow ? null : i) } }}
+              onKeyDown={e => { if (e.target !== e.currentTarget) { return } if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelectRow(i === selectedRow ? null : i) } }}
               className="grid cursor-default transition-colors" style={{ gridTemplateColumns: gridColumns, background: selectedRow === i ? 'rgba(59,92,204,0.06)' : undefined }}
               onMouseEnter={e => { if (selectedRow !== i) e.currentTarget.style.background = 'var(--nox-hover)' }} onMouseLeave={e => { if (selectedRow !== i) e.currentTarget.style.background = '' }}>
               <button type="button" aria-pressed={selectedRow === i} title={`Select row ${i + 1}`}
@@ -855,8 +855,16 @@ function bindPlaceholder(dbType: string, n: number): string {
 
 function toEditable(v: unknown): string {
   if (v == null) return ''
-  if (typeof v === 'object') return JSON.stringify(v)
-  return String(v)
+  switch (typeof v) {
+    case 'string':
+      return v
+    case 'number':
+    case 'boolean':
+    case 'bigint':
+      return v.toString()
+    default:
+      return JSON.stringify(v) ?? ''
+  }
 }
 
 function filterTables(tables: string[], filter: string): string[] {
