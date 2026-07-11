@@ -518,40 +518,52 @@ function ResultsGrid({ results, sortedRows, resultSort, onToggleSort, selectedRo
   return (
     <div className="flex-1 min-w-0 min-h-0 overflow-hidden">
       <div className="w-full h-full overflow-auto" style={{ scrollbarWidth: 'thin' }}>
-        <div className="text-[11px] font-mono" style={{ width: tableWidth, minWidth: '100%' }}>
-          <div className="sticky top-0 z-20 grid" style={{ gridTemplateColumns: gridColumns }}>
-            <div className="text-right px-2 py-2 text-[10px] font-normal sticky left-0 z-30 whitespace-nowrap" style={{ color: 'var(--nox-text-3)', background: 'var(--nox-shell)', borderBottom: '2px solid var(--nox-border)' }}>#</div>
-            {results.columns.map(col => (
-              <button key={col} className="text-left px-3 py-2 text-[10px] font-semibold uppercase tracking-wider whitespace-nowrap cursor-pointer select-none overflow-hidden text-ellipsis" style={{ color: resultSort?.col === col ? 'var(--nox-text)' : 'var(--nox-text-2)', background: 'var(--nox-shell)', borderBottom: '2px solid var(--nox-border)' }} onClick={() => onToggleSort(col)}>
-                {col}{resultSort?.col === col && <ArrowUpDown className="w-2.5 h-2.5 inline-block ml-1" style={{ transform: resultSort.dir === 'desc' ? 'scaleY(-1)' : undefined }} />}
-              </button>
-            ))}
-          </div>
+        {/* Real table semantics with the CSS grid layout kept via display
+            overrides: thead is the header grid, each tr is a row grid (grid
+            items blockify, so td/th render like the previous divs), and
+            display:contents wrappers keep buttons as direct grid items. */}
+        <table className="text-[11px] font-mono" style={{ width: tableWidth, minWidth: '100%', display: 'block' }}>
+          <thead className="sticky top-0 z-20 grid" style={{ gridTemplateColumns: gridColumns }}>
+            <tr style={{ display: 'contents' }}>
+              <th className="text-right px-2 py-2 text-[10px] font-normal sticky left-0 z-30 whitespace-nowrap" style={{ color: 'var(--nox-text-3)', background: 'var(--nox-shell)', borderBottom: '2px solid var(--nox-border)' }}>#</th>
+              {results.columns.map(col => (
+                <th key={col} style={{ display: 'contents' }}>
+                  <button className="text-left px-3 py-2 text-[10px] font-semibold uppercase tracking-wider whitespace-nowrap cursor-pointer select-none overflow-hidden text-ellipsis" style={{ color: resultSort?.col === col ? 'var(--nox-text)' : 'var(--nox-text-2)', background: 'var(--nox-shell)', borderBottom: '2px solid var(--nox-border)' }} onClick={() => onToggleSort(col)}>
+                    {col}{resultSort?.col === col && <ArrowUpDown className="w-2.5 h-2.5 inline-block ml-1" style={{ transform: resultSort.dir === 'desc' ? 'scaleY(-1)' : undefined }} />}
+                  </button>
+                </th>
+              ))}
+            </tr>
+          </thead>
           {/* Rows contain interactive cells (JsonCell buttons), so the row keydown
               ignores bubbled events from those child buttons so Enter there
               doesn't both activate and select. tabIndex={-1} lets a clicked row
               take focus so Enter/Space toggles selection on the row itself. */}
-          {sortedRows.map((row, i) => (
-            <div key={rowKeys[i]} role="row" tabIndex={-1} aria-selected={selectedRow === i}
-              onClick={() => onSelectRow(i === selectedRow ? null : i)}
-              onKeyDown={e => { if (e.target !== e.currentTarget) { return } if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelectRow(i === selectedRow ? null : i) } }}
-              className="grid cursor-default transition-colors" style={{ gridTemplateColumns: gridColumns, background: selectedRow === i ? 'rgba(59,92,204,0.06)' : undefined }}
-              onMouseEnter={e => { if (selectedRow !== i) e.currentTarget.style.background = 'var(--nox-hover)' }} onMouseLeave={e => { if (selectedRow !== i) e.currentTarget.style.background = '' }}>
-              <button type="button" aria-pressed={selectedRow === i} title={`Select row ${i + 1}`}
-                onClick={e => { e.stopPropagation(); onSelectRow(i === selectedRow ? null : i) }}
-                className="text-right px-2 py-[5px] text-[10px] sticky left-0 z-10 whitespace-nowrap" style={{ color: 'var(--nox-text-3)', background: selectedRow === i ? 'rgba(59,92,204,0.06)' : 'var(--nox-bg)', borderBottom: '1px solid var(--nox-border)' }}>{i + 1}</button>
-              {results.columns.map(col => (
-                <ResultCell key={col} row={row} rowIndex={i} col={col}
-                  editing={editingCell?.row === i && editingCell?.col === col}
-                  changed={changedCells.has(`${i}-${col}`)}
-                  editValue={editValue} setEditValue={setEditValue} editInputRef={editInputRef}
-                  commitEdit={commitEdit} cancelEdit={cancelEdit}
-                  startCellEdit={startCellEdit}
-                  expandedJson={expandedJson} onToggleJson={onToggleJson} />
-              ))}
-            </div>
-          ))}
-        </div>
+          <tbody style={{ display: 'contents' }}>
+            {sortedRows.map((row, i) => (
+              <tr key={rowKeys[i]} tabIndex={-1} aria-selected={selectedRow === i}
+                onClick={() => onSelectRow(i === selectedRow ? null : i)}
+                onKeyDown={e => { if (e.target !== e.currentTarget) { return } if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelectRow(i === selectedRow ? null : i) } }}
+                className="grid cursor-default transition-colors" style={{ gridTemplateColumns: gridColumns, background: selectedRow === i ? 'rgba(59,92,204,0.06)' : undefined }}
+                onMouseEnter={e => { if (selectedRow !== i) e.currentTarget.style.background = 'var(--nox-hover)' }} onMouseLeave={e => { if (selectedRow !== i) e.currentTarget.style.background = '' }}>
+                <td style={{ display: 'contents' }}>
+                  <button type="button" aria-pressed={selectedRow === i} title={`Select row ${i + 1}`}
+                    onClick={e => { e.stopPropagation(); onSelectRow(i === selectedRow ? null : i) }}
+                    className="text-right px-2 py-[5px] text-[10px] sticky left-0 z-10 whitespace-nowrap" style={{ color: 'var(--nox-text-3)', background: selectedRow === i ? 'rgba(59,92,204,0.06)' : 'var(--nox-bg)', borderBottom: '1px solid var(--nox-border)' }}>{i + 1}</button>
+                </td>
+                {results.columns.map(col => (
+                  <ResultCell key={col} row={row} rowIndex={i} col={col}
+                    editing={editingCell?.row === i && editingCell?.col === col}
+                    changed={changedCells.has(`${i}-${col}`)}
+                    editValue={editValue} setEditValue={setEditValue} editInputRef={editInputRef}
+                    commitEdit={commitEdit} cancelEdit={cancelEdit}
+                    startCellEdit={startCellEdit}
+                    expandedJson={expandedJson} onToggleJson={onToggleJson} />
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
         {sortedRows.length === 0 && <div className="flex items-center justify-center py-12"><p className="text-[11px]" style={{ color: 'var(--nox-text-3)' }}>No rows</p></div>}
       </div>
     </div>
@@ -617,7 +629,7 @@ function ResultCell({ row, rowIndex, col, editing, changed, editValue, setEditVa
   const val = row[col]
   const isNull = val == null
   return (
-    <div className="px-3 py-[5px] whitespace-nowrap overflow-hidden text-ellipsis" style={{ color: isNull ? 'var(--nox-text-3)' : 'var(--nox-text)', borderBottom: '1px solid var(--nox-border)', background: changed ? 'rgba(245,158,11,0.12)' : undefined, transition: 'background 0.5s' }}
+    <td className="px-3 py-[5px] whitespace-nowrap overflow-hidden text-ellipsis" style={{ color: isNull ? 'var(--nox-text-3)' : 'var(--nox-text)', borderBottom: '1px solid var(--nox-border)', background: changed ? 'rgba(245,158,11,0.12)' : undefined, transition: 'background 0.5s' }}
       onDoubleClick={e => { e.stopPropagation(); startCellEdit(rowIndex, col, val) }}>
       {editing ? (
         <input ref={editInputRef} value={editValue} onChange={e => setEditValue(e.target.value)}
@@ -629,7 +641,7 @@ function ResultCell({ row, rowIndex, col, editing, changed, editValue, setEditVa
       ) : (
         <SmartCell value={val} cellKey={`${rowIndex}-${col}`} expandedJson={expandedJson} onToggleJson={onToggleJson} />
       )}
-    </div>
+    </td>
   )
 }
 

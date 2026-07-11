@@ -136,11 +136,14 @@ function makeEvent(destroyed = false): FakeEvent {
 
 const flush = () => new Promise<void>((resolve) => setImmediate(resolve))
 
+let consoleErrorSpy: ReturnType<typeof vi.spyOn>
+
 beforeEach(() => {
-  vi.spyOn(console, 'error').mockImplementation(() => {})
+  consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
 })
 
 afterEach(() => {
+  consoleErrorSpy.mockRestore()
   h.loadFromFileError = null
 })
 
@@ -597,7 +600,7 @@ describe('k8s:logsGet', () => {
     expect(h.logFn.mock.calls.at(-1)?.[5]).toEqual({ follow: false, tailLines: 100 })
 
     h.logFn.mockImplementationOnce(async (
-      _ns: string, _pod: string, _c: string, stream: PassThrough, cb: (err: unknown) => void,
+      _ns: string, _pod: string, _c: string, _stream: PassThrough, cb: (err: unknown) => void,
     ) => { cb(null); return {} })
     await expect(logsGet('not-a-number')).resolves.toBe('')
     expect(h.logFn.mock.calls.at(-1)?.[5]).toEqual({ follow: false, tailLines: 500 })

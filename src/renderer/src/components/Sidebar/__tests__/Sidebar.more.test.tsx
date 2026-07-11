@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { describe, it, expect, afterEach, vi } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import Sidebar from '../Sidebar'
 import { installWindowApi, seedStore, makeSession, WindowApiMock } from '../../../__tests__/harness'

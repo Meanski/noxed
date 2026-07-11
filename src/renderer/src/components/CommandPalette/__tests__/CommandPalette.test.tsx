@@ -9,11 +9,11 @@ import { useAppStore } from '../../../store'
 Element.prototype.scrollIntoView = vi.fn()
 
 describe('CommandPalette', () => {
-  let onClose: ReturnType<typeof vi.fn>
+  let onClose: ReturnType<typeof vi.fn<() => void>>
 
   beforeEach(() => {
     installWindowApi()
-    onClose = vi.fn()
+    onClose = vi.fn<() => void>()
     seedStore({
       sessions: [], tabs: [], activeTabId: null, showAddSession: false,
       groupColors: {}, notifications: [],
@@ -194,7 +194,7 @@ describe('CommandPalette', () => {
     seedStore({
       sessions: [
         makeSession({ id: 's1', label: 'Web One', host: 'web1.example.com' }),
-        makeSession({ id: 'k1', label: 'Cluster', host: 'k8s.example.com', type: 'k8s' }),
+        makeSession({ id: 'k1', label: 'Cluster', host: 'k8s.example.com', type: 'kubernetes' }),
       ],
     })
     render(<CommandPalette onClose={onClose} />)
