@@ -113,7 +113,12 @@ function authConfig(): { mode: string; hash?: string; salt?: string } {
 
 let now = new Date('2026-01-01T00:00:00Z').getTime()
 
+// canUseTouchID() short-circuits on non-darwin platforms before consulting
+// systemPreferences, so pin the platform to make these tests pass on Linux CI.
+const realPlatform = process.platform
+
 beforeEach(async () => {
+  Object.defineProperty(process, 'platform', { value: 'darwin', configurable: true })
   vi.clearAllMocks()
   vi.useFakeTimers()
   // Jump an hour ahead each test so any lockout from a previous test has expired
@@ -134,6 +139,7 @@ beforeEach(async () => {
 })
 
 afterEach(() => {
+  Object.defineProperty(process, 'platform', { value: realPlatform, configurable: true })
   vi.useRealTimers()
 })
 
