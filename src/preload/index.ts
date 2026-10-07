@@ -288,14 +288,33 @@ contextBridge.exposeInMainWorld('api', {
     command: (id: string, cmd: string) => ipcRenderer.invoke('redis:command', id, cmd),
   },
 
-  // RDP (FreeRDP sidecar — read-only desktop frames to a canvas)
+  // RDP (FreeRDP sidecar — desktop frames to a canvas, input over stdin)
   rdp: {
     connect: (config: { host: string; port?: number; username: string; password: string; width?: number; height?: number }) =>
       ipcRenderer.invoke('rdp:connect', config),
     disconnect: (id: string) => ipcRenderer.invoke('rdp:disconnect', id),
-    onFrame: (cb: (id: string, width: number, height: number, pixels: Uint8Array) => void) => {
-      const handler = (_e: any, id: string, width: number, height: number, pixels: Uint8Array) =>
-        cb(id, width, height, pixels)
+    // One-way, high-frequency input. `line` is a single sidecar input command
+    // (e.g. "mv 100 200", "md 100 200 0", "kd 30 0"). Fire-and-forget.
+    sendInput: (id: string, line: string) => ipcRenderer.send('rdp:input', id, line),
+    // Each frame is one dirty rectangle: blit `pixels` (w×h RGBA) at (x,y) on a
+    // descW×descH canvas.
+    onFrame: (
+      cb: (
+        id: string,
+        frame: { descW: number; descH: number; x: number; y: number; w: number; h: number; pixels: Uint8Array },
+      ) => void,
+    ) => {
+      const handler = (
+        _e: any,
+        id: string,
+        descW: number,
+        descH: number,
+        x: number,
+        y: number,
+        w: number,
+        h: number,
+        pixels: Uint8Array,
+      ) => cb(id, { descW, descH, x, y, w, h, pixels })
       ipcRenderer.on('rdp:frame', handler)
       return () => ipcRenderer.off('rdp:frame', handler)
     },

@@ -8,11 +8,16 @@
  * forwards frames to a <canvas> in the renderer — the same shape as how
  * localTerminal.ts spawns node-pty and streams its output.
  *
- * Output framing (stdout, binary, little-endian):
- *   magic   "NXF1"   (4 bytes)
- *   width   u32
- *   height  u32
- *   dataLen u32      (== width * height * 4, tightly packed RGBA, no padding)
+ * Output framing (stdout, binary, little-endian) — one message per DIRTY
+ * RECTANGLE, not per full screen. Re-sending the whole desktop on every paint is
+ * what made this unusably slow; RDP already tells us which rectangles changed
+ * (the GDI invalid region), so we swizzle and emit only those:
+ *   magic   "NXF2"   (4 bytes)
+ *   descW   u32      full desktop width  (canvas size — constant per session)
+ *   descH   u32      full desktop height
+ *   x, y    u32,u32  rectangle origin within the desktop
+ *   w, h    u32,u32  rectangle size
+ *   dataLen u32      (== w * h * 4, tightly packed RGBA, no padding)
  *   data    dataLen bytes
  *
  * The GDI surface is BGRA with a zero alpha channel; we swizzle to RGBA and
@@ -22,8 +27,17 @@
  * Diagnostics go to stderr ONLY — stdout is a binary frame channel and must not
  * be polluted. FreeRDP's own WLog already targets stderr.
  *
- * This milestone is output-only (read-only desktop view). Input injection
- * (mouse/keyboard over stdin) is the next milestone.
+ * Input: after the password, stdin becomes a line-based input channel. A reader
+ * thread parses each line into a pointer/keyboard event and hands it to the main
+ * thread (via a small wake-on-enqueue queue) so every FreeRDP call stays on one
+ * thread. Input command grammar (one per line, coords are desktop pixels):
+ *   mv <x> <y>              pointer move
+ *   md <x> <y> <btn>        button down  (btn: 0=left 1=right 2=middle)
+ *   mu <x> <y> <btn>        button up
+ *   mw <x> <y> <delta>      wheel        (delta: signed RDP rotation, ~±120/notch)
+ *   kd <scancode> <ext>     key down     (RDP set-1 scancode; ext: 0/1)
+ *   ku <scancode> <ext>     key up
+ *   uc <down> <codepoint>   unicode key  (down: 1=press 0=release)
  *
  * Usage: rdp-sidecar <host> <port> <user> [width] [height]
  * The password is read as the first line of stdin so it never appears in the
@@ -42,9 +56,11 @@
 #include <freerdp/freerdp.h>
 #include <freerdp/client.h>
 #include <freerdp/error.h>
+#include <freerdp/input.h>
 #include <freerdp/gdi/gdi.h>
 #include <freerdp/codec/color.h>
 #include <winpr/synch.h>
+#include <winpr/thread.h>
 #include <winpr/wlog.h>
 
 typedef struct
@@ -82,25 +98,26 @@ static void quiet_wlog_to_stderr(void)
 	WLog_SetLogLevel(root, WLOG_ERROR);
 }
 
-/* Emit one frame: tightly-packed BGRA so the renderer can hand it straight to
- * ImageData without worrying about stride padding. */
-static BOOL emit_frame(SidecarContext* ctx, const BYTE* buf, UINT32 w, UINT32 h, UINT32 stride)
+/* Emit one dirty rectangle from the GDI framebuffer: swizzle just that sub-rect
+ * (BGRA→RGBA, alpha forced opaque) into a tightly-packed buffer and write an
+ * NXF2 message. `x/y/w/h` must already be clamped to the desktop bounds. Only
+ * the changed pixels are touched, which is the whole point — swizzling and
+ * shipping the full screen every paint is what killed performance. */
+static BOOL emit_rect(SidecarContext* ctx, const rdpGdi* gdi, UINT32 x, UINT32 y, UINT32 w,
+                      UINT32 h)
 {
 	const size_t rowBytes = (size_t)w * 4;
 	const size_t dataLen = rowBytes * h;
 	const size_t MAX_FRAME_SIZE = 67108864; /* 64 MiB */
 
-	/* Validate dataLen to prevent overflow and excessive allocation */
-	if (w > 0 && h > 0 && (rowBytes / 4) != w) {
-		fprintf(stderr, "[sidecar] overflow in rowBytes calculation\n");
-		return FALSE;
-	}
-	if (h > 0 && (dataLen / h) != rowBytes) {
-		fprintf(stderr, "[sidecar] overflow in dataLen calculation\n");
+	if (w == 0 || h == 0)
+		return TRUE;
+	if ((rowBytes / 4) != w || (dataLen / h) != rowBytes) {
+		fprintf(stderr, "[sidecar] overflow in rect size calculation\n");
 		return FALSE;
 	}
 	if (dataLen > MAX_FRAME_SIZE) {
-		fprintf(stderr, "[sidecar] frame too large (%zu bytes > 64 MiB)\n", dataLen);
+		fprintf(stderr, "[sidecar] rect too large (%zu bytes > 64 MiB)\n", dataLen);
 		return FALSE;
 	}
 
@@ -113,14 +130,14 @@ static BOOL emit_frame(SidecarContext* ctx, const BYTE* buf, UINT32 w, UINT32 h,
 		ctx->packedCap = dataLen;
 	}
 
-	for (UINT32 y = 0; y < h; y++)
+	for (UINT32 row = 0; row < h; row++)
 	{
-		const BYTE* src = buf + (size_t)y * stride;
-		BYTE* dst = ctx->packed + (size_t)y * rowBytes;
-		for (UINT32 x = 0; x < w; x++)
+		const BYTE* src = gdi->primary_buffer + (size_t)(y + row) * gdi->stride + (size_t)x * 4;
+		BYTE* dst = ctx->packed + (size_t)row * rowBytes;
+		for (UINT32 col = 0; col < w; col++)
 		{
-			const BYTE* sp = src + (size_t)x * 4; /* BGRA */
-			BYTE* dp = dst + (size_t)x * 4;        /* RGBA */
+			const BYTE* sp = src + (size_t)col * 4; /* BGRA */
+			BYTE* dp = dst + (size_t)col * 4;        /* RGBA */
 			dp[0] = sp[2];
 			dp[1] = sp[1];
 			dp[2] = sp[0];
@@ -128,18 +145,40 @@ static BOOL emit_frame(SidecarContext* ctx, const BYTE* buf, UINT32 w, UINT32 h,
 		}
 	}
 
-	BYTE header[16];
-	memcpy(header, "NXF1", 4);
-	write_u32_le(header + 4, w);
-	write_u32_le(header + 8, h);
-	write_u32_le(header + 12, (UINT32)dataLen);
+	BYTE header[32];
+	memcpy(header, "NXF2", 4);
+	write_u32_le(header + 4, (UINT32)gdi->width);
+	write_u32_le(header + 8, (UINT32)gdi->height);
+	write_u32_le(header + 12, x);
+	write_u32_le(header + 16, y);
+	write_u32_le(header + 20, w);
+	write_u32_le(header + 24, h);
+	write_u32_le(header + 28, (UINT32)dataLen);
 
 	if (fwrite(header, 1, sizeof(header), stdout) != sizeof(header))
 		return FALSE;
 	if (fwrite(ctx->packed, 1, dataLen, stdout) != dataLen)
 		return FALSE;
-	fflush(stdout);
 	return TRUE;
+}
+
+/* Clamp a GDI invalid region to the desktop and emit it. Regions can extend a
+ * pixel past the edge or arrive empty; skip those rather than read out of
+ * bounds. */
+static BOOL emit_clamped_rect(SidecarContext* ctx, const rdpGdi* gdi, const GDI_RGN* r)
+{
+	INT32 x = r->x, y = r->y, w = r->w, h = r->h;
+	if (w <= 0 || h <= 0)
+		return TRUE;
+	if (x < 0) { w += x; x = 0; }
+	if (y < 0) { h += y; y = 0; }
+	if (x >= gdi->width || y >= gdi->height)
+		return TRUE;
+	if (x + w > gdi->width) w = gdi->width - x;
+	if (y + h > gdi->height) h = gdi->height - y;
+	if (w <= 0 || h <= 0)
+		return TRUE;
+	return emit_rect(ctx, gdi, (UINT32)x, (UINT32)y, (UINT32)w, (UINT32)h);
 }
 
 static BOOL sidecar_end_paint(rdpContext* context)
@@ -147,14 +186,50 @@ static BOOL sidecar_end_paint(rdpContext* context)
 	SidecarContext* ctx = (SidecarContext*)context;
 	rdpGdi* gdi = context->gdi;
 
-	if (!gdi || !gdi->primary_buffer)
+	if (!gdi || !gdi->primary_buffer || !gdi->primary)
 		return TRUE;
 
-	if (!emit_frame(ctx, gdi->primary_buffer, gdi->width, gdi->height, gdi->stride))
+	HGDI_DC hdc = gdi->primary->hdc;
+	HGDI_WND hwnd = hdc ? hdc->hwnd : NULL;
+
+	BOOL ok = TRUE;
+	if (!hwnd)
+	{
+		/* No window bookkeeping available — fall back to the whole desktop. */
+		ok = emit_rect(ctx, gdi, 0, 0, (UINT32)gdi->width, (UINT32)gdi->height);
+	}
+	else if (hwnd->ninvalid >= 1 && hwnd->cinvalid)
+	{
+		/* Detailed dirty list: emit each changed rectangle (mirrors how the
+		 * X11/SDL clients repaint). */
+		for (INT32 i = 0; i < hwnd->ninvalid && ok; i++)
+			ok = emit_clamped_rect(ctx, gdi, &hwnd->cinvalid[i]);
+	}
+	else if (hwnd->invalid && !hwnd->invalid->null)
+	{
+		/* Only a bounding box is tracked — still far better than full-screen. */
+		ok = emit_clamped_rect(ctx, gdi, hwnd->invalid);
+	}
+	else
+	{
+		return TRUE; /* nothing changed this paint */
+	}
+
+	if (!ok)
 	{
 		/* stdout closed (parent gone) — tear the session down. */
 		fprintf(stderr, "[sidecar] stdout write failed, disconnecting\n");
 		freerdp_abort_connect_context(context);
+		return TRUE;
+	}
+	fflush(stdout); /* one flush per server frame, after all its rects */
+
+	/* Mark the region clean so FreeRDP doesn't re-report the same rects. */
+	if (hwnd)
+	{
+		if (hwnd->invalid)
+			hwnd->invalid->null = TRUE;
+		hwnd->ninvalid = 0;
 	}
 	return TRUE;
 }
@@ -293,6 +368,185 @@ static int sidecar_entry(RDP_CLIENT_ENTRY_POINTS* pEntryPoints)
 	return 0;
 }
 
+/* ---- Input channel (stdin → RDP) -------------------------------------------
+ *
+ * A reader thread turns each stdin line into a pre-composed InputEvent and drops
+ * it on a ring buffer, then signals `wake`. The main thread waits on `wake`
+ * alongside FreeRDP's own event handles and drains the queue, so the actual
+ * freerdp_input_send_* calls only ever happen on the main thread (FreeRDP's
+ * transport is not safe to write from two threads). The reader never touches the
+ * rdpContext — on EOF it just sets `eof` and wakes the main thread, which owns
+ * teardown. */
+typedef struct
+{
+	UINT16 type;  /* 0=pointer, 1=keyboard scancode, 2=unicode */
+	UINT16 flags; /* PTR_FLAGS_* or KBD_FLAGS_* */
+	UINT16 a;     /* pointer x | scancode | codepoint */
+	UINT16 b;     /* pointer y */
+} InputEvent;
+
+#define INPUT_QUEUE_CAP 2048
+
+typedef struct
+{
+	CRITICAL_SECTION lock;
+	HANDLE wake;
+	InputEvent items[INPUT_QUEUE_CAP];
+	size_t head;
+	size_t tail;
+	BOOL eof;
+} InputQueue;
+
+/* Encode a signed wheel rotation into PTR_FLAGS_WHEEL[_NEGATIVE] + magnitude.
+ * Mirror of FreeRDP's decode (client/common/client.c): a negative rotation is
+ * stored as the low byte of (0x100 - magnitude) with PTR_FLAGS_WHEEL_NEGATIVE. */
+static UINT16 encode_wheel(int delta)
+{
+	UINT16 flags = PTR_FLAGS_WHEEL;
+	if (delta > 255)
+		delta = 255;
+	if (delta < -255)
+		delta = -255;
+	if (delta < 0)
+	{
+		flags |= PTR_FLAGS_WHEEL_NEGATIVE;
+		flags |= (UINT16)((0x100 + delta) & 0xFF); /* 0x100 - |delta| */
+	}
+	else
+	{
+		flags |= (UINT16)(delta & 0xFF);
+	}
+	return flags;
+}
+
+/* Parse one stdin line into an InputEvent. Returns FALSE for blank/unknown
+ * lines so a stray byte can't inject a bogus event. */
+static BOOL parse_input_line(const char* line, InputEvent* out)
+{
+	char verb[8] = { 0 };
+	int a = 0, b = 0, c = 0;
+	const int n = sscanf(line, "%7s %d %d %d", verb, &a, &b, &c);
+	if (n < 1)
+		return FALSE;
+
+	if (strcmp(verb, "mv") == 0)
+	{
+		out->type = 0;
+		out->flags = PTR_FLAGS_MOVE;
+		out->a = (UINT16)a;
+		out->b = (UINT16)b;
+		return TRUE;
+	}
+	if (strcmp(verb, "md") == 0 || strcmp(verb, "mu") == 0)
+	{
+		UINT16 flags = (verb[1] == 'd') ? PTR_FLAGS_DOWN : 0;
+		switch (c)
+		{
+			case 0: flags |= PTR_FLAGS_BUTTON1; break; /* left */
+			case 1: flags |= PTR_FLAGS_BUTTON2; break; /* right */
+			case 2: flags |= PTR_FLAGS_BUTTON3; break; /* middle */
+			default: return FALSE;
+		}
+		out->type = 0;
+		out->flags = flags;
+		out->a = (UINT16)a;
+		out->b = (UINT16)b;
+		return TRUE;
+	}
+	if (strcmp(verb, "mw") == 0)
+	{
+		out->type = 0;
+		out->flags = encode_wheel(c);
+		out->a = (UINT16)a;
+		out->b = (UINT16)b;
+		return TRUE;
+	}
+	if (strcmp(verb, "kd") == 0 || strcmp(verb, "ku") == 0)
+	{
+		UINT16 flags = (verb[1] == 'd') ? KBD_FLAGS_DOWN : KBD_FLAGS_RELEASE;
+		if (b)
+			flags |= KBD_FLAGS_EXTENDED; /* b = extended flag */
+		out->type = 1;
+		out->flags = flags;
+		out->a = (UINT16)(a & 0xFF); /* scancode */
+		out->b = 0;
+		return TRUE;
+	}
+	if (strcmp(verb, "uc") == 0)
+	{
+		out->type = 2;
+		out->flags = a ? KBD_FLAGS_DOWN : KBD_FLAGS_RELEASE; /* a = down flag */
+		out->a = (UINT16)b;                                  /* b = codepoint */
+		out->b = 0;
+		return TRUE;
+	}
+	return FALSE;
+}
+
+static DWORD WINAPI input_reader_thread(LPVOID arg)
+{
+	InputQueue* q = (InputQueue*)arg;
+	char line[256];
+	while (fgets(line, sizeof(line), stdin))
+	{
+		/* An overlong line arrives in pieces; parsing the tail on its own could
+		 * yield a valid-looking command, so drop the whole line instead. */
+		if (!strchr(line, '\n'))
+		{
+			int ch;
+			while ((ch = fgetc(stdin)) != EOF && ch != '\n')
+				;
+			continue;
+		}
+		InputEvent ev;
+		if (!parse_input_line(line, &ev))
+			continue;
+		EnterCriticalSection(&q->lock);
+		const size_t next = (q->tail + 1) % INPUT_QUEUE_CAP;
+		if (next != q->head)
+		{
+			q->items[q->tail] = ev;
+			q->tail = next;
+		}
+		/* else: queue full (a burst of moves) — drop the newest; the next
+		 * absolute move/position corrects it anyway. */
+		LeaveCriticalSection(&q->lock);
+		SetEvent(q->wake);
+	}
+	/* stdin closed: the parent went away. Let the main thread tear down. */
+	EnterCriticalSection(&q->lock);
+	q->eof = TRUE;
+	LeaveCriticalSection(&q->lock);
+	SetEvent(q->wake);
+	return 0;
+}
+
+/* Drain every queued event and inject it. Main thread only. */
+static void drain_input(rdpContext* context, InputQueue* q)
+{
+	rdpInput* input = context->input;
+	for (;;)
+	{
+		InputEvent ev;
+		EnterCriticalSection(&q->lock);
+		if (q->head == q->tail)
+		{
+			LeaveCriticalSection(&q->lock);
+			return;
+		}
+		ev = q->items[q->head];
+		q->head = (q->head + 1) % INPUT_QUEUE_CAP;
+		LeaveCriticalSection(&q->lock);
+
+		switch (ev.type)
+		{
+			case 0: freerdp_input_send_mouse_event(input, ev.flags, ev.a, ev.b); break;
+			case 1: freerdp_input_send_keyboard_event(input, ev.flags, (UINT8)ev.a); break;
+			case 2: freerdp_input_send_unicode_keyboard_event(input, ev.flags, ev.a); break;
+		}
+	}
+}
+
 int main(int argc, char* argv[])
 {
 	if (argc < 4 || argc > 6)
@@ -383,6 +637,13 @@ int main(int argc, char* argv[])
 
 	freerdp* instance = context->instance;
 
+	/* Declared before the connect so the failure `goto cleanup` doesn't jump
+	 * over an initialized declaration; the input thread is only started once we
+	 * know the session (and context->input) is live. */
+	InputQueue inq;
+	memset(&inq, 0, sizeof(inq));
+	HANDLE reader = NULL;
+
 	int rc = 0;
 	if (!freerdp_connect(instance))
 	{
@@ -397,10 +658,20 @@ int main(int argc, char* argv[])
 		goto cleanup;
 	}
 
+	/* stdin is now the input channel. If the thread/event can't be created we
+	 * carry on view-only rather than failing the session. */
+	InitializeCriticalSection(&inq.lock);
+	inq.wake = CreateEvent(NULL, FALSE, FALSE, NULL); /* auto-reset */
+	if (inq.wake)
+		reader = CreateThread(NULL, 0, input_reader_thread, &inq, 0, NULL);
+	if (!inq.wake || !reader)
+		fprintf(stderr, "[sidecar] input channel unavailable — view-only\n");
+
 	while (!freerdp_shall_disconnect_context(context))
 	{
+		/* Leave one slot for the input wake handle. */
 		HANDLE handles[64];
-		DWORD count = freerdp_get_event_handles(context, handles, 64);
+		DWORD count = freerdp_get_event_handles(context, handles, 63);
 		if (count == 0)
 		{
 			fprintf(stderr, "[sidecar] failed to get event handles\n");
@@ -408,7 +679,11 @@ int main(int argc, char* argv[])
 			break;
 		}
 
-		DWORD status = WaitForMultipleObjects(count, handles, FALSE, INFINITE);
+		DWORD total = count;
+		if (inq.wake)
+			handles[total++] = inq.wake;
+
+		DWORD status = WaitForMultipleObjects(total, handles, FALSE, INFINITE);
 		if (status == WAIT_FAILED)
 		{
 			fprintf(stderr, "[sidecar] wait failed\n");
@@ -416,9 +691,17 @@ int main(int argc, char* argv[])
 			break;
 		}
 
+		/* Inject any queued input on this (main) thread, then notice a closed
+		 * stdin (parent gone). */
+		drain_input(context, &inq);
+		if (inq.eof)
+			break;
+
 		if (!freerdp_check_event_handles(context))
 			break;
 	}
+
+	(void)reader; /* daemon thread; reclaimed on process exit */
 
 	/* If the server ended the session, surface why instead of a silent drop.
 	 * A deliberate sign-out/disconnect is a normal end; everything else

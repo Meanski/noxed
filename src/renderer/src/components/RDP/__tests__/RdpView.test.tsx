@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, waitFor, act, cleanup } from '@testing-library/react'
+import { render, screen, waitFor, act, cleanup, fireEvent } from '@testing-library/react'
 import RdpView from '../RdpView'
 import { installWindowApi, seedStore, makeSession, makeTab, WindowApiMock } from '../../../__tests__/harness'
 
@@ -20,8 +20,20 @@ class FakeImageData {
   }
 }
 
-type FrameCb = (id: string, width: number, height: number, pixels: Uint8Array) => void
+type RdpFrame = { descW: number; descH: number; x: number; y: number; w: number; h: number; pixels: Uint8Array }
+type FrameCb = (id: string, frame: RdpFrame) => void
 type CloseCb = (id: string, error?: string) => void
+
+// Full-desktop rect at the origin — the common shape in these tests.
+const fullFrame = (w: number, h: number, pixels = new Uint8Array(w * h * 4)): RdpFrame => ({
+  descW: w,
+  descH: h,
+  x: 0,
+  y: 0,
+  w,
+  h,
+  pixels,
+})
 
 function setup(opts: {
   session?: ReturnType<typeof makeSession> | null
@@ -102,7 +114,7 @@ describe('RdpView', () => {
     const { api, getFrameCb, container } = setup()
     await flushConnect(api)
     const pixels = new Uint8Array(2 * 2 * 4)
-    act(() => { getFrameCb()('rdp-1', 2, 2, pixels) })
+    act(() => { getFrameCb()('rdp-1', fullFrame(2, 2, pixels)) })
     expect(putImageData).toHaveBeenCalledTimes(1)
     const canvas = container.querySelector('canvas')!
     expect(canvas.width).toBe(2)
@@ -114,23 +126,23 @@ describe('RdpView', () => {
   it('ignores frames for other rdp session ids', async () => {
     const { api, getFrameCb } = setup()
     await flushConnect(api)
-    act(() => { getFrameCb()('other-id', 2, 2, new Uint8Array(16)) })
+    act(() => { getFrameCb()('other-id', fullFrame(2, 2)) })
     expect(putImageData).not.toHaveBeenCalled()
     expect(screen.getByText('Connecting to RDP host…')).toBeTruthy()
   })
 
-  it('coalesces multiple frames per animation frame (latest wins)', async () => {
-    let rafCb: FrameRequestCallback | null = null
-    vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => { rafCb = cb; return 1 })
+  it('applies every dirty rect at its offset (no latest-wins coalescing)', async () => {
     const { api, getFrameCb, container } = setup()
     await flushConnect(api)
     act(() => {
-      getFrameCb()('rdp-1', 2, 2, new Uint8Array(16))
-      getFrameCb()('rdp-1', 4, 4, new Uint8Array(64))
+      getFrameCb()('rdp-1', { descW: 8, descH: 8, x: 0, y: 0, w: 2, h: 2, pixels: new Uint8Array(16) })
+      getFrameCb()('rdp-1', { descW: 8, descH: 8, x: 4, y: 4, w: 2, h: 2, pixels: new Uint8Array(16) })
     })
-    act(() => { rafCb!(0) })
-    expect(putImageData).toHaveBeenCalledTimes(1)
-    expect(container.querySelector('canvas')!.width).toBe(4)
+    // Both rects paint (dropping any would tear the desktop); the canvas is
+    // sized to the desktop, not to a rect.
+    expect(putImageData).toHaveBeenCalledTimes(2)
+    expect(putImageData.mock.calls[1].slice(1)).toEqual([4, 4]) // blitted at (x,y)
+    expect(container.querySelector('canvas')!.width).toBe(8)
   })
 
   it('shows an error when the sidecar closes with an error', async () => {
@@ -177,5 +189,60 @@ describe('RdpView', () => {
     unmount()
     await act(async () => { resolveConnect('late-id') })
     await waitFor(() => expect(api.rdp.disconnect).toHaveBeenCalledWith('late-id'))
+  })
+
+  describe('input', () => {
+    // Paint a 100×100 desktop and lay the canvas out 1:1 at the origin so
+    // client coordinates map straight to desktop pixels.
+    async function connected() {
+      const ctx = setup()
+      await flushConnect(ctx.api)
+      act(() => { ctx.getFrameCb()('rdp-1', fullFrame(100, 100)) })
+      const canvas = ctx.container.querySelector('canvas')!
+      canvas.getBoundingClientRect = () => ({ left: 0, top: 0, width: 100, height: 100 }) as DOMRect
+      const pane = ctx.container.firstElementChild as HTMLElement
+      return { ...ctx, canvas, pane }
+    }
+
+    it('sends key down/up as scancodes, including the extended flag', async () => {
+      const { api, pane } = await connected()
+      fireEvent.keyDown(pane, { code: 'KeyA' })
+      fireEvent.keyUp(pane, { code: 'KeyA' })
+      fireEvent.keyDown(pane, { code: 'ArrowUp' })
+      expect(api.rdp.sendInput.mock.calls.map((c: unknown[]) => c[1])).toEqual(['kd 30 0', 'ku 30 0', 'kd 72 1'])
+    })
+
+    it('keeps Cmd shortcuts local', async () => {
+      const { api, pane } = await connected()
+      fireEvent.keyDown(pane, { code: 'KeyW', metaKey: true })
+      expect(api.rdp.sendInput).not.toHaveBeenCalled()
+    })
+
+    it('still releases a forwarded key when Cmd is held at keyup', async () => {
+      const { api, pane } = await connected()
+      fireEvent.keyDown(pane, { code: 'KeyA' })
+      fireEvent.keyUp(pane, { code: 'KeyA', metaKey: true })
+      fireEvent.keyUp(pane, { code: 'KeyZ' }) // never pressed remotely → ignored
+      expect(api.rdp.sendInput.mock.calls.map((c: unknown[]) => c[1])).toEqual(['kd 30 0', 'ku 30 0'])
+    })
+
+    it('releases held keys when the pane loses focus', async () => {
+      const { api, pane } = await connected()
+      fireEvent.keyDown(pane, { code: 'ControlLeft' })
+      fireEvent.keyDown(pane, { code: 'KeyB' })
+      fireEvent.keyUp(pane, { code: 'KeyB' })
+      api.rdp.sendInput.mockClear()
+      fireEvent.blur(pane)
+      expect(api.rdp.sendInput.mock.calls.map((c: unknown[]) => c[1])).toEqual(['ku 29 0'])
+    })
+
+    it('accumulates small wheel deltas into whole notches', async () => {
+      const { api, canvas } = await connected()
+      fireEvent.wheel(canvas, { deltaY: 30, clientX: 10, clientY: 20 })
+      fireEvent.wheel(canvas, { deltaY: 30, clientX: 10, clientY: 20 })
+      expect(api.rdp.sendInput).not.toHaveBeenCalled()
+      fireEvent.wheel(canvas, { deltaY: 50, clientX: 10, clientY: 20 })
+      expect(api.rdp.sendInput.mock.calls.map((c: unknown[]) => c[1])).toEqual(['mw 10 20 -120'])
+    })
   })
 })

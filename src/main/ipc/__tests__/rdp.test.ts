@@ -31,6 +31,12 @@ function handler(channel: string): Handler {
   return call[1] as Handler
 }
 
+function onHandler(channel: string): Handler {
+  const call = (ipcMain.on as Mock).mock.calls.find((c) => c[0] === channel)
+  if (!call) throw new Error(`No on-handler registered for ${channel}`)
+  return call[1] as Handler
+}
+
 class FakeStdin extends EventEmitter {
   write = vi.fn()
   end = vi.fn()
@@ -61,14 +67,25 @@ function connect(config: Record<string, unknown> = VALID_CONFIG, event: FakeEven
   return { proc, id, event }
 }
 
-/** Builds a valid NXF1 frame: 16-byte header + w*h*4 BGRA bytes. */
-function frame(w: number, h: number, fill = 0xab): Buffer {
+/** Builds a valid NXF2 dirty-rect frame: 32-byte header + w*h*4 RGBA bytes.
+ *  Defaults to a full-desktop rect at the origin (descW/descH = w/h). */
+function frame(
+  w: number,
+  h: number,
+  fill = 0xab,
+  opts: { x?: number; y?: number; descW?: number; descH?: number } = {},
+): Buffer {
+  const { x = 0, y = 0, descW = w, descH = h } = opts
   const data = Buffer.alloc(w * h * 4, fill)
-  const head = Buffer.alloc(16)
-  head.write('NXF1', 0, 'ascii')
-  head.writeUInt32LE(w, 4)
-  head.writeUInt32LE(h, 8)
-  head.writeUInt32LE(data.length, 12)
+  const head = Buffer.alloc(32)
+  head.write('NXF2', 0, 'ascii')
+  head.writeUInt32LE(descW, 4)
+  head.writeUInt32LE(descH, 8)
+  head.writeUInt32LE(x, 12)
+  head.writeUInt32LE(y, 16)
+  head.writeUInt32LE(w, 20)
+  head.writeUInt32LE(h, 24)
+  head.writeUInt32LE(data.length, 28)
   return Buffer.concat([head, data])
 }
 
@@ -106,10 +123,11 @@ describe('rdp:connect validation', () => {
     expect(args).toEqual(['rdp.example.com', '65535', 'admin', '640', '7680'])
   })
 
-  it('writes the password to stdin and closes it', () => {
+  it('writes the password to stdin and keeps it open for input', () => {
     const { proc } = connect()
     expect(proc.stdin.write).toHaveBeenCalledWith('secret\n')
-    expect(proc.stdin.end).toHaveBeenCalled()
+    // stdin is NOT closed: it doubles as the input channel (rdp:input).
+    expect(proc.stdin.end).not.toHaveBeenCalled()
   })
 
   it('survives a stdin write error (EPIPE from an instantly-dead sidecar)', () => {
@@ -119,16 +137,62 @@ describe('rdp:connect validation', () => {
   })
 })
 
-describe('frame stream parsing', () => {
-  it('forwards a complete frame to the renderer', () => {
+describe('rdp:input', () => {
+  it('writes one input command line to the session stdin', () => {
     const { proc, id, event } = connect()
-    proc.stdout.emit('data', frame(2, 2))
+    onHandler('rdp:input')(event, id, 'mv 100 200')
+    expect(proc.stdin.write).toHaveBeenCalledWith('mv 100 200\n')
+  })
+
+  it.each([
+    ['embedded newline smuggling a second command', 'mv 1 2\nkd 30 0'],
+    ['trailing newline', 'mv 1 2\n'],
+    ['unknown verb', 'xx 1 2'],
+    ['too few arguments', 'mv 1'],
+    ['too many arguments', 'md 1 2 0 9'],
+    ['non-numeric argument', 'mv a 2'],
+    ['oversized number', 'mv 1234567 2'],
+    ['non-ASCII padding', '\u0800'.repeat(85) + 'mv 1 2'],
+  ])('drops a line that does not match the input grammar (%s)', (_label, line) => {
+    const { proc, id, event } = connect()
+    onHandler('rdp:input')(event, id, line)
+    expect(proc.stdin.write).toHaveBeenCalledTimes(1) // password only
+  })
+
+  it('accepts every verb in the grammar, including negative wheel deltas', () => {
+    const { proc, id, event } = connect()
+    for (const line of ['md 1 2 0', 'mu 1 2 1', 'mw 5 5 -120', 'kd 72 1', 'ku 72 1', 'uc 1 233']) {
+      onHandler('rdp:input')(event, id, line)
+      expect(proc.stdin.write).toHaveBeenLastCalledWith(line + '\n')
+    }
+  })
+
+  it('drops input for an unknown/unowned session without throwing', () => {
+    const { proc, id } = connect()
+    const other = makeEvent() // different sender → ownership mismatch
+    expect(() => onHandler('rdp:input')(other, id, 'mv 1 2')).not.toThrow()
+    expect(proc.stdin.write).toHaveBeenCalledTimes(1) // password only
+    expect(proc.stdin.write).toHaveBeenCalledWith('secret\n')
+  })
+
+  it('ignores non-string payloads', () => {
+    const { proc, id, event } = connect()
+    onHandler('rdp:input')(event, id, 42)
+    expect(proc.stdin.write).toHaveBeenCalledTimes(1) // password only
+  })
+})
+
+describe('frame stream parsing', () => {
+  it('forwards a complete frame (desktop dims, rect, pixels) to the renderer', () => {
+    const { proc, id, event } = connect()
+    proc.stdout.emit('data', frame(2, 2, 0xab, { x: 4, y: 6, descW: 8, descH: 8 }))
     expect(event.sender.send).toHaveBeenCalledTimes(1)
-    const [channel, sentId, w, h, pixels] = event.sender.send.mock.calls[0]
+    const [channel, sentId, descW, descH, x, y, w, h, pixels] = event.sender.send.mock.calls[0]
     expect(channel).toBe('rdp:frame')
     expect(sentId).toBe(id)
-    expect(w).toBe(2)
-    expect(h).toBe(2)
+    expect([descW, descH]).toEqual([8, 8])
+    expect([x, y]).toEqual([4, 6])
+    expect([w, h]).toEqual([2, 2])
     expect(pixels as Buffer).toHaveLength(16)
   })
 
@@ -141,15 +205,15 @@ describe('frame stream parsing', () => {
     expect(event.sender.send).not.toHaveBeenCalled()
     proc.stdout.emit('data', full.subarray(20))
     expect(event.sender.send).toHaveBeenCalledTimes(1)
-    expect(event.sender.send.mock.calls[0][2]).toBe(3)
+    expect(event.sender.send.mock.calls[0][6]).toBe(3) // rect width
   })
 
   it('drains multiple frames from a single chunk', () => {
     const { proc, event } = connect()
     proc.stdout.emit('data', Buffer.concat([frame(1, 1, 0x01), frame(2, 1, 0x02)]))
     expect(event.sender.send).toHaveBeenCalledTimes(2)
-    expect(event.sender.send.mock.calls[0][2]).toBe(1)
-    expect(event.sender.send.mock.calls[1][2]).toBe(2)
+    expect(event.sender.send.mock.calls[0][6]).toBe(1) // rect width
+    expect(event.sender.send.mock.calls[1][6]).toBe(2)
   })
 
   it('resyncs past stray bytes before a frame', () => {
@@ -161,31 +225,33 @@ describe('frame stream parsing', () => {
 
   it('drops junk with no magic while keeping a possible split-magic tail', () => {
     const { proc, event } = connect()
-    proc.stdout.emit('data', Buffer.from('x'.repeat(20))) // >= header size, no NXF1 anywhere
+    proc.stdout.emit('data', Buffer.from('x'.repeat(40))) // >= header size, no NXF2 anywhere
     expect(event.sender.send).not.toHaveBeenCalled()
-    // Next frame still parses even though 3 junk bytes were retained.
+    // Next frame still parses even though a junk tail was retained.
     proc.stdout.emit('data', frame(1, 1))
     expect(event.sender.send).toHaveBeenCalledTimes(1)
   })
 
   it('rejects an implausible header (zero dims) and resyncs to the next frame', () => {
     const { proc, event } = connect()
-    const bogus = Buffer.alloc(16)
-    bogus.write('NXF1', 0, 'ascii') // width/height/dataLen all zero
+    const bogus = Buffer.alloc(32)
+    bogus.write('NXF2', 0, 'ascii') // descW/descH/w/h/dataLen all zero
     proc.stdout.emit('data', Buffer.concat([bogus, frame(1, 1)]))
     expect(event.sender.send).toHaveBeenCalledTimes(1)
   })
 
-  it('rejects a header whose dataLen does not match width*height*4', () => {
+  it('rejects a header whose dataLen does not match w*h*4', () => {
     const { proc, event } = connect()
-    const bad = Buffer.alloc(16)
-    bad.write('NXF1', 0, 'ascii')
-    bad.writeUInt32LE(2, 4)
-    bad.writeUInt32LE(2, 8)
-    bad.writeUInt32LE(15, 12) // should be 16
+    const bad = Buffer.alloc(32)
+    bad.write('NXF2', 0, 'ascii')
+    bad.writeUInt32LE(2, 4) // descW
+    bad.writeUInt32LE(2, 8) // descH
+    bad.writeUInt32LE(2, 20) // w
+    bad.writeUInt32LE(2, 24) // h
+    bad.writeUInt32LE(15, 28) // dataLen — should be 16
     proc.stdout.emit('data', Buffer.concat([bad, frame(1, 1)]))
     expect(event.sender.send).toHaveBeenCalledTimes(1)
-    expect(event.sender.send.mock.calls[0][2]).toBe(1)
+    expect(event.sender.send.mock.calls[0][6]).toBe(1) // rect width
   })
 
   it('does not send frames to a destroyed sender', () => {

@@ -26,12 +26,18 @@ interface RdpSession {
 
 const sessions = new Map<string, RdpSession>()
 
-// Frame header: "NXF1" + u32 width + u32 height + u32 dataLen (all LE).
-const MAGIC = 'NXF1'
+// Frame header (all LE): "NXF2" + u32 descW + u32 descH + u32 x + u32 y +
+// u32 w + u32 h + u32 dataLen. Each message is one dirty rectangle blitted at
+// (x,y) onto a descW×descH canvas — see sidecar.c.
+const MAGIC = 'NXF2'
 const MAGIC_BYTES = Buffer.from(MAGIC, 'ascii')
-const HEADER_BYTES = 16
+const HEADER_BYTES = 32
 // Guardrail: reject absurd frame sizes so a desync can't make us buffer forever.
 const MAX_FRAME_BYTES = 64 * 1024 * 1024
+// The sidecar's stdin input grammar (see sidecar.c): a two-letter verb and
+// two or three integers. Anything else is dropped at the trust boundary rather
+// than handed to the sidecar's line parser.
+const INPUT_LINE = /^(?:mv|md|mu|mw|kd|ku|uc)(?: -?\d{1,6}){2,3}$/
 // Cap how many resync events we log per session so a chatty stream can't spam.
 const MAX_RESYNC_LOGS = 5
 
@@ -102,17 +108,35 @@ function logStray(id: string, entry: RdpSession, stray: Buffer): void {
   )
 }
 
+interface FrameHeader {
+  descW: number
+  descH: number
+  x: number
+  y: number
+  w: number
+  h: number
+  dataLen: number
+}
+
 // Validates the header at the buffer head. Returns null when it is not a
-// plausible frame (bad magic, absurd dimensions, or a dataLen mismatch —
-// e.g. a false "NXF1" matched inside pixel data) so the caller can resync.
-function parseFrameHeader(buffer: Buffer): { width: number; height: number; dataLen: number } | null {
+// plausible frame (bad magic, absurd dimensions, a rect outside the desktop, or
+// a dataLen mismatch — e.g. a false "NXF2" matched inside pixel data) so the
+// caller can resync.
+function parseFrameHeader(buffer: Buffer): FrameHeader | null {
   if (buffer.toString('ascii', 0, 4) !== MAGIC) return null
-  const width = buffer.readUInt32LE(4)
-  const height = buffer.readUInt32LE(8)
-  const dataLen = buffer.readUInt32LE(12)
-  if (width === 0 || height === 0 || width > 7680 || height > 7680) return null
-  if (dataLen !== width * height * 4 || dataLen > MAX_FRAME_BYTES) return null
-  return { width, height, dataLen }
+  const descW = buffer.readUInt32LE(4)
+  const descH = buffer.readUInt32LE(8)
+  const x = buffer.readUInt32LE(12)
+  const y = buffer.readUInt32LE(16)
+  const w = buffer.readUInt32LE(20)
+  const h = buffer.readUInt32LE(24)
+  const dataLen = buffer.readUInt32LE(28)
+  if (descW === 0 || descH === 0 || descW > 7680 || descH > 7680) return null
+  if (w === 0 || h === 0 || w > descW || h > descH) return null
+  // x/y/w/h are unsigned; phrase the bounds check to avoid overflow.
+  if (x > descW - w || y > descH - h) return null
+  if (dataLen !== w * h * 4 || dataLen > MAX_FRAME_BYTES) return null
+  return { descW, descH, x, y, w, h, dataLen }
 }
 
 // Pull every complete frame out of the accumulated buffer and forward it.
@@ -133,7 +157,17 @@ function drainFrames(id: string, entry: RdpSession): void {
     const pixels = entry.buffer.subarray(HEADER_BYTES, total)
     if (!entry.sender.isDestroyed()) {
       // Copy out: the backing buffer is about to be sliced/reused.
-      entry.sender.send('rdp:frame', id, header.width, header.height, Buffer.from(pixels))
+      entry.sender.send(
+        'rdp:frame',
+        id,
+        header.descW,
+        header.descH,
+        header.x,
+        header.y,
+        header.w,
+        header.h,
+        Buffer.from(pixels),
+      )
     }
     entry.buffer = entry.buffer.subarray(total)
   }
@@ -175,8 +209,11 @@ export function registerRdpHandlers(): void {
     proc.stdin.on('error', (err) => {
       console.error(`[rdp] stdin write failed: ${toMessage(err)}`)
     })
+    // The password is the first stdin line. Keep stdin OPEN afterwards: it
+    // doubles as the input channel — rdp:input writes "mv/md/kd/…" lines that
+    // the sidecar's reader thread consumes. disposeSession kills the process to
+    // end the session (closing stdin would also stop it).
     proc.stdin.write(password + '\n')
-    proc.stdin.end()
 
     const id = randomUUID()
     const entry: RdpSession = { proc, sender: event.sender, buffer: Buffer.alloc(0), resyncs: 0 }
@@ -231,5 +268,24 @@ export function registerRdpHandlers(): void {
   ipcMain.handle('rdp:disconnect', (event, rawId: unknown) => {
     requireSession(event, rawId)
     disposeSession(rawId as string)
+  })
+
+  // High-frequency input (pointer moves, key events). Fire-and-forget via .on
+  // rather than invoke, so there's no per-event round-trip ack. Each message is
+  // one line in the sidecar's stdin grammar; anything that doesn't match it
+  // exactly (extra lines, non-ASCII, oversized numbers) is dropped.
+  ipcMain.on('rdp:input', (event, rawId: unknown, rawLine: unknown) => {
+    if (typeof rawLine !== 'string' || !INPUT_LINE.test(rawLine)) return
+    let entry: RdpSession
+    try {
+      entry = requireSession(event, rawId)
+    } catch {
+      return // unknown/unowned session — the renderer may be racing a close
+    }
+    try {
+      entry.proc.stdin.write(rawLine + '\n')
+    } catch (err) {
+      console.error(`[rdp] input write failed: ${toMessage(err)}`)
+    }
   })
 }
