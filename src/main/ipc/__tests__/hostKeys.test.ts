@@ -381,8 +381,9 @@ describe('hostkeys:respond', () => {
   it('validates the request id and decision', () => {
     const respondHandler = handlers.get('hostkeys:respond')!
     expect(() => respondHandler(sender, 42, 'trust')).toThrow('Invalid host key response')
-    expect(() => respondHandler(sender, 'id', 'maybe')).toThrow('Invalid host key response')
-    expect(respondHandler(sender, 'unknown-id', 'trust')).toBeUndefined()
+    expect(() => respondHandler(sender, 'x'.repeat(10_000), 'trust')).toThrow('Invalid host key response')
+    expect(() => respondHandler(sender, '00000000-0000-4000-8000-000000000000', 'maybe')).toThrow('Invalid host key response')
+    expect(respondHandler(sender, '00000000-0000-4000-8000-000000000000', 'trust')).toBeUndefined()
   })
 })
 

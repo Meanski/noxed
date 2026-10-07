@@ -3,7 +3,7 @@ import { homedir } from 'node:os'
 import { resolve, normalize } from 'node:path'
 
 // We test isLikelyTextFile directly (pure function, no FS dependency)
-import { isLikelyTextFile } from '../security'
+import { isLikelyTextFile, isUuid } from '../security'
 
 // For isAllowedKeyPath, we test the validation logic in isolation
 // since it depends on the filesystem. We extract the pure validation part.
@@ -139,5 +139,18 @@ describe('Security — binary file detection', () => {
       expect(isLikelyTextFile('LICENSE', 500)).toBe(true)
       expect(isLikelyTextFile('README', 500)).toBe(true)
     })
+  })
+})
+
+describe('isUuid', () => {
+  it('accepts canonical UUIDs in either case', () => {
+    expect(isUuid('3f2b8c1e-9d4a-4b7e-8c2f-1a2b3c4d5e6f')).toBe(true)
+    expect(isUuid('3F2B8C1E-9D4A-4B7E-8C2F-1A2B3C4D5E6F')).toBe(true)
+  })
+
+  it('rejects anything else', () => {
+    for (const bad of [42, null, '', 'not-a-uuid', '3f2b8c1e-9d4a-4b7e-8c2f-1a2b3c4d5e6f0', `${'a'.repeat(8)}-${'a'.repeat(4)}-0aaa-8aaa-${'a'.repeat(12)}`]) {
+      expect(isUuid(bad)).toBe(false)
+    }
   })
 })

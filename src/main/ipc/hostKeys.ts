@@ -17,7 +17,7 @@ import {
   type TrustedHostKey,
 } from './knownHosts'
 import { isUnlocked } from './keychain'
-import { validateHost, validatePort } from './security'
+import { isUuid, validateHost, validatePort } from './security'
 
 export type HostKeyDecision = 'trust' | 'once' | 'reject'
 
@@ -401,7 +401,7 @@ export function registerHostKeyHandlers(): void {
   })
 
   ipcMain.handle('hostkeys:respond', (event, rawRequestId: unknown, rawDecision: unknown) => {
-    if (typeof rawRequestId !== 'string' || !DECISIONS.has(rawDecision as HostKeyDecision)) {
+    if (!isUuid(rawRequestId) || !DECISIONS.has(rawDecision as HostKeyDecision)) {
       throw new ValidationError('Invalid host key response')
     }
     const entry = pending.get(rawRequestId)
