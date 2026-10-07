@@ -148,6 +148,7 @@ describe('parseSessionsExport', () => {
       isFavorite: true,
       pollingEnabled: false,
       connectOnStart: true,
+      agentForward: true,
       pollingIntervalSeconds: 30,
       redisDb: 3,
     }]))
@@ -155,6 +156,7 @@ describe('parseSessionsExport', () => {
       isFavorite: true,
       pollingEnabled: false,
       connectOnStart: true,
+      agentForward: true,
       pollingIntervalSeconds: 30,
       redisDb: 3,
     })
@@ -166,12 +168,14 @@ describe('parseSessionsExport', () => {
       isFavorite: 'yes',
       pollingEnabled: 1,
       connectOnStart: null,
+      agentForward: 'on',
       pollingIntervalSeconds: Number.NaN,
       redisDb: 2.5,
     }]))
     expect(result[0].isFavorite).toBeUndefined()
     expect(result[0].pollingEnabled).toBeUndefined()
     expect(result[0].connectOnStart).toBeUndefined()
+    expect(result[0].agentForward).toBeUndefined()
     expect(result[0].pollingIntervalSeconds).toBeUndefined()
     expect(result[0].redisDb).toBeUndefined()
   })

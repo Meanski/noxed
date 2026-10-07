@@ -88,7 +88,7 @@ vi.mock('ssh2', async () => {
     }
   }
 
-  return { Client: FakeClient }
+  return { Client: FakeClient, OpenSSHAgent: class { constructor(public socketPath: string) {} getIdentities(cb: (err?: Error) => void) { cb() } sign() { return true } getStream(cb: (err?: Error) => void) { cb() } } }
 })
 
 vi.mock('../sshClients', async (importOriginal) => {
@@ -181,6 +181,8 @@ describe('ssh:connect', () => {
       username: 'deploy',
       password: 'pw',
       tryKeyboard: true,
+      // Not requested, so never forwarded.
+      agentForward: false,
     })
   })
 
@@ -268,6 +270,7 @@ describe('ssh:connect', () => {
     await expect(invokeConnect(event, null)).rejects.toThrow(ValidationError)
     await expect(invokeConnect(event, { host: 'example.com', port: 22, username: '' })).rejects.toThrow(ValidationError)
     await expect(invokeConnect(event, { host: 'example.com', port: 22, username: 'u', password: 42 })).rejects.toThrow(ValidationError)
+    await expect(invokeConnect(event, { host: 'example.com', port: 22, username: 'u', agentForward: 'yes' })).rejects.toThrow('Invalid agent forwarding flag')
     await expect(invokeConnect(event, { host: 'example.com', port: 22, username: 'u', privateKey: 42 })).rejects.toThrow(ValidationError)
     await expect(invokeConnect(event, { host: 'example.com', port: 22, username: 'u', privateKey: 'k'.repeat(65 * 1024) })).rejects.toThrow(ValidationError)
     await expect(invokeConnect(event, { host: 'example.com', port: 22, username: 'u', password: 'p'.repeat(2048) })).rejects.toThrow(ValidationError)

@@ -17,7 +17,7 @@ vi.mock('ssh2', async () => {
       instances.push(this)
     }
   }
-  return { Client, __clientInstances: instances }
+  return { Client, __clientInstances: instances, OpenSSHAgent: class { constructor(public socketPath: string) {} getIdentities(cb: (err?: Error) => void) { cb() } sign() { return true } getStream(cb: (err?: Error) => void) { cb() } } }
 })
 vi.mock('../ssh', () => ({
   getOwnedSshClient: vi.fn(),
@@ -29,6 +29,7 @@ vi.mock('../sshClients', async (importOriginal) => ({
   connectSessionClient: vi.fn(),
   openJumpSocket: vi.fn(),
   defaultAuthMethods: vi.fn(() => [{ type: 'agent', username: 'u', agent: '/sock' }]),
+  localAgent: vi.fn(() => ({ socketPath: '/sock' })),
 }))
 
 import { ipcMain } from 'electron'

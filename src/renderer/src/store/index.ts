@@ -66,6 +66,8 @@ export interface Session {
   kubeconfigPath?: string
   // Connect through another saved SSH connection (ProxyJump)
   jumpHostId?: string
+  // Forward the local SSH agent to this host (opt-in)
+  agentForward?: boolean
   // Set by main process — indicates a credential exists in the OS keychain
   hasPassword?: boolean
   // Quick-connect session: lives only while its tabs are open, never saved

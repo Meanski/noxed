@@ -9,6 +9,7 @@ import { readPrivateKey } from '../../lib/sshCredentials'
 import { rdpSupported } from '../../lib/platform'
 import SshFields, { PasswordInput } from './SshFields'
 import { FormField, FormInput, FormSelect, storedPasswordPlaceholder } from './FormControls'
+import SshOptions from './SshOptions'
 
 interface K8sContextEntry {
   name: string
@@ -69,6 +70,7 @@ export default function AddConnectionModal({ onClose }: Props) {
     pollingEnabled: false,
     pollingIntervalSeconds: '60',
     connectOnStart: false,
+    agentForward: false,
     dbType: 'postgresql',
     databaseName: '',
     sslMode: 'disable',
@@ -97,6 +99,7 @@ export default function AddConnectionModal({ onClose }: Props) {
         pollingEnabled: editingSession.pollingEnabled ?? false,
         pollingIntervalSeconds: String(editingSession.pollingIntervalSeconds ?? 60),
         connectOnStart: editingSession.connectOnStart ?? false,
+        agentForward: editingSession.agentForward ?? false,
         dbType: editingSession.dbType ?? 'postgresql',
         databaseName: editingSession.databaseName ?? '',
         sslMode: editingSession.sslMode ?? 'disable',
@@ -347,6 +350,7 @@ export default function AddConnectionModal({ onClose }: Props) {
       pollingEnabled: selectedType === 'ssh' ? form.pollingEnabled : undefined,
       pollingIntervalSeconds: selectedType === 'ssh' ? Number.parseInt(form.pollingIntervalSeconds) : undefined,
       connectOnStart: selectedType === 'ssh' ? form.connectOnStart : undefined,
+      agentForward: selectedType === 'ssh' ? form.agentForward : undefined,
       dbType: selectedType === 'database' ? form.dbType : undefined,
       databaseName: selectedType === 'database' ? form.databaseName : undefined,
       sslMode: selectedType === 'database' ? form.sslMode : undefined,
@@ -936,23 +940,7 @@ function ConfigForm({ type, form, set, error, testResult, isEditing, hasExisting
         </>
       )}
 
-      {/* SSH-only options */}
-      {type === 'ssh' && (
-        <div className="space-y-2">
-          <MiniToggleRow
-            on={form.pollingEnabled}
-            onToggle={() => set('pollingEnabled', !form.pollingEnabled)}
-            label="Enable Dashboard Polling"
-            description="Monitor CPU/RAM usage on the dashboard"
-          />
-          <MiniToggleRow
-            on={form.connectOnStart}
-            onToggle={() => set('connectOnStart', !form.connectOnStart)}
-            label="Connect on App Start"
-            description="Automatically open a terminal session when noxed launches"
-          />
-        </div>
-      )}
+      {type === 'ssh' && <SshOptions form={form} set={set} />}
 
       {/* Project */}
       <FormField label="Project (optional)">
@@ -1080,29 +1068,3 @@ function ContextGroup({ label, labelTitle, contexts, selected, onSelect }: Reado
     </div>
   )
 }
-
-function MiniToggleRow({ on, onToggle, label, description }: Readonly<{
-  on: boolean; onToggle: () => void; label: string; description: string
-}>) {
-  return (
-    <div className="flex items-center gap-3 p-3 rounded-md" style={{ background: 'var(--nox-bg)', border: '1px solid var(--nox-border)' }}>
-      <button
-        type="button"
-        className="relative flex-shrink-0 cursor-pointer"
-        aria-pressed={on}
-        onClick={onToggle}
-      >
-        <div className="w-8 h-4 rounded-full transition-colors" style={{ background: on ? '#3B5CCC' : 'var(--nox-border)' }} />
-        <div
-          className="w-3.5 h-3.5 bg-white rounded-full absolute top-[1px] transition-all shadow-sm"
-          style={{ left: on ? 'calc(100% - 14px - 2px)' : 2 }}
-        />
-      </button>
-      <div>
-        <span className="font-['Inter'] text-[12px] font-medium" style={{ color: 'var(--nox-text)' }}>{label}</span>
-        <p className="font-['Inter'] text-[10.5px] mt-0.5" style={{ color: 'var(--nox-text-2)' }}>{description}</p>
-      </div>
-    </div>
-  )
-}
-
