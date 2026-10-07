@@ -7,6 +7,14 @@ on:
     paths:
       - 'native/rdp-spike/**'
       - '.github/workflows/sidecar.yml'
+  # Actions caches are scoped to the ref that saved them, but anything saved on
+  # the default branch is restorable from every PR and tag. Building on main is
+  # what seeds the vcpkg cache that release.yml and later PRs reuse.
+  push:
+    branches: [main]
+    paths:
+      - 'native/rdp-spike/**'
+      - '.github/workflows/sidecar.yml'
   workflow_dispatch:
 
 jobs:
@@ -15,7 +23,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Same key as release.yml so both workflows share the ~9 min FreeRDP build.
+      # Same key as release.yml; restorable everywhere once a main run saves it.
       - name: Cache vcpkg FreeRDP
         uses: actions/cache@v4
         with:
