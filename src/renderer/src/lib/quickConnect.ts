@@ -50,6 +50,34 @@ function parseUrl(input: string): QuickConnectTarget | null {
   }
 }
 
+interface SshArgs {
+  positional: string[]
+  flagPort?: string
+  flagUser?: string
+}
+
+// Separates `ssh` options from the destination; null when a flag that takes
+// a value has none.
+function parseArgs(tokens: string[]): SshArgs | null {
+  const args: SshArgs = { positional: [] }
+  for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i]
+    if (!token.startsWith('-')) {
+      args.positional.push(token)
+      continue
+    }
+    const flag = token.slice(0, 2)
+    // OpenSSH takes values both apart (`-p 2222`) and attached (`-p2222`).
+    const attached = token.length > 2 ? token.slice(2) : undefined
+    if (!FLAGS_WITH_VALUE.has(flag)) continue
+    const value = attached ?? tokens[++i]
+    if (value === undefined) return null
+    if (flag === '-p') args.flagPort = value
+    else if (flag === '-l') args.flagUser = value
+  }
+  return args
+}
+
 /**
  * Parses what people type or paste to reach a server: `user@host`,
  * `host:2222`, `ssh deploy@host -p 2222`, `ssh://user@host:port`.
@@ -62,24 +90,9 @@ export function parseQuickConnectTarget(input: string): QuickConnectTarget | nul
   const tokens = trimmed.split(/\s+/).filter(Boolean)
   if (tokens[0] === 'ssh') tokens.shift()
 
-  let flagPort: string | undefined
-  let flagUser: string | undefined
-  const positional: string[] = []
-  for (let i = 0; i < tokens.length; i++) {
-    const token = tokens[i]
-    if (!token.startsWith('-')) {
-      positional.push(token)
-      continue
-    }
-    const flag = token.slice(0, 2)
-    // OpenSSH takes values both apart (`-p 2222`) and attached (`-p2222`).
-    const attached = token.length > 2 ? token.slice(2) : undefined
-    if (!FLAGS_WITH_VALUE.has(flag)) continue
-    const value = attached ?? tokens[++i]
-    if (value === undefined) return null
-    if (flag === '-p') flagPort = value
-    else if (flag === '-l') flagUser = value
-  }
+  const args = parseArgs(tokens)
+  if (!args) return null
+  const { positional, flagPort, flagUser } = args
   // A second positional would be a remote command (or a typo) that quick
   // connect can't honour, so refuse rather than silently drop it.
   if (positional.length !== 1) return null

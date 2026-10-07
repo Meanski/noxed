@@ -427,11 +427,11 @@ export const useAppStore = create<AppState>((set) => ({
       }
       const focusedPaneId = s.focusedPaneId === tabId || s.activeTabId === tabId ? null : s.focusedPaneId
       // A quick-connect session goes away with the last tab that uses it.
-      const adhocSessions = s.adhocSessions.filter((a) => {
-        const inUse = tabs.some((t) => t.sessionId === a.id)
-        if (!inUse) clearAdhocPassword(a.id)
-        return inUse
-      })
+      const inUse = new Set(tabs.map((t) => t.sessionId))
+      const adhocSessions = s.adhocSessions.filter((a) => inUse.has(a.id))
+      for (const gone of s.adhocSessions) {
+        if (!inUse.has(gone.id)) clearAdhocPassword(gone.id)
+      }
       return { tabs, activeTabId, focusedPaneId, adhocSessions }
     }),
 
