@@ -26,14 +26,20 @@ describe('PasteConfirmModal', () => {
     expect(screen.getByText(/… 4 more lines/)).toBeTruthy()
   })
 
+  it("doesn't count a trailing newline as a hidden line", () => {
+    const lines = Array.from({ length: 9 }, (_, i) => `cmd ${i + 1}`)
+    setup(`${lines.join('\n')}\n`)
+    expect(screen.getByText(/… 1 more line$/)).toBeTruthy()
+  })
+
   it('calls out a single line that ends with Enter', () => {
     setup('sudo reboot\n')
     expect(screen.getByRole('dialog', { name: 'Paste a line that ends with Enter?' })).toBeTruthy()
   })
 
-  it('pastes, focused by default, without changing settings', () => {
+  it('focuses Cancel, and pastes without changing settings', () => {
     const { api, onPaste } = setup('a\r\nb')
-    expect(document.activeElement?.textContent).toBe('Paste')
+    expect(document.activeElement?.textContent).toBe('Cancel')
     fireEvent.click(screen.getByText('Paste'))
     expect(onPaste).toHaveBeenCalled()
     expect(api.settings.set).not.toHaveBeenCalled()

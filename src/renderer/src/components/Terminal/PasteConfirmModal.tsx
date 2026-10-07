@@ -16,7 +16,7 @@ export default function PasteConfirmModal({ text, onPaste, onCancel }: Readonly<
   const lines = text.replace(/\r\n?/g, '\n').split('\n')
   // A trailing newline still runs the last line, but isn't a line of its own.
   const lineCount = lines.at(-1) === '' ? lines.length - 1 : lines.length
-  const hidden = lines.length - PREVIEW_LINES
+  const hidden = lineCount - PREVIEW_LINES
 
   const paste = () => {
     if (dontAsk) {
@@ -37,8 +37,9 @@ export default function PasteConfirmModal({ text, onPaste, onCancel }: Readonly<
       width={520}
       footer={
         <>
-          <ModalButton onClick={onCancel}>Cancel</ModalButton>
-          <ModalButton variant="primary" onClick={paste} initialFocus>Paste</ModalButton>
+          {/* Cancel takes focus: a stray Enter mustn't run every pasted line. */}
+          <ModalButton onClick={onCancel} initialFocus>Cancel</ModalButton>
+          <ModalButton variant="primary" onClick={paste}>Paste</ModalButton>
         </>
       }
     >
