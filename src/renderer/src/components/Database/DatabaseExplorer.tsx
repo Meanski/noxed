@@ -5,17 +5,17 @@ import ResultsGrid from './ResultsGrid'
 import SchemaSidebar from './SchemaSidebar'
 import RowDetailPanel from './RowDetailPanel'
 import ExplainTreeView, { parseExplainJson, type ExplainNode } from './ExplainTreeView'
-import type { QueryResult, ResultSort, TableColumn } from './types'
+import type { ActivePanel, QueryResult, ResultSort, TableColumn } from './types'
+import ExplorerToolbar from './ExplorerToolbar'
+import ResultsTabsBar from './ResultsTabsBar'
 import { selectRows } from '../../lib/dbSql'
 import { useTableEditing } from './useTableEditing'
 import InsertRowModal from './InsertRowModal'
 import DeleteRowModal from './DeleteRowModal'
-import {
-  Database, Play, Loader2, AlertTriangle, Copy, Download, RotateCcw, Pin, PanelRightOpen, PanelRightClose, Activity, Eye, EyeOff, Plus, Trash2,
-} from 'lucide-react'
+import ErDiagram from './ErDiagram'
+import { Activity, AlertTriangle, Database, Loader2, Pin } from 'lucide-react'
 
 interface SavedQuery { sql: string; label: string; ts: number }
-type ActivePanel = 'results' | 'history' | 'saved' | 'explain'
 
 /* ── Watch mode diff ──────────────────────────────────────────────────── */
 
@@ -176,6 +176,10 @@ export default function DatabaseExplorer({ tab }: Readonly<{ tab: Tab }>) {
 
   function selectTable(table: string) {
     if (activeTable === table) { setActiveTable(null); return }
+    browseTable(table)
+  }
+
+  function browseTable(table: string) {
     setActiveTable(table); loadColumns(table)
     const q = selectRows(table, sqlDialect, BROWSE_LIMIT)
     setSql(q); runQuery(q, true, table)
@@ -382,6 +386,8 @@ export default function DatabaseExplorer({ tab }: Readonly<{ tab: Tab }>) {
           {activePanel === 'history' && <HistoryPanel history={history} onPick={pickQuery} />}
 
           {activePanel === 'saved' && <SavedPanel savedQueries={savedQueries} onPick={pickQuery} />}
+
+          {activePanel === 'diagram' && clientId && <ErDiagram clientId={clientId} onOpenTable={browseTable} />}
         </div>
       </div>
 
@@ -402,82 +408,6 @@ export default function DatabaseExplorer({ tab }: Readonly<{ tab: Tab }>) {
 const BROWSE_LIMIT = 100
 
 const DB_TYPE_LABELS: Record<string, string> = { mysql: 'MySQL', mariadb: 'MariaDB', postgresql: 'PostgreSQL' }
-
-function ExplorerToolbar({ running, explainRunning, hasSql, activePanel, watchActive, watchSec, watchCountdown, onRun, onExplain, onStartWatch, onStopWatch, onWatchSecChange, onSave, onClear }: Readonly<{
-  running: boolean; explainRunning: boolean; hasSql: boolean; activePanel: ActivePanel
-  watchActive: boolean; watchSec: number; watchCountdown: number
-  onRun: () => void; onExplain: () => void; onStartWatch: () => void; onStopWatch: () => void
-  onWatchSecChange: (sec: number) => void; onSave: () => void; onClear: () => void
-}>) {
-  return (
-    <div className="flex items-center gap-2 px-3 flex-shrink-0" style={{ height: 36, borderBottom: '1px solid var(--nox-border)', background: 'var(--nox-shell)' }}>
-      <button onClick={onRun} disabled={running || !hasSql} className="flex items-center gap-1.5 px-3 py-1 rounded-md text-[11px] font-medium disabled:opacity-30" style={{ background: running ? 'var(--nox-active)' : '#3B5CCC', color: running ? 'var(--nox-text-2)' : '#fff' }}>
-        {running ? <Loader2 className="w-3 h-3 animate-spin" /> : <Play className="w-3 h-3" />}{running ? 'Running…' : 'Run'}
-      </button>
-      <button onClick={onExplain} disabled={running || explainRunning || !hasSql} className="flex items-center gap-1.5 px-2 py-1 rounded-md text-[11px] font-medium disabled:opacity-30" style={{ color: activePanel === 'explain' ? '#F59E0B' : 'var(--nox-text-3)', background: activePanel === 'explain' ? 'rgba(245,158,11,0.08)' : undefined }} title="Visualize query execution plan">
-        <Activity className="w-3 h-3" /> Explain
-      </button>
-      <div className="w-px h-4" style={{ background: 'var(--nox-border)' }} />
-      <WatchControls watchActive={watchActive} watchSec={watchSec} watchCountdown={watchCountdown} running={running} hasSql={hasSql} onStart={onStartWatch} onStop={onStopWatch} onSecChange={onWatchSecChange} />
-      <kbd className="text-[9px] px-1.5 py-0.5 rounded font-mono" style={{ color: 'var(--nox-text-3)', background: 'var(--nox-active)' }}>{navigator.platform?.includes('Mac') ? '⌘' : 'Ctrl'}+Enter</kbd>
-      <div className="w-px h-4" style={{ background: 'var(--nox-border)' }} />
-      <button onClick={onSave} disabled={!hasSql} className="flex items-center gap-1 px-2 py-1 rounded text-[10px] disabled:opacity-30" style={{ color: 'var(--nox-text-3)' }} title="Save query"><Pin className="w-3 h-3" /> Save</button>
-      <div className="flex-1" />
-      <button onClick={onClear} className="flex items-center gap-1 px-2 py-1 rounded text-[10px]" style={{ color: 'var(--nox-text-3)' }}><RotateCcw className="w-3 h-3" /> Clear</button>
-    </div>
-  )
-}
-
-function WatchControls({ watchActive, watchSec, watchCountdown, running, hasSql, onStart, onStop, onSecChange }: Readonly<{
-  watchActive: boolean; watchSec: number; watchCountdown: number; running: boolean; hasSql: boolean
-  onStart: () => void; onStop: () => void; onSecChange: (sec: number) => void
-}>) {
-  return (
-    <div className="flex items-center gap-1">
-      <button onClick={watchActive ? onStop : onStart} disabled={!watchActive && (running || !hasSql)} className="flex items-center gap-1.5 px-2 py-1 rounded-md text-[11px] font-medium disabled:opacity-30" style={{ color: watchActive ? '#10B981' : 'var(--nox-text-3)', background: watchActive ? 'rgba(16,185,129,0.08)' : undefined }} title={watchActive ? 'Stop watching' : 'Auto-refresh query results'}>
-        {watchActive ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />} {watchActive ? 'Stop' : 'Watch'}
-      </button>
-      {watchActive && <span className="text-[9px] font-mono tabular-nums px-1.5 py-0.5 rounded-full animate-pulse" style={{ color: '#10B981', background: 'rgba(16,185,129,0.08)' }}>{watchCountdown}s</span>}
-      {!watchActive && (
-        <select value={watchSec} onChange={e => onSecChange(Number(e.target.value))} className="bg-transparent text-[10px] font-mono focus:outline-none cursor-pointer" style={{ color: 'var(--nox-text-3)' }}>
-          <option value={2}>2s</option>
-          <option value={5}>5s</option>
-          <option value={10}>10s</option>
-          <option value={30}>30s</option>
-        </select>
-      )}
-    </div>
-  )
-}
-
-function ResultsTabsBar({ activePanel, onSelect, results, hasExplain, historyCount, savedCount, detailOpen, onCopy, onExport, onToggleDetail, rowActions }: Readonly<{
-  activePanel: ActivePanel; onSelect: (p: ActivePanel) => void; results: QueryResult | null; hasExplain: boolean
-  historyCount: number; savedCount: number; detailOpen: boolean
-  onCopy: () => void; onExport: () => void; onToggleDetail: () => void
-  /** Present when browsing a table with a primary key; delete needs a selected row. */
-  rowActions?: { onAdd: () => void; onDelete?: () => void }
-}>) {
-  return (
-    <div className="flex items-center gap-0 flex-shrink-0" style={{ borderBottom: '1px solid var(--nox-border)', background: 'var(--nox-shell)' }}>
-      <PanelTab active={activePanel === 'results'} onClick={() => onSelect('results')} badge={results ? results.rowCount : undefined}>Results</PanelTab>
-      <PanelTab active={activePanel === 'explain'} onClick={() => onSelect('explain')} badge={hasExplain ? 1 : undefined}>Explain</PanelTab>
-      <PanelTab active={activePanel === 'history'} onClick={() => onSelect('history')} badge={historyCount || undefined}>History</PanelTab>
-      <PanelTab active={activePanel === 'saved'} onClick={() => onSelect('saved')} badge={savedCount || undefined}>Saved</PanelTab>
-      <div className="flex-1" />
-      {results && activePanel === 'results' && <>
-        <span className="text-[10px] font-mono mr-2" style={{ color: 'var(--nox-text-3)' }}>{results.columns.length} cols · {results.duration}ms</span>
-        {rowActions && <>
-          <TinyBtn title="Add row" onClick={rowActions.onAdd}><Plus className="w-3 h-3" /></TinyBtn>
-          {rowActions.onDelete && <TinyBtn title="Delete selected row" onClick={rowActions.onDelete}><Trash2 className="w-3 h-3" /></TinyBtn>}
-        </>}
-        <TinyBtn title="Copy" onClick={onCopy}><Copy className="w-3 h-3" /></TinyBtn>
-        <TinyBtn title="CSV" onClick={onExport}><Download className="w-3 h-3" /></TinyBtn>
-        <TinyBtn title={detailOpen ? 'Close detail' : 'Row detail'} onClick={onToggleDetail} active={detailOpen}>{detailOpen ? <PanelRightClose className="w-3 h-3" /> : <PanelRightOpen className="w-3 h-3" />}</TinyBtn>
-        <div className="w-2" />
-      </>}
-    </div>
-  )
-}
 
 function HistoryPanel({ history, onPick }: Readonly<{
   history: { sql: string; ts: number; duration?: number; rows?: number }[]; onPick: (sql: string) => void
@@ -517,28 +447,9 @@ function SavedPanel({ savedQueries, onPick }: Readonly<{ savedQueries: SavedQuer
   )
 }
 
-/* ── Smart cell renderer ───────────────────────────────────────────────── */
-
-// Returns the parsed object for object values / JSON-looking strings, else null.
-/* ── Explain tree visualizer ───────────────────────────────────────────── */
-
 /* ── Helpers ────────────────────────────────────────────────────────────── */
 
 function filterTables(tables: string[], filter: string): string[] {
   if (!filter) return tables
   return tables.filter(t => t.toLowerCase().includes(filter.toLowerCase()))
-}
-
-function PanelTab({ active, onClick, badge, children }: Readonly<{ active: boolean; onClick: () => void; badge?: number; children: React.ReactNode }>) {
-  return (
-    <button onClick={onClick} className="flex items-center gap-1.5 px-4 py-2 text-[11px] font-medium relative" style={{ color: active ? 'var(--nox-text)' : 'var(--nox-text-3)' }}>
-      {children}
-      {badge !== undefined && badge > 0 && <span className="text-[9px] font-mono px-1.5 py-[1px] rounded-full" style={{ background: active ? 'rgba(59,92,204,0.1)' : 'var(--nox-active)', color: active ? '#3B5CCC' : 'var(--nox-text-3)' }}>{badge}</span>}
-      {active && <span className="absolute bottom-0 left-2 right-2 h-[2px] rounded-full" style={{ background: '#3B5CCC' }} />}
-    </button>
-  )
-}
-
-function TinyBtn({ title, onClick, active, children }: Readonly<{ title: string; onClick: () => void; active?: boolean; children: React.ReactNode }>) {
-  return <button type="button" onClick={onClick} title={title} aria-label={title} className="w-6 h-6 flex items-center justify-center rounded mr-0.5" style={{ color: active ? '#3B5CCC' : 'var(--nox-text-2)' }} onMouseEnter={e => (e.currentTarget.style.background = 'var(--nox-hover)')} onMouseLeave={e => (e.currentTarget.style.background = '')}>{children}</button>
 }

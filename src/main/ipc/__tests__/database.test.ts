@@ -18,7 +18,7 @@ vi.mock('mysql2/promise', () => ({
 
 import { ipcMain } from 'electron'
 import * as pg from 'pg'
-import { registerDatabaseHandlers } from '../database'
+import { assembleSchema, registerDatabaseHandlers } from '../database'
 
 registerDatabaseHandlers()
 
@@ -83,6 +83,21 @@ describe('db:query parameter validation', () => {
   })
 })
 
+async function connectMysql(responses: unknown[]) {
+  const query = vi.fn()
+  for (const r of responses) query.mockResolvedValueOnce(r)
+  const mysql = (await import('mysql2/promise')).default
+  ;(mysql.createPool as Mock).mockReturnValue({
+    query,
+    getConnection: vi.fn().mockResolvedValue({ release: vi.fn() }),
+    end: vi.fn().mockResolvedValue(undefined),
+  })
+  const id = (await handler('db:connect')(event, {
+    dbType: 'mysql', host: 'db.example.com', port: 3306, username: 'u', database: 'appdb',
+  })) as string
+  return { id, query }
+}
+
 describe('table metadata and write results', () => {
   it('reads postgres columns and its primary key in key order', async () => {
     const id = await connectPg()
@@ -105,20 +120,6 @@ describe('table metadata and write results', () => {
     expect(String(pgQuery.mock.calls.at(-1)?.[0])).toContain('k.ord <= i.indnkeyatts')
   })
 
-  async function connectMysql(responses: unknown[]) {
-    const query = vi.fn()
-    for (const r of responses) query.mockResolvedValueOnce(r)
-    const mysql = (await import('mysql2/promise')).default
-    ;(mysql.createPool as Mock).mockReturnValue({
-      query,
-      getConnection: vi.fn().mockResolvedValue({ release: vi.fn() }),
-      end: vi.fn().mockResolvedValue(undefined),
-    })
-    const id = (await handler('db:connect')(event, {
-      dbType: 'mysql', host: 'db.example.com', port: 3306, username: 'u', database: 'appdb',
-    })) as string
-    return { id, query }
-  }
 
   it('reports affected rows for mysql writes', async () => {
     const { id } = await connectMysql([[{ affectedRows: 1, insertId: 0 }, undefined]])
@@ -134,5 +135,61 @@ describe('table metadata and write results', () => {
     const info = (await handler('db:tableInfo')(event, id, 'members')) as { primaryKey: string[] }
     expect(info.primaryKey).toEqual(['org', 'id'])
     expect(query).toHaveBeenLastCalledWith("SHOW KEYS FROM ?? WHERE Key_name = 'PRIMARY'", ['members'])
+  })
+})
+
+describe('schema for ER diagrams', () => {
+  const col = (table_name: string, column_name: string) => ({ table_name, column_name, data_type: 'int', is_nullable: 'NO' })
+
+  it('groups columns and keys per table, dropping relations to cut tables', () => {
+    const schema = assembleSchema(
+      [col('users', 'id'), col('orders', 'id'), col('orders', 'user_id')],
+      [{ table_name: 'users', column_name: 'id' }, { table_name: 'orders', column_name: 'id' }],
+      [
+        { name: 'orders_user', table: 'orders', columns: ['user_id'], refTable: 'users', refColumns: ['id'] },
+        { name: 'ghost', table: 'orders', columns: ['x'], refTable: 'missing', refColumns: ['id'] },
+      ],
+    )
+    expect(schema.tables).toEqual([
+      { name: 'users', columns: [{ name: 'id', type: 'int', nullable: false }], primaryKey: ['id'] },
+      { name: 'orders', columns: [{ name: 'id', type: 'int', nullable: false }, { name: 'user_id', type: 'int', nullable: false }], primaryKey: ['id'] },
+    ])
+    expect(schema.foreignKeys.map((f) => f.name)).toEqual(['orders_user'])
+    expect(schema.truncated).toBe(false)
+  })
+
+  it('caps very large schemas and says so', () => {
+    const rows = Array.from({ length: 305 }, (_, i) => col(`t${i}`, 'id'))
+    const schema = assembleSchema(rows, [], [])
+    expect(schema.tables).toHaveLength(300)
+    expect(schema.truncated).toBe(true)
+  })
+
+  it('reads the postgres catalog', async () => {
+    const id = await connectPg()
+    const pgQuery = (pg as unknown as { __query: Mock }).__query
+    pgQuery
+      .mockResolvedValueOnce({ rows: [col('users', 'id'), col('orders', 'user_id')] })
+      .mockResolvedValueOnce({ rows: [{ table_name: 'users', column_name: 'id' }] })
+      .mockResolvedValueOnce({ rows: [{ name: 'fk', table_name: 'orders', ref_table: 'users', columns: ['user_id'], ref_columns: ['id'] }] })
+    const schema = (await handler('db:schema')(event, id)) as { foreignKeys: unknown[] }
+    expect(schema.foreignKeys).toEqual([{ name: 'fk', table: 'orders', columns: ['user_id'], refTable: 'users', refColumns: ['id'] }])
+    const sql = pgQuery.mock.calls.slice(-3).map((c) => String(c[0]))
+    // The connection's schema, not 'public'; key columns without INCLUDE ones.
+    expect(sql.every((q) => q.includes('current_schema()'))).toBe(true)
+    expect(sql[1]).toContain('k.ord <= i.indnkeyatts')
+  })
+
+  it('groups mysql composite foreign keys by constraint', async () => {
+    const { id } = await connectMysql([
+      [[col('a', 'x'), col('a', 'y'), col('b', 'x'), col('b', 'y')]],
+      [[]],
+      [[
+        { name: 'ab', table_name: 'a', column_name: 'x', ref_table: 'b', ref_column: 'x' },
+        { name: 'ab', table_name: 'a', column_name: 'y', ref_table: 'b', ref_column: 'y' },
+      ]],
+    ])
+    const schema = (await handler('db:schema')(event, id)) as { foreignKeys: unknown[] }
+    expect(schema.foreignKeys).toEqual([{ name: 'ab', table: 'a', columns: ['x', 'y'], refTable: 'b', refColumns: ['x', 'y'] }])
   })
 })

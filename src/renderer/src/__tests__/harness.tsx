@@ -79,6 +79,7 @@ export function buildWindowApi() {
       query: vi.fn().mockResolvedValue({ columns: [], rows: [], rowCount: 0, duration: 1 }),
       tables: vi.fn().mockResolvedValue([]),
       tableInfo: vi.fn().mockResolvedValue([]),
+      schema: vi.fn().mockResolvedValue({ tables: [], foreignKeys: [], truncated: false }),
     },
     localfs: {
       home: vi.fn().mockResolvedValue('/home/user'),
