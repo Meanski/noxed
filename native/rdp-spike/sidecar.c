@@ -49,6 +49,7 @@
 #include <string.h>
 
 #ifdef _WIN32
+#include <winsock2.h>
 #include <io.h>
 #include <fcntl.h>
 #endif
@@ -597,6 +598,18 @@ int main(int argc, char* argv[])
 	RDP_CLIENT_ENTRY_POINTS entry = { 0 };
 	sidecar_entry(&entry);
 
+#ifdef _WIN32
+	/* FreeRDP's own Windows client initializes Winsock in its global init;
+	 * without it getaddrinfo fails and freerdp_connect reports
+	 * DNS_NAME_NOT_FOUND even for a valid host. */
+	WSADATA wsaData;
+	if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0)
+	{
+		fprintf(stderr, "[sidecar] WSAStartup failed\n");
+		return 1;
+	}
+#endif
+
 	rdpContext* context = freerdp_client_context_new(&entry);
 	if (!context)
 	{
@@ -725,5 +738,8 @@ int main(int argc, char* argv[])
 
 cleanup:
 	freerdp_client_context_free(context);
+#ifdef _WIN32
+	WSACleanup();
+#endif
 	return rc;
 }

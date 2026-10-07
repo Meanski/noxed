@@ -55,6 +55,11 @@ mac:
     - zip
 win:
   icon: build/icon.png
+  # Self-contained RDP sidecar built from native/rdp-spike/CMakeLists.txt with
+  # vcpkg's x64-windows-static FreeRDP; checked by scripts/verify-sidecar.js.
+  extraResources:
+    - from: native/rdp-spike/rdp-sidecar.exe
+      to: rdp-sidecar.exe
   target:
     - nsis
 linux:
