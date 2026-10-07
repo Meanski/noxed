@@ -64,8 +64,28 @@ describe('HostKeyPrompt', () => {
     expect(api.hostKeys.respond).toHaveBeenCalledWith('a', 'once')
     // Queued prompts are answered in order.
     expect(screen.getByRole('dialog', { name: 'Trust second.com?' })).toBeTruthy()
-    fireEvent.keyDown(window, { key: 'Escape' })
+    fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' })
     expect(api.hostKeys.respond).toHaveBeenCalledWith('b', 'reject')
+  })
+
+  it('never lets a double click consume the next queued prompt', () => {
+    const { api, prompt } = setup()
+    prompt(newPrompt({ requestId: 'a' }))
+    prompt(newPrompt({ requestId: 'b', host: 'second.com' }))
+    const trust = screen.getByText('Trust and connect')
+    fireEvent.click(trust)
+    fireEvent.click(trust)
+    expect(api.hostKeys.respond.mock.calls.every((c: unknown[]) => c[0] === 'a')).toBe(true)
+    expect(screen.getByRole('dialog', { name: 'Trust second.com?' })).toBeTruthy()
+  })
+
+  it('explains a revoked key and only offers to close', () => {
+    const { api, prompt } = setup()
+    prompt(newPrompt({ status: 'revoked' }))
+    expect(screen.getByRole('dialog', { name: 'Host key revoked for example.com' })).toBeTruthy()
+    expect(document.activeElement?.textContent).toBe('Close')
+    fireEvent.click(screen.getByText('Close'))
+    expect(api.hostKeys.respond).toHaveBeenCalledWith('req-1', 'reject')
   })
 
   it('warns loudly about a changed key and defaults to cancelling', () => {

@@ -129,12 +129,25 @@ describe('verifyHostKey', () => {
     expect(sent).toHaveLength(0)
   })
 
-  it('reports a known_hosts mismatch as a changed key', async () => {
+  it('reports a known_hosts mismatch as a changed key, with the old fingerprint', async () => {
     knownHostsFile = `example.com ssh-ed25519 ${KEY1.toString('base64')}\n`
     const result = verifyHostKey('example.com', 22, KEY2)
     await respond('reject')
     expect(await result).toBe(false)
     expect(lastPrompt().status).toBe('changed')
+    expect(lastPrompt().knownFingerprints).toEqual(['SHA256:xKnb9PezoHKXZuSpMMT7c+br+DazQE/4vX0zxhNqoJ4'])
+  })
+
+  it('refuses a key revoked in known_hosts even if noxed trusted it', async () => {
+    const first = verifyHostKey('example.com', 22, KEY1)
+    await respond('trust')
+    await first
+    knownHostsFile = `@revoked * ssh-ed25519 ${KEY1.toString('base64')}\n`
+    const result = verifyHostKey('example.com', 22, KEY1)
+    // Even a "trust" answer can't override revocation.
+    await respond('trust')
+    expect(await result).toBe(false)
+    expect(lastPrompt().status).toBe('revoked')
   })
 
   it('mentions other trusted key types for a new key type', async () => {

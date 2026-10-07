@@ -1,4 +1,4 @@
-import { useEffect, useId, type ReactNode } from 'react'
+import { useId, useLayoutEffect, useRef, type ReactNode } from 'react'
 import { ACCENT, DANGER } from '../lib/colors'
 
 interface ModalProps {
@@ -11,47 +11,61 @@ interface ModalProps {
   width?: number
 }
 
-// Shared dialog chrome: backdrop, Escape to close, and labelled aria-modal
-// semantics. Callers own the body and footer buttons.
+// Shared dialog chrome on a native <dialog> opened with showModal(), so it sits
+// in the top layer, contains focus, and makes the rest of the app inert.
 export default function Modal({ title, onClose, children, footer, tone = 'default', width = 440 }: Readonly<ModalProps>) {
   const titleId = useId()
+  const dialogRef = useRef<HTMLDialogElement>(null)
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
+  useLayoutEffect(() => {
+    const dialog = dialogRef.current
+    if (!dialog) return
+    // jsdom has no showModal(); the open attribute is the closest stand-in.
+    if (typeof dialog.showModal === 'function') {
+      if (!dialog.open) dialog.showModal()
+    } else {
+      dialog.setAttribute('open', '')
     }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [onClose])
+    // showModal() focuses the first focusable element, which would override
+    // React's autoFocus — so buttons opt in via data-autofocus instead.
+    dialog.querySelector<HTMLElement>('[data-autofocus]')?.focus()
+  }, [])
+
+  // Escape is handled here (and the native cancel suppressed) so onClose runs
+  // exactly once, in Electron and in tests alike.
+  const onKeyDown = (e: React.KeyboardEvent<HTMLDialogElement>) => {
+    if (e.key !== 'Escape') return
+    e.preventDefault()
+    onClose()
+  }
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50">
-      <dialog
-        open
-        aria-modal="true"
-        aria-labelledby={titleId}
-        className="relative m-0 p-0 rounded-xl shadow-2xl overflow-hidden"
-        style={{ width, maxWidth: 'calc(100vw - 32px)', background: 'var(--nox-shell)', border: '1px solid var(--nox-border)' }}
-      >
-        <div className="px-5 pt-4 pb-3" style={{ borderBottom: '1px solid var(--nox-border)' }}>
-          <h2
-            id={titleId}
-            className="font-['Plus_Jakarta_Sans'] font-bold text-[15px]"
-            style={{ color: tone === 'danger' ? DANGER : 'var(--nox-text)' }}
-          >
-            {title}
-          </h2>
+    <dialog
+      ref={dialogRef}
+      aria-labelledby={titleId}
+      onKeyDown={onKeyDown}
+      onCancel={(e) => e.preventDefault()}
+      className="m-auto p-0 rounded-xl shadow-2xl overflow-hidden backdrop:bg-black/50"
+      style={{ width, maxWidth: 'calc(100vw - 32px)', background: 'var(--nox-shell)', border: '1px solid var(--nox-border)' }}
+    >
+      <div className="px-5 pt-4 pb-3" style={{ borderBottom: '1px solid var(--nox-border)' }}>
+        <h2
+          id={titleId}
+          className="font-['Plus_Jakarta_Sans'] font-bold text-[15px]"
+          style={{ color: tone === 'danger' ? DANGER : 'var(--nox-text)' }}
+        >
+          {title}
+        </h2>
+      </div>
+      <div className="px-5 py-4 font-['Inter'] text-[12.5px] space-y-3" style={{ color: 'var(--nox-text-2)' }}>
+        {children}
+      </div>
+      {footer && (
+        <div className="px-5 py-3 flex justify-end gap-2" style={{ borderTop: '1px solid var(--nox-border)' }}>
+          {footer}
         </div>
-        <div className="px-5 py-4 font-['Inter'] text-[12.5px] space-y-3" style={{ color: 'var(--nox-text-2)' }}>
-          {children}
-        </div>
-        {footer && (
-          <div className="px-5 py-3 flex justify-end gap-2" style={{ borderTop: '1px solid var(--nox-border)' }}>
-            {footer}
-          </div>
-        )}
-      </dialog>
-    </div>
+      )}
+    </dialog>
   )
 }
 
@@ -59,7 +73,8 @@ interface ModalButtonProps {
   children: ReactNode
   onClick: () => void
   variant?: 'primary' | 'secondary' | 'danger'
-  autoFocus?: boolean
+  /** Receives focus when the modal opens. */
+  initialFocus?: boolean
   disabled?: boolean
 }
 
@@ -69,12 +84,12 @@ const BUTTON_STYLES: Record<NonNullable<ModalButtonProps['variant']>, React.CSSP
   danger: { background: DANGER, color: '#fff' },
 }
 
-export function ModalButton({ children, onClick, variant = 'secondary', autoFocus, disabled }: Readonly<ModalButtonProps>) {
+export function ModalButton({ children, onClick, variant = 'secondary', initialFocus, disabled }: Readonly<ModalButtonProps>) {
   return (
     <button
       type="button"
       onClick={onClick}
-      autoFocus={autoFocus}
+      data-autofocus={initialFocus ? '' : undefined}
       disabled={disabled}
       className="px-3.5 py-1.5 rounded-md text-[12.5px] font-medium disabled:opacity-50"
       style={BUTTON_STYLES[variant]}

@@ -3,7 +3,13 @@ import { createHash, createHmac, timingSafeEqual } from 'node:crypto'
 // Pure helpers for SSH host-key trust: decoding the server's public key blob,
 // OpenSSH-style fingerprints, and matching against known_hosts content.
 
-export type HostKeyMatch = 'match' | 'mismatch' | 'other-type' | 'none'
+export type HostKeyMatch = 'revoked' | 'match' | 'mismatch' | 'other-type' | 'none'
+
+export interface KnownHostsVerdict {
+  verdict: HostKeyMatch
+  /** Keys recorded for this host under the presented key type (for mismatch prompts). */
+  sameTypeKeys: string[]
+}
 
 export interface TrustedHostKey {
   host: string
@@ -77,29 +83,32 @@ function parseKnownHostsLine(rawLine: string): KnownHostsLine | null {
 }
 
 /**
- * Compares a presented key against OpenSSH known_hosts text. `mismatch` means
- * the host is recorded with this key type but a different key (or the key is
- * marked @revoked); `other-type` means it is only known under other key types.
+ * Compares a presented key against OpenSSH known_hosts text. Every line is
+ * scanned so an `@revoked` entry wins regardless of where it appears.
+ * `mismatch` means the host is recorded with this key type but a different
+ * key; `other-type` means it is only known under other key types.
  */
-export function matchKnownHosts(text: string, host: string, port: number, keyType: string, key: string): HostKeyMatch {
+export function matchKnownHosts(text: string, host: string, port: number, keyType: string, key: string): KnownHostsVerdict {
   const name = knownHostsName(host, port)
-  let sawSameType = false
+  const sameTypeKeys: string[] = []
+  let matched = false
   let sawOtherType = false
   for (const rawLine of text.split('\n')) {
     const entry = parseKnownHostsLine(rawLine)
     if (!entry || entry.marker === '@cert-authority' || !hostFieldMatches(entry.hostField, name)) continue
     if (entry.marker === '@revoked') {
-      if (entry.key === key) return 'mismatch'
+      if (entry.key === key) return { verdict: 'revoked', sameTypeKeys: [] }
     } else if (entry.keyType !== keyType) {
       sawOtherType = true
     } else if (entry.key === key) {
-      return 'match'
+      matched = true
     } else {
-      sawSameType = true
+      sameTypeKeys.push(entry.key)
     }
   }
-  if (sawSameType) return 'mismatch'
-  return sawOtherType ? 'other-type' : 'none'
+  if (matched) return { verdict: 'match', sameTypeKeys: [] }
+  if (sameTypeKeys.length > 0) return { verdict: 'mismatch', sameTypeKeys }
+  return { verdict: sawOtherType ? 'other-type' : 'none', sameTypeKeys: [] }
 }
 
 /** Same verdicts as matchKnownHosts, against noxed's own trusted-key list. */

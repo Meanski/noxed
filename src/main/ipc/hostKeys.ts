@@ -11,7 +11,6 @@ import {
   keyTypeOf,
   matchKnownHosts,
   matchTrustedKeys,
-  type HostKeyMatch,
   type TrustedHostKey,
 } from './knownHosts'
 import { validateHost, validatePort } from './security'
@@ -29,7 +28,8 @@ export interface HostKeyPrompt {
   port: number
   keyType: string
   fingerprint: string
-  status: 'new' | 'changed'
+  /** `revoked` is informational: the connection is refused whatever the answer. */
+  status: 'new' | 'changed' | 'revoked'
   /** Fingerprint(s) previously trusted for this key type (changed keys only). */
   knownFingerprints: string[]
   /** Other key types this host is already trusted under (new keys only). */
@@ -106,37 +106,36 @@ function askUser(prompt: Omit<HostKeyPrompt, 'requestId'>): Promise<HostKeyDecis
   })
 }
 
+async function askAndRemember(prompt: Omit<HostKeyPrompt, 'requestId'>, key: string): Promise<boolean> {
+  const decision = await askUser(prompt)
+  if (decision === 'trust') saveTrustedHostKey(prompt.host, prompt.port, prompt.keyType, key, prompt.fingerprint)
+  return decision !== 'reject'
+}
+
 async function decide(host: string, port: number, blob: Buffer): Promise<boolean> {
   const keyType = keyTypeOf(blob)
   const key = blob.toString('base64')
   const fingerprint = fingerprintOf(blob)
-  const trusted = listTrustedHostKeys()
+  const prompt = { host, port, keyType, fingerprint, knownFingerprints: [] as string[], otherKeyTypes: [] as string[] }
 
-  let verdict: HostKeyMatch = matchTrustedKeys(trusted, host, port, keyType, key)
-  if (verdict === 'match') return true
-  if (verdict !== 'mismatch') {
-    // noxed has no record for this key type; fall back to OpenSSH's file so
-    // hosts the user already trusts there don't prompt again.
-    const openssh = matchKnownHosts(readOpenSshKnownHosts(), host, port, keyType, key)
-    if (openssh === 'match') return true
-    if (openssh === 'mismatch' || verdict === 'none') verdict = openssh
+  // OpenSSH's file is always consulted first: an @revoked key is refused even
+  // if noxed trusted it earlier.
+  const openssh = matchKnownHosts(readOpenSshKnownHosts(), host, port, keyType, key)
+  if (openssh.verdict === 'revoked') {
+    await askUser({ ...prompt, status: 'revoked' })
+    return false
   }
 
+  const trusted = listTrustedHostKeys()
+  const ours = matchTrustedKeys(trusted, host, port, keyType, key)
+  if (ours === 'match' || openssh.verdict === 'match') return true
+
   const forHost = trusted.filter((e) => e.host.toLowerCase() === host.toLowerCase() && e.port === port)
-  const changed = verdict === 'mismatch'
-  const decision = await askUser({
-    host,
-    port,
-    keyType,
-    fingerprint,
-    status: changed ? 'changed' : 'new',
-    knownFingerprints: changed
-      ? forHost.filter((e) => e.keyType === keyType).map((e) => fingerprintOfB64(e.key))
-      : [],
-    otherKeyTypes: changed ? [] : [...new Set(forHost.map((e) => e.keyType))],
-  })
-  if (decision === 'trust') saveTrustedHostKey(host, port, keyType, key, fingerprint)
-  return decision !== 'reject'
+  if (ours === 'mismatch' || openssh.verdict === 'mismatch') {
+    const previous = [...forHost.filter((e) => e.keyType === keyType).map((e) => e.key), ...openssh.sameTypeKeys]
+    return askAndRemember({ ...prompt, status: 'changed', knownFingerprints: [...new Set(previous.map(fingerprintOfB64))] }, key)
+  }
+  return askAndRemember({ ...prompt, status: 'new', otherKeyTypes: [...new Set(forHost.map((e) => e.keyType))] }, key)
 }
 
 /** Resolves true when the presented host key is trusted (or the user accepts it). */

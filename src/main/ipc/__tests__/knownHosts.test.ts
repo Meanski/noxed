@@ -82,26 +82,35 @@ describe('matchKnownHosts', () => {
   ].join('\n')
 
   it('accepts a matching key, hashed or not', () => {
-    expect(matchKnownHosts(file, 'example.com', 22, 'ssh-ed25519', KEY1)).toBe('match')
-    expect(matchKnownHosts(file, 'example.com', 2222, 'ssh-ed25519', KEY2)).toBe('match')
+    expect(matchKnownHosts(file, 'example.com', 22, 'ssh-ed25519', KEY1).verdict).toBe('match')
+    expect(matchKnownHosts(file, 'example.com', 2222, 'ssh-ed25519', KEY2).verdict).toBe('match')
   })
 
   it('flags a different key of the same type as a mismatch', () => {
-    expect(matchKnownHosts(file, 'example.com', 22, 'ssh-ed25519', KEY2)).toBe('mismatch')
+    expect(matchKnownHosts(file, 'example.com', 22, 'ssh-ed25519', KEY2).verdict).toBe('mismatch')
   })
 
   it('distinguishes hosts only known under another key type', () => {
-    expect(matchKnownHosts(file, 'rsa-only.com', 22, 'ssh-ed25519', KEY1)).toBe('other-type')
+    expect(matchKnownHosts(file, 'rsa-only.com', 22, 'ssh-ed25519', KEY1).verdict).toBe('other-type')
   })
 
-  it('treats a @revoked key as a mismatch and ignores @cert-authority lines', () => {
-    expect(matchKnownHosts(file, 'revoked.com', 22, 'ssh-ed25519', KEY1)).toBe('mismatch')
-    expect(matchKnownHosts(file, 'web.example.com', 22, 'ssh-ed25519', KEY2)).toBe('none')
+  it('reports a @revoked key and ignores @cert-authority lines', () => {
+    expect(matchKnownHosts(file, 'revoked.com', 22, 'ssh-ed25519', KEY1).verdict).toBe('revoked')
+    expect(matchKnownHosts(file, 'web.example.com', 22, 'ssh-ed25519', KEY2).verdict).toBe('none')
+  })
+
+  it('lets a later @revoked line override an earlier match', () => {
+    const revokedAfterMatch = `example.com ssh-ed25519 ${KEY1}\n@revoked * ssh-ed25519 ${KEY1}`
+    expect(matchKnownHosts(revokedAfterMatch, 'example.com', 22, 'ssh-ed25519', KEY1).verdict).toBe('revoked')
+  })
+
+  it('returns the recorded keys of the same type on a mismatch', () => {
+    expect(matchKnownHosts(file, 'example.com', 22, 'ssh-ed25519', KEY2)).toEqual({ verdict: 'mismatch', sameTypeKeys: [KEY1] })
   })
 
   it('returns none for unknown hosts and ports', () => {
-    expect(matchKnownHosts(file, 'nowhere.com', 22, 'ssh-ed25519', KEY1)).toBe('none')
-    expect(matchKnownHosts(file, 'example.com', 2200, 'ssh-ed25519', KEY1)).toBe('none')
+    expect(matchKnownHosts(file, 'nowhere.com', 22, 'ssh-ed25519', KEY1).verdict).toBe('none')
+    expect(matchKnownHosts(file, 'example.com', 2200, 'ssh-ed25519', KEY1).verdict).toBe('none')
   })
 })
 

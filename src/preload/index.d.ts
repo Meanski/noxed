@@ -30,7 +30,7 @@ interface HostKeyPrompt {
   port: number
   keyType: string
   fingerprint: string
-  status: 'new' | 'changed'
+  status: 'new' | 'changed' | 'revoked'
   knownFingerprints: string[]
   otherKeyTypes: string[]
 }

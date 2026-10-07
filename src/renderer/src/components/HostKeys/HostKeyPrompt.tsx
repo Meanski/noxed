@@ -44,24 +44,45 @@ export default function HostKeyPrompt() {
   const current = queue[0]
   if (!current) return null
 
+  // Removal by id keeps a double click (or Escape racing a click) from
+  // consuming the next queued prompt; main ignores the duplicate answer.
   const answer = (decision: Decision) => {
-    setQueue((q) => q.slice(1))
+    setQueue(withoutRequest(current.requestId))
     window.api.hostKeys.respond(current.requestId, decision).catch((err: unknown) => {
       useAppStore.getState().addNotification({ type: 'error', message: ipcErrorMessage(err, 'Could not send host key decision') })
     })
   }
   const reject = () => answer('reject')
 
+  if (current.status === 'revoked') {
+    return (
+      <Modal
+        key={current.requestId}
+        title={`Host key revoked for ${hostLabel(current)}`}
+        tone="danger"
+        onClose={reject}
+        footer={<ModalButton onClick={reject} initialFocus>Close</ModalButton>}
+      >
+        <p>
+          This {current.keyType} key is marked <code className="font-['JetBrains_Mono']">@revoked</code> in
+          ~/.ssh/known_hosts, so noxed won&apos;t connect with it.
+        </p>
+        <Fingerprint label="Revoked fingerprint" value={current.fingerprint} />
+      </Modal>
+    )
+  }
+
   if (current.status === 'changed') {
     return (
       <Modal
+        key={current.requestId}
         title={`Host key changed for ${hostLabel(current)}`}
         tone="danger"
         onClose={reject}
         width={480}
         footer={
           <>
-            <ModalButton onClick={reject} autoFocus>Cancel connection</ModalButton>
+            <ModalButton onClick={reject} initialFocus>Cancel connection</ModalButton>
             <ModalButton variant="danger" onClick={() => answer('trust')}>Replace key and connect</ModalButton>
           </>
         }
@@ -81,13 +102,14 @@ export default function HostKeyPrompt() {
 
   return (
     <Modal
+      key={current.requestId}
       title={`Trust ${hostLabel(current)}?`}
       onClose={reject}
       footer={
         <>
           <ModalButton onClick={reject}>Cancel</ModalButton>
           <ModalButton onClick={() => answer('once')}>Connect once</ModalButton>
-          <ModalButton variant="primary" onClick={() => answer('trust')} autoFocus>Trust and connect</ModalButton>
+          <ModalButton variant="primary" onClick={() => answer('trust')} initialFocus>Trust and connect</ModalButton>
         </>
       }
     >
