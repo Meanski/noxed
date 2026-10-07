@@ -17,7 +17,7 @@ export default function EmptyDashboard({ onImportSshConfig }: Readonly<EmptyDash
           Pick a way to start.
         </p>
         <QuickActions variant="cards" onImportSshConfig={onImportSshConfig} />
-        <p className="font-['Inter'] text-[11.5px] mt-6" style={{ color: 'var(--nox-text-3)' }}>
+        <p className="font-['Inter'] text-[11.5px] mt-6" style={{ color: 'var(--nox-text-2)' }}>
           Tip: press ⌘K anywhere to search connections and commands.
         </p>
       </div>

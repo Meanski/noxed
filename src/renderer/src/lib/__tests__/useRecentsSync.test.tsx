@@ -36,16 +36,37 @@ describe('useRecentsSync', () => {
     expect(api.settings.set.mock.calls[0][1].map((r: { id: string }) => r.id)).toEqual(['b', 'a'])
   })
 
-  it('reports load and save failures', async () => {
+  it('saves nothing after a failed load, so the saved list survives', async () => {
     const api = installWindowApi()
     api.settings.get.mockRejectedValueOnce(new Error('store gone'))
-    api.settings.set.mockRejectedValueOnce(new Error('disk full'))
     const { unmount } = renderHook(() => useRecentsSync())
     await act(async () => {})
     act(() => { useAppStore.getState().openTab(makeSession({ id: 'a' })) })
     await act(async () => { vi.advanceTimersByTime(1000) })
-    const messages = useAppStore.getState().notifications.map((n) => n.message)
-    expect(messages).toEqual(expect.arrayContaining(['store gone', 'disk full']))
+    unmount()
+    expect(api.settings.set).not.toHaveBeenCalled()
+    expect(useAppStore.getState().notifications.map((n) => n.message)).toContain('store gone')
+  })
+
+  it('saves a pending change straight away when it unmounts', async () => {
+    const api = installWindowApi()
+    const { unmount } = renderHook(() => useRecentsSync())
+    await act(async () => {})
+    await act(async () => { vi.advanceTimersByTime(1000) })
+    api.settings.set.mockClear()
+    act(() => { useAppStore.getState().openTab(makeSession({ id: 'a' })) })
+    unmount()
+    expect(api.settings.set).toHaveBeenCalledWith('recentConnections', [expect.objectContaining({ id: 'a' })])
+  })
+
+  it('reports a failed save', async () => {
+    const api = installWindowApi()
+    api.settings.set.mockRejectedValue(new Error('disk full'))
+    const { unmount } = renderHook(() => useRecentsSync())
+    await act(async () => {})
+    act(() => { useAppStore.getState().openTab(makeSession({ id: 'a' })) })
+    await act(async () => { vi.advanceTimersByTime(1000) })
+    expect(useAppStore.getState().notifications.map((n) => n.message)).toContain('disk full')
     unmount()
   })
 })

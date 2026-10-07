@@ -20,7 +20,7 @@ export default function RecentConnections() {
 
   return (
     <section aria-label="Recent connections">
-      <h2 className="flex items-center gap-1.5 font-['Inter'] text-[11px] uppercase tracking-wider font-semibold mb-2" style={{ color: 'var(--nox-text-3)' }}>
+      <h2 className="flex items-center gap-1.5 font-['Inter'] text-[11px] uppercase tracking-wider font-semibold mb-2" style={{ color: 'var(--nox-text-2)' }}>
         <History className="w-3.5 h-3.5" /> Recent
       </h2>
       <div className="flex flex-wrap gap-2">
@@ -37,7 +37,7 @@ export default function RecentConnections() {
               <span className="block font-['Inter'] text-[12px] font-medium truncate max-w-[180px]" style={{ color: 'var(--nox-text)' }}>
                 {session.label || session.host}
               </span>
-              <span className="block font-['Inter'] text-[10.5px]" style={{ color: 'var(--nox-text-3)' }}>
+              <span className="block font-['Inter'] text-[10.5px]" style={{ color: 'var(--nox-text-2)' }}>
                 {relativeTime(at)}
               </span>
             </span>

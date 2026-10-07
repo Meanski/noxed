@@ -10,7 +10,15 @@ const PERSIST_DELAY_MS = 1000
 export function useRecentsSync(): void {
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout> | null = null
+    // Until the saved list has loaded, saving would overwrite it with only
+    // this session's recents, so a failed load means no saving at all.
     let loaded = false
+    const save = () => {
+      timer = null
+      window.api.settings.set('recentConnections', useAppStore.getState().recentConnections).catch((err: unknown) => {
+        useAppStore.getState().addNotification({ type: 'warning', message: ipcErrorMessage(err, 'Could not save recent connections') })
+      })
+    }
 
     window.api.settings
       .get()
@@ -18,26 +26,26 @@ export function useRecentsSync(): void {
         // Anything opened before settings arrived goes first.
         const current = useAppStore.getState().recentConnections
         const saved = sanitizeRecents(cfg.recentConnections).filter((r) => !current.some((c) => c.id === r.id))
+        loaded = true
         useAppStore.getState().setRecentConnections([...current, ...saved].slice(0, MAX_RECENTS))
       })
       .catch((err: unknown) => {
         useAppStore.getState().addNotification({ type: 'warning', message: ipcErrorMessage(err, 'Could not load recent connections') })
       })
-      .finally(() => { loaded = true })
 
     const unsubscribe = useAppStore.subscribe((state, prev) => {
       if (!loaded || state.recentConnections === prev.recentConnections) return
       if (timer) clearTimeout(timer)
-      timer = setTimeout(() => {
-        window.api.settings.set('recentConnections', state.recentConnections).catch((err: unknown) => {
-          useAppStore.getState().addNotification({ type: 'warning', message: ipcErrorMessage(err, 'Could not save recent connections') })
-        })
-      }, PERSIST_DELAY_MS)
+      timer = setTimeout(save, PERSIST_DELAY_MS)
     })
 
     return () => {
       unsubscribe()
-      if (timer) clearTimeout(timer)
+      // Don't lose the last change to the batching delay.
+      if (timer) {
+        clearTimeout(timer)
+        save()
+      }
     }
   }, [])
 }
