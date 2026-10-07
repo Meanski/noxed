@@ -405,6 +405,14 @@ describe('defaultAuthMethods', () => {
     ])
   })
 
+  it('refuses to touch keys or the agent while noxed is locked', () => {
+    vi.mocked(isUnlocked).mockReturnValue(false)
+    vi.mocked(readFileSync).mockClear()
+    expect(() => defaultAuthMethods('deploy')).toThrow('App is locked')
+    expect(readFileSync).not.toHaveBeenCalled()
+    vi.mocked(isUnlocked).mockReturnValue(true)
+  })
+
   it('offers default keys in OpenSSH order', () => {
     delete process.env.SSH_AUTH_SOCK
     vi.mocked(statSync).mockImplementation((() => ({ size: 400 })) as never)

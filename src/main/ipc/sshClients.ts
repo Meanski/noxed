@@ -183,6 +183,9 @@ function readDefaultIdentities(): string[] {
  * neither exists, leaving ssh2's own defaults in place.
  */
 export function defaultAuthMethods(username: string): ConnectConfig['authHandler'] {
+  // Keys are secrets like stored passwords: nothing reads or offers them
+  // while noxed is locked.
+  if (!isUnlocked()) throw new AuthError('App is locked — unlock noxed to use your SSH keys')
   const methods: Array<{ type: 'agent'; username: string; agent: string } | { type: 'publickey'; username: string; key: string }> = []
   if (process.env.SSH_AUTH_SOCK) methods.push({ type: 'agent', username, agent: process.env.SSH_AUTH_SOCK })
   for (const key of readDefaultIdentities()) methods.push({ type: 'publickey', username, key })
