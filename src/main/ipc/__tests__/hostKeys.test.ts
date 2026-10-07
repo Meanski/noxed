@@ -270,6 +270,39 @@ describe('verifyHostKey', () => {
     expect(verify).toHaveBeenCalledWith(false)
   })
 
+  it('rejects without stalling the queue when the renderer cannot be reached', async () => {
+    const realSend = webContents.send
+    webContents.send = () => { throw new Error('Render frame was disposed') }
+    expect(await verifyHostKey('a.example.com', 22, KEY1)).toBe(false)
+    webContents.send = realSend
+    // The next prompt still appears.
+    const next = verifyHostKey('b.example.com', 22, KEY2)
+    await vi.waitFor(() => expect(sent.filter(([ch]) => ch === 'hostkeys:prompt')).toHaveLength(1))
+    await respond('reject')
+    expect(await next).toBe(false)
+  })
+
+  it('revives a queued check when a new connection joins after the others left', async () => {
+    const first = verifyHostKey('a.example.com', 22, KEY1)
+    await Promise.resolve()
+    const gone = Object.assign(new EventEmitter(), { destroy: vi.fn() })
+    gone.on('error', () => {})
+    const verifyGone = vi.fn()
+    ;(verifiedHandshake(gone as never, 'b.example.com', 22).hostVerifier as (k: Buffer, v: (ok: boolean) => void) => void)(KEY2, verifyGone)
+    await Promise.resolve()
+    gone.emit('close')
+    const fresh = Object.assign(new EventEmitter(), { destroy: vi.fn() })
+    fresh.on('error', () => {})
+    const verifyFresh = vi.fn()
+    ;(verifiedHandshake(fresh as never, 'b.example.com', 22).hostVerifier as (k: Buffer, v: (ok: boolean) => void) => void)(KEY2, verifyFresh)
+    await respond('reject')
+    await first
+    // b's prompt is shown for the fresh connection rather than skipped.
+    await vi.waitFor(() => expect(sent.filter(([ch]) => ch === 'hostkeys:prompt')).toHaveLength(2))
+    await respond('once')
+    await vi.waitFor(() => expect(verifyFresh).toHaveBeenCalledWith(true))
+  })
+
   it('rejects immediately when there is no window to ask', async () => {
     windows = []
     expect(await verifyHostKey('example.com', 22, KEY1)).toBe(false)

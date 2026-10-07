@@ -145,6 +145,19 @@ function askUser(prompt: Omit<HostKeyPrompt, 'requestId'>, hooks: AskHooks = {})
   })
 }
 
+// webContents.send throws if the renderer crashed or is going away; that must
+// never stop a prompt settling or the queue advancing.
+function safeSend(target: Electron.WebContents, channel: string, payload: unknown): boolean {
+  if (target.isDestroyed()) return false
+  try {
+    target.send(channel, payload)
+    return true
+  } catch (err) {
+    console.error(`[hostkeys] could not send ${channel}: ${toMessage(err)}`)
+    return false
+  }
+}
+
 function presentNext(): void {
   if (presenting) return
   const next = askQueue.shift()
@@ -155,7 +168,7 @@ function presentNext(): void {
     return
   }
   presenting = true
-  present(next.prompt, next.hooks.onOpen).then((decision) => {
+  present(next.prompt, next.hooks.onOpen).catch((): HostKeyDecision => 'reject').then((decision) => {
     presenting = false
     next.resolve(decision)
     presentNext()
@@ -177,14 +190,17 @@ function present(prompt: Omit<HostKeyPrompt, 'requestId'>, onOpen?: (cancel: () 
     }
     const onDestroyed = () => settle('reject')
     const timer = setTimeout(() => {
-      if (!target.isDestroyed()) target.send('hostkeys:dismiss', requestId)
+      safeSend(target, 'hostkeys:dismiss', requestId)
       settle('reject')
     }, PROMPT_TIMEOUT_MS)
     target.once('destroyed', onDestroyed)
     pending.set(requestId, { webContentsId: target.id, settle })
-    target.send('hostkeys:prompt', { ...prompt, requestId })
+    if (!safeSend(target, 'hostkeys:prompt', { ...prompt, requestId })) {
+      settle('reject')
+      return
+    }
     onOpen?.(() => {
-      if (!target.isDestroyed()) target.send('hostkeys:dismiss', requestId)
+      safeSend(target, 'hostkeys:dismiss', requestId)
       settle('reject')
     })
   })
@@ -277,6 +293,8 @@ export function verifyHostKey(host: string, port: number, blob: Buffer, watcher?
   if (existing !== undefined) {
     if (watcher) {
       existing.watchers.add(watcher)
+      // A new connection revives a check whose earlier connections all left.
+      existing.abandoned = false
       if (existing.prompting) watcher.onPromptStart()
     }
     return existing.result
