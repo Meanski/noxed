@@ -13,6 +13,8 @@ import { useTableEditing } from './useTableEditing'
 import InsertRowModal from './InsertRowModal'
 import DeleteRowModal from './DeleteRowModal'
 import ErDiagram from './ErDiagram'
+import ExportTableModal, { type ExportFormat } from './ExportTableModal'
+import { ipcErrorMessage } from '../../lib/format'
 import { Activity, AlertTriangle, Database, Loader2, Pin } from 'lucide-react'
 
 interface SavedQuery { sql: string; label: string; ts: number }
@@ -52,6 +54,7 @@ export default function DatabaseExplorer({ tab }: Readonly<{ tab: Tab }>) {
   const [activeTable, setActiveTable] = useState<string | null>(null)
   const [tableColumns, setTableColumns] = useState<Record<string, TableColumn[]>>({})
   const [primaryKeys, setPrimaryKeys] = useState<Record<string, string[]>>({})
+  const [exportOpen, setExportOpen] = useState(false)
   const [sql, setSql] = useState('')
   const [results, setResults] = useState<QueryResult | null>(null)
   const [queryError, setQueryError] = useState<string | null>(null)
@@ -177,6 +180,26 @@ export default function DatabaseExplorer({ tab }: Readonly<{ tab: Tab }>) {
   function selectTable(table: string) {
     if (activeTable === table) { setActiveTable(null); return }
     browseTable(table)
+  }
+
+  async function exportTable(format: ExportFormat) {
+    setExportOpen(false)
+    if (!clientId || !browsingTable) return
+    try {
+      const result = await window.api.database.exportTable(clientId, browsingTable, format)
+      if (!result.canceled) showToast(`Exported ${result.rows} rows${result.truncated ? ' (the first 200,000)' : ''}`)
+    } catch (err) { showToast(`Export failed: ${ipcErrorMessage(err)}`) }
+  }
+
+  async function importCsv() {
+    if (!clientId || !browsingTable) return
+    const table = browsingTable
+    try {
+      const result = await window.api.database.importCsv(clientId, table)
+      if (result.canceled) return
+      showToast(`Imported ${result.rows} rows`)
+      runQuery(selectRows(table, sqlDialect, BROWSE_LIMIT), false)
+    } catch (err) { showToast(`Import failed: ${ipcErrorMessage(err)}`) }
   }
 
   function browseTable(table: string) {
@@ -331,6 +354,7 @@ export default function DatabaseExplorer({ tab }: Readonly<{ tab: Tab }>) {
           activePanel={activePanel} onSelect={setActivePanel} results={results} hasExplain={!!explainTree}
           historyCount={history.length} savedCount={savedQueries.length} detailOpen={detailOpen}
           onCopy={copyResults} onExport={exportCsv} onToggleDetail={() => setDetailOpen(d => !d)}
+          tableActions={browsingTable && clientId ? { onImport: importCsv, onExport: () => setExportOpen(true) } : undefined}
           rowActions={editing.editable ? {
             onAdd: editing.openInsert,
             onDelete: detailRow ? () => editing.requestDelete(detailRow) : undefined,
@@ -391,6 +415,7 @@ export default function DatabaseExplorer({ tab }: Readonly<{ tab: Tab }>) {
         </div>
       </div>
 
+      {exportOpen && browsingTable && <ExportTableModal table={browsingTable} onExport={exportTable} onClose={() => setExportOpen(false)} />}
       {editing.insertOpen && browsingTable && (
         <InsertRowModal table={browsingTable} columns={tableColumns[browsingTable] ?? []} onInsert={editing.insertRow} onClose={editing.closeInsert} />
       )}

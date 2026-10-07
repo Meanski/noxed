@@ -80,6 +80,8 @@ export function buildWindowApi() {
       tables: vi.fn().mockResolvedValue([]),
       tableInfo: vi.fn().mockResolvedValue([]),
       schema: vi.fn().mockResolvedValue({ tables: [], foreignKeys: [], truncated: false }),
+      exportTable: vi.fn().mockResolvedValue({ canceled: false, rows: 0, truncated: false }),
+      importCsv: vi.fn().mockResolvedValue({ canceled: false, rows: 0 }),
     },
     localfs: {
       home: vi.fn().mockResolvedValue('/home/user'),

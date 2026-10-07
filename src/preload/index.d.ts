@@ -191,6 +191,8 @@ declare global {
           foreignKeys: { name: string; table: string; columns: string[]; refTable: string; refColumns: string[] }[]
           truncated: boolean
         }>
+        exportTable: (id: string, table: string, format: 'csv' | 'json' | 'sql') => Promise<{ canceled: boolean; rows: number; truncated: boolean }>
+        importCsv: (id: string, table: string) => Promise<{ canceled: boolean; rows: number }>
       }
       redis: {
         connect: (config: any) => Promise<string>

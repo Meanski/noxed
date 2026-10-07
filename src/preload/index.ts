@@ -105,6 +105,8 @@ contextBridge.exposeInMainWorld('api', {
     tables: (id: string) => ipcRenderer.invoke('db:tables', id),
     tableInfo: (id: string, table: string) => ipcRenderer.invoke('db:tableInfo', id, table),
     schema: (id: string) => ipcRenderer.invoke('db:schema', id),
+    exportTable: (id: string, table: string, format: 'csv' | 'json' | 'sql') => ipcRenderer.invoke('db:exportTable', id, table, format),
+    importCsv: (id: string, table: string) => ipcRenderer.invoke('db:importCsv', id, table),
   },
 
   // Local filesystem

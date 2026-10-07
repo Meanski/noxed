@@ -667,6 +667,70 @@ describe('DatabaseExplorer — diagram', () => {
   })
 })
 
+describe('DatabaseExplorer — import and export', () => {
+  async function browse(dbOverrides: Record<string, any> = {}) {
+    const ctx = await renderConnected({}, dbOverrides)
+    fireEvent.click(screen.getByText('users'))
+    await screen.findByText('alice')
+    return ctx
+  }
+
+  it('only offers import/export while browsing a table', async () => {
+    const { api } = await renderConnected()
+    await runSql(api, 'SELECT 1')
+    await screen.findByText('alice')
+    expect(screen.queryByTitle('Export table')).toBeNull()
+  })
+
+  it('exports the whole table in the chosen format', async () => {
+    const exportTable = vi.fn().mockResolvedValue({ canceled: false, rows: 250000, truncated: true })
+    const { api } = await browse({ exportTable })
+    fireEvent.click(screen.getByTitle('Export table'))
+    const dialog = await screen.findByRole('dialog', { name: 'Export users' })
+    fireEvent.click(within(dialog).getByLabelText(/^SQL/))
+    fireEvent.click(within(dialog).getByText('Choose file…'))
+    await waitFor(() => expect(api.database.exportTable).toHaveBeenCalledWith('db-1', 'users', 'sql'))
+    expect(await screen.findByText('Exported 250000 rows (the first 200,000)')).toBeTruthy()
+  })
+
+  it('stays quiet when the export is cancelled and reports failures', async () => {
+    const exportTable = vi.fn()
+      .mockResolvedValueOnce({ canceled: true, rows: 0, truncated: false })
+      .mockRejectedValueOnce(new Error('EACCES'))
+    await browse({ exportTable })
+    fireEvent.click(screen.getByTitle('Export table'))
+    fireEvent.click(within(await screen.findByRole('dialog')).getByText('Choose file…'))
+    await waitFor(() => expect(exportTable).toHaveBeenCalledTimes(1))
+    expect(screen.queryByText(/Exported/)).toBeNull()
+    fireEvent.click(screen.getByTitle('Export table'))
+    fireEvent.click(within(await screen.findByRole('dialog')).getByText('Choose file…'))
+    expect(await screen.findByText('Export failed: EACCES')).toBeTruthy()
+    fireEvent.click(screen.getByTitle('Export table'))
+    fireEvent.click(within(await screen.findByRole('dialog')).getByText('Cancel'))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  })
+
+  it('imports a CSV and reloads the table', async () => {
+    const importCsv = vi.fn().mockResolvedValue({ canceled: false, rows: 12 })
+    const { api } = await browse({ importCsv })
+    api.database.query.mockClear()
+    fireEvent.click(screen.getByTitle('Import CSV into table'))
+    expect(await screen.findByText('Imported 12 rows')).toBeTruthy()
+    expect(api.database.query).toHaveBeenCalledWith('db-1', 'SELECT * FROM "users" LIMIT 100')
+  })
+
+  it('reports import failures and ignores a cancelled picker', async () => {
+    const importCsv = vi.fn()
+      .mockResolvedValueOnce({ canceled: true, rows: 0 })
+      .mockRejectedValueOnce(new Error('CSV columns not in the table: nope'))
+    await browse({ importCsv })
+    fireEvent.click(screen.getByTitle('Import CSV into table'))
+    await waitFor(() => expect(importCsv).toHaveBeenCalledTimes(1))
+    fireEvent.click(screen.getByTitle('Import CSV into table'))
+    expect(await screen.findByText('Import failed: CSV columns not in the table: nope')).toBeTruthy()
+  })
+})
+
 describe('DatabaseExplorer — explain', () => {
   const pgPlan = {
     'Node Type': 'Seq Scan',

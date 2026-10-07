@@ -1,12 +1,14 @@
-import { Copy, Download, PanelRightClose, PanelRightOpen, Plus, Trash2 } from 'lucide-react'
+import { Copy, Download, FileDown, FileUp, PanelRightClose, PanelRightOpen, Plus, Trash2 } from 'lucide-react'
 import type { ActivePanel, QueryResult } from './types'
 
-export default function ResultsTabsBar({ activePanel, onSelect, results, hasExplain, historyCount, savedCount, detailOpen, onCopy, onExport, onToggleDetail, rowActions }: Readonly<{
+export default function ResultsTabsBar({ activePanel, onSelect, results, hasExplain, historyCount, savedCount, detailOpen, onCopy, onExport, onToggleDetail, rowActions, tableActions }: Readonly<{
   activePanel: ActivePanel; onSelect: (p: ActivePanel) => void; results: QueryResult | null; hasExplain: boolean
   historyCount: number; savedCount: number; detailOpen: boolean
   onCopy: () => void; onExport: () => void; onToggleDetail: () => void
   /** Present when browsing a table with a primary key; delete needs a selected row. */
   rowActions?: { onAdd: () => void; onDelete?: () => void }
+  /** Present while browsing a table: whole-table import and export. */
+  tableActions?: { onImport: () => void; onExport: () => void }
 }>) {
   return (
     <div className="flex items-center gap-0 flex-shrink-0" style={{ borderBottom: '1px solid var(--nox-border)', background: 'var(--nox-shell)' }}>
@@ -18,6 +20,10 @@ export default function ResultsTabsBar({ activePanel, onSelect, results, hasExpl
       <div className="flex-1" />
       {results && activePanel === 'results' && <>
         <span className="text-[10px] font-mono mr-2" style={{ color: 'var(--nox-text-3)' }}>{results.columns.length} cols · {results.duration}ms</span>
+        {tableActions && <>
+          <TinyBtn title="Import CSV into table" onClick={tableActions.onImport}><FileUp className="w-3 h-3" /></TinyBtn>
+          <TinyBtn title="Export table" onClick={tableActions.onExport}><FileDown className="w-3 h-3" /></TinyBtn>
+        </>}
         {rowActions && <>
           <TinyBtn title="Add row" onClick={rowActions.onAdd}><Plus className="w-3 h-3" /></TinyBtn>
           {rowActions.onDelete && <TinyBtn title="Delete selected row" onClick={rowActions.onDelete}><Trash2 className="w-3 h-3" /></TinyBtn>}
