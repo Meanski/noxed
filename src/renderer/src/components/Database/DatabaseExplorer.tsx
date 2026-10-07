@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useAppStore, Tab } from '../../store'
 import { relativeTime } from '../../lib/format'
+import SplitHandle from '../SplitHandle'
 import {
   Database, Table2, Play, Loader2, AlertTriangle, X, ChevronRight,
   ChevronDown, RefreshCw, Copy, Download, Search, Hash,
@@ -121,7 +122,7 @@ export default function DatabaseExplorer({ tab }: Readonly<{ tab: Tab }>) {
 
   const clientRef = useRef<string | null>(null)
   const editorRef = useRef<HTMLTextAreaElement>(null)
-  const resizingRef = useRef(false)
+  const editorWrapRef = useRef<HTMLDivElement>(null)
   const editInputRef = useRef<HTMLInputElement>(null)
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 3000) }
@@ -295,15 +296,10 @@ export default function DatabaseExplorer({ tab }: Readonly<{ tab: Tab }>) {
     } catch { /* silent during watch */ }
   }
 
-  function startResize(e: React.MouseEvent) {
-    e.preventDefault(); resizingRef.current = true; const startY = e.clientY; const startH = editorHeight
-    const onMove = (ev: MouseEvent) => {
-      if (!resizingRef.current) return
-      setEditorHeight(Math.max(40, Math.min(400, startH + (ev.clientY - startY))))
-    }
-    const onUp = () => { resizingRef.current = false; window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp) }
-    window.addEventListener('mousemove', onMove); window.addEventListener('mouseup', onUp)
-  }
+  // The editor grows downward from its top edge, so its height is the pointer's
+  // distance below that edge.
+  const editorHeightFromPointer = (_x: number, clientY: number) =>
+    clientY - (editorWrapRef.current?.getBoundingClientRect().top ?? clientY - editorHeight)
 
   const sortedRows = useMemo(() => {
     if (!results) return []
@@ -355,10 +351,20 @@ export default function DatabaseExplorer({ tab }: Readonly<{ tab: Tab }>) {
         />
 
         {/* SQL editor */}
-        <div className="flex-shrink-0" style={{ height: editorHeight }}>
+        <div ref={editorWrapRef} className="flex-shrink-0" style={{ height: editorHeight }}>
           <textarea ref={editorRef} value={sql} onChange={e => setSql(e.target.value)} onKeyDown={e => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); runQuery() } }} placeholder="SELECT * FROM …" spellCheck={false} className="w-full h-full resize-none text-[12px] font-mono leading-relaxed px-4 py-3 focus:outline-none" style={{ color: 'var(--nox-text)', background: 'var(--nox-bg)', tabSize: 2 }} />
         </div>
-        <div className="h-[3px] flex-shrink-0 cursor-row-resize group" style={{ background: 'var(--nox-border)' }} onMouseDown={startResize}><div className="h-full transition-colors group-hover:bg-[#3B5CCC]" /></div>
+        <SplitHandle
+          orientation="horizontal"
+          label="Resize query editor"
+          value={editorHeight}
+          min={40}
+          max={400}
+          step={10}
+          defaultValue={120}
+          onChange={setEditorHeight}
+          valueFromPointer={editorHeightFromPointer}
+        />
 
         <ResultsTabsBar
           activePanel={activePanel} onSelect={setActivePanel} results={results} hasExplain={!!explainTree}

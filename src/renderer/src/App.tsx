@@ -9,6 +9,7 @@ import AddConnectionModal from './components/ConnectionManager/AddConnectionModa
 import CommandPalette from './components/CommandPalette/CommandPalette'
 import NotificationHost from './components/Notifications/NotificationHost'
 import UnlockScreen from './components/UnlockScreen'
+import SidebarResizeHandle, { clampSidebarWidth } from './components/Sidebar/SidebarResizeHandle'
 
 export const SIDEBAR_W = 220
 
@@ -35,6 +36,7 @@ export default function App() {
     window.api.sessions.list().then(setSessions)
     window.api.settings.get().then((cfg: any) => {
       if (cfg.sidebarDefault === 'collapsed') setSidebarExpanded(false)
+      if (typeof cfg.sidebarWidth === 'number') useAppStore.getState().setSidebarWidth(clampSidebarWidth(cfg.sidebarWidth))
       if (cfg.isDarkMode) {
         document.documentElement.classList.add('dark')
         useAppStore.setState({ isDarkMode: true })
@@ -156,7 +158,7 @@ export default function App() {
         <TopBar />
         <TabBar />
         <div className="flex flex-1 w-full min-w-0 min-h-0 overflow-hidden">
-          {sidebarExpanded && <Sidebar />}
+          {sidebarExpanded && <><Sidebar /><SidebarResizeHandle /></>}
           <div className="flex-1 w-full min-w-0 min-h-0 overflow-hidden">
             <MainContent />
           </div>

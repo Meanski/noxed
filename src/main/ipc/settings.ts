@@ -4,6 +4,7 @@ import Store from 'electron-store'
 export interface AppSettings {
   dateFormat: string
   sidebarDefault: 'expanded' | 'collapsed'
+  sidebarWidth: number
   confirmClose: boolean
   dashboardView: 'grid' | 'compact' | 'list'
   connAlerts: boolean
@@ -28,6 +29,7 @@ export interface AppSettings {
 const DEFAULTS: Omit<AppSettings, `snippets:${string}`> = {
   dateFormat: 'YYYY-MM-DD HH:mm',
   sidebarDefault: 'expanded',
+  sidebarWidth: 220,
   confirmClose: true,
   dashboardView: 'compact',
   connAlerts: true,

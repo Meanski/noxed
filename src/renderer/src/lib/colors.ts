@@ -5,6 +5,12 @@
 
 import type { ConnectionType } from '../store'
 
+// Semantic UI colours for new components; theme surfaces use var(--nox-*).
+export const ACCENT = '#3B5CCC'
+export const DANGER = '#EF4444'
+export const WARNING = '#F59E0B'
+export const SUCCESS = '#10B981'
+
 export function metricColor(pct: number): string {
   if (pct >= 80) return '#EF4444'
   if (pct >= 60) return '#F59E0B'

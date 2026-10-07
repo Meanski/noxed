@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { useAppStore, Tab } from '../../store'
 import { formatDate, formatFileSize, ipcErrorMessage, joinPath } from '../../lib/format'
 import { connectSftp } from '../../lib/sftpConnect'
+import SplitHandle from '../SplitHandle'
 import {
   FolderOpen, File, ChevronUp, RefreshCw,
   FolderPlus, Trash2, Pencil, Eye, EyeOff,
@@ -291,14 +292,9 @@ export default function SftpBrowser({ tab }: Readonly<{ tab: Tab }>) {
     catch { if (target === 'remote' && clientId && e.dataTransfer.files.length) { const files = Array.from(e.dataTransfer.files).map(f => ({ name: f.name, size: f.size, mtime: 0, permissions: 0, isDirectory: false, path: f.path })); doUpload(files) } }
   }
 
-  // Draggable divider
-  function startDividerDrag(e: React.MouseEvent) {
-    e.preventDefault()
+  const splitPctFromPointer = (clientX: number) => {
     const rect = containerRef.current?.getBoundingClientRect()
-    if (!rect) return
-    const onMove = (ev: MouseEvent) => { const pct = ((ev.clientX - rect.left) / rect.width) * 100; setSplitPct(Math.max(20, Math.min(80, pct))) }
-    const onUp = () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp) }
-    window.addEventListener('mousemove', onMove); window.addEventListener('mouseup', onUp)
+    return rect?.width ? ((clientX - rect.left) / rect.width) * 100 : 50
   }
 
   if (connecting) return <div className="flex items-center justify-center h-full" style={{ background: 'var(--nox-bg)' }}><Loader2 className="w-5 h-5 animate-spin" style={{ color: '#3B5CCC' }} /></div>
@@ -325,11 +321,16 @@ export default function SftpBrowser({ tab }: Readonly<{ tab: Tab }>) {
           <FileTable pane={local} visible={lv} side="local" diffMap={diffMap} dateFormat={dateFormat} onToggleSort={k => toggleSort('local', k)} onSelect={(n, e) => handleSelect('local', n, e)} onClear={() => uL({ selected: new Set() })} onNavUp={() => navUp('local')} onNavInto={e => navInto('local', e)} onDragStart={(e, ev) => onDragStart('local', e, ev)} onDrop={e => onPaneDrop('local', e)} onDoubleClickFile={openLocalFile} />
         </div>
 
-        {/* Draggable divider */}
-        <div className="w-[5px] flex-shrink-0 cursor-col-resize group relative z-10" onMouseDown={startDividerDrag}
-          style={{ background: 'var(--nox-border)' }}>
-          <div className="absolute inset-0 transition-colors group-hover:bg-[#3B5CCC] group-active:bg-[#3B5CCC]" />
-        </div>
+        <SplitHandle
+          orientation="vertical"
+          label="Resize file panes"
+          value={splitPct}
+          min={20}
+          max={80}
+          defaultValue={50}
+          onChange={setSplitPct}
+          valueFromPointer={splitPctFromPointer}
+        />
 
         {/* REMOTE */}
         <div style={{ width: `${100 - splitPct}%` }} className="flex flex-col overflow-hidden" onClick={() => setFocusedPane('remote')} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') setFocusedPane('remote') }}>
