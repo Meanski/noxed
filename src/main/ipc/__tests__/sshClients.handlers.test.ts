@@ -405,6 +405,15 @@ describe('defaultAuthMethods', () => {
     ])
   })
 
+  it('offers default keys in OpenSSH order', () => {
+    delete process.env.SSH_AUTH_SOCK
+    vi.mocked(statSync).mockImplementation((() => ({ size: 400 })) as never)
+    vi.mocked(readFileSync).mockImplementation(((path: string) => `KEY:${path}`) as never)
+    vi.mocked(utils.parseKey).mockImplementation((() => ({})) as never)
+    const keys = (defaultAuthMethods('deploy') as Array<{ key: string }>).map((m) => m.key.split('/').pop())
+    expect(keys).toEqual(['id_rsa', 'id_ecdsa', 'id_ed25519'])
+  })
+
   it('skips oversized keys and logs unreadable ones', () => {
     delete process.env.SSH_AUTH_SOCK
     const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {})

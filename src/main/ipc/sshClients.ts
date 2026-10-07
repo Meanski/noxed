@@ -148,8 +148,10 @@ export function openJumpSocket(via: Client, destHost: string, destPort: number):
 
 const MAX_JUMP_DEPTH = 3
 
-// OpenSSH's default identities, in the order `ssh` tries them.
-const DEFAULT_IDENTITY_FILES = ['id_ed25519', 'id_ecdsa', 'id_rsa']
+// OpenSSH's default identities, in the order `ssh` tries them. Its security-key
+// (*_sk) defaults need a hardware-token prompt noxed can't drive; an agent
+// holding them still offers them first.
+const DEFAULT_IDENTITY_FILES = ['id_rsa', 'id_ecdsa', 'id_ed25519']
 const MAX_IDENTITY_BYTES = 64 * 1024
 
 function readDefaultIdentities(): string[] {

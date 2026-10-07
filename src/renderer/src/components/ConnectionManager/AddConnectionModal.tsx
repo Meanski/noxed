@@ -685,7 +685,7 @@ function SshFields({ form, set, isEditing, hasExistingPassword, jumpHostCandidat
 
       {form.authType === 'agent' && (
         <p className="font-['Inter'] text-[11px]" style={{ color: 'var(--nox-text-2)' }}>
-          Uses your SSH agent, then unencrypted keys in ~/.ssh — the same as running ssh.
+          Uses your SSH agent, then any passphrase-free id_rsa, id_ecdsa or id_ed25519 key in ~/.ssh.
         </p>
       )}
 

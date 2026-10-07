@@ -167,7 +167,7 @@ export default function QuickConnectModal({ initialTarget, onClose }: Readonly<Q
           </Field>
         )}
         {auth === 'agent' && (
-          <p className="text-[11.5px]" style={{ color: 'var(--nox-text-2)' }}>Uses your SSH agent, then unencrypted keys in ~/.ssh — the same as running ssh.</p>
+          <p className="text-[11.5px]" style={{ color: 'var(--nox-text-2)' }}>Uses your SSH agent, then any passphrase-free id_rsa, id_ecdsa or id_ed25519 key in ~/.ssh.</p>
         )}
         <label className="flex items-center gap-2 text-[12px]" style={{ color: 'var(--nox-text)' }}>
           <input type="checkbox" checked={save} onChange={(e) => setSave(e.target.checked)} />
