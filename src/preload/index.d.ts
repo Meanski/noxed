@@ -221,7 +221,7 @@ declare global {
       }
       menu: {
         on: (
-          action: 'new-connection' | 'open-connection' | 'new-local-terminal' | 'close-tab',
+          action: 'new-connection' | 'open-connection' | 'quick-connect' | 'new-local-terminal' | 'close-tab',
           cb: () => void,
         ) => () => void
       }

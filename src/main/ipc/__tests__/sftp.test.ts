@@ -28,6 +28,7 @@ vi.mock('../sshClients', async (importOriginal) => ({
   answerPromptsWith: (await importOriginal<typeof import('../sshClients')>()).answerPromptsWith,
   connectSessionClient: vi.fn(),
   openJumpSocket: vi.fn(),
+  defaultAuthMethods: vi.fn(() => [{ type: 'agent', username: 'u', agent: '/sock' }]),
 }))
 
 import { ipcMain } from 'electron'
@@ -184,6 +185,8 @@ describe('sftp:connect standalone client', () => {
     const finish = vi.fn()
     client.emit('keyboard-interactive', 'n', 'i', 'l', [{ prompt: 'Password:' }], finish)
     expect(finish).toHaveBeenCalledWith([])
+    // No password or key: fall back to agent/default-key auth.
+    expect(client.connect.mock.calls[0][0].authHandler).toEqual([{ type: 'agent', username: 'u', agent: '/sock' }])
     client.emit('error', new Error('auth failed'))
     await expect(pending).rejects.toBeInstanceOf(ConnectionError)
   })

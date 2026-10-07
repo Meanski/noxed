@@ -82,6 +82,7 @@ describe('buildAppMenu', () => {
     expect(accelerators).toEqual({
       'New Connection…': 'CmdOrCtrl+N',
       'Open Connection…': 'CmdOrCtrl+T',
+      'Quick Connect…': 'CmdOrCtrl+Shift+K',
       'New Local Terminal': 'CmdOrCtrl+`',
       'Close Tab': 'CmdOrCtrl+W',
     })

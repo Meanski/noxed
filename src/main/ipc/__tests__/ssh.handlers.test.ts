@@ -97,6 +97,7 @@ vi.mock('../sshClients', async (importOriginal) => {
     ...actual,
     connectSessionClient: vi.fn(),
     openJumpSocket: vi.fn(),
+    defaultAuthMethods: vi.fn(() => undefined),
   }
 })
 

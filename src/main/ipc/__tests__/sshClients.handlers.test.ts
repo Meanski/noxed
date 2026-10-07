@@ -43,7 +43,7 @@ vi.mock('ssh2', async () => {
     }
   }
 
-  return { Client: FakeClient }
+  return { Client: FakeClient, utils: { parseKey: vi.fn() } }
 })
 
 vi.mock('../sessions', () => ({
@@ -61,11 +61,14 @@ vi.mock('../settings', () => ({
 }))
 vi.mock('node:fs', () => ({
   readFileSync: vi.fn(),
+  statSync: vi.fn(),
 }))
+vi.mock('node:os', async (orig) => ({ ...(await orig<typeof import('node:os')>()), homedir: () => '/home/me' }))
 
-import { readFileSync } from 'node:fs'
-import { Client } from 'ssh2'
+import { readFileSync, statSync } from 'node:fs'
+import { Client, utils } from 'ssh2'
 import {
+  defaultAuthMethods,
   parseKeepaliveIntervalMs,
   sshConnectOptions,
   connectRawClient,
@@ -152,6 +155,20 @@ describe('connectRawClient', () => {
     expect(client.connectConfig.algorithms).toBeTruthy()
   })
 
+  it('falls back to the agent and default keys only when given no secret', async () => {
+    const saved = process.env.SSH_AUTH_SOCK
+    process.env.SSH_AUTH_SOCK = '/tmp/agent.sock'
+    try {
+      const bare = await connectRawClient({ host: 'h', port: 22, username: 'u' }) as unknown as FakeSshClient
+      expect(bare.connectConfig.authHandler).toEqual(expect.arrayContaining([{ type: 'agent', username: 'u', agent: '/tmp/agent.sock' }]))
+      const withPassword = await connectRawClient({ host: 'h', port: 22, username: 'u', password: 'pw' }) as unknown as FakeSshClient
+      expect(withPassword.connectConfig.authHandler).toBeUndefined()
+    } finally {
+      if (saved === undefined) delete process.env.SSH_AUTH_SOCK
+      else process.env.SSH_AUTH_SOCK = saved
+    }
+  })
+
   it('rejects with a ConnectionError when the connection fails', async () => {
     fakeSsh.connectImpl = (client) => {
       queueMicrotask(() => (client as FakeSshClient).emit('error', new Error('ECONNREFUSED')))
@@ -234,6 +251,12 @@ describe('credentialsForSession', () => {
   it('rejects when no password is stored for the session', async () => {
     vi.mocked(getCredential).mockResolvedValue(null)
     await expect(credentialsForSession(session())).rejects.toThrow('No password stored for Prod Web')
+  })
+
+  it('returns nothing for agent sessions, without touching the keychain', async () => {
+    vi.mocked(getCredential).mockClear()
+    await expect(credentialsForSession(session({ authType: 'agent' }))).resolves.toEqual({})
+    expect(getCredential).not.toHaveBeenCalled()
   })
 
   it('returns the stored password', async () => {
@@ -354,5 +377,61 @@ describe('connectSessionClient', () => {
 
     await expect(connectSessionClient('leaf')).rejects.toThrow(ConnectionError)
     expect((fakeSsh.clients[0] as FakeSshClient).end).toHaveBeenCalled()
+  })
+})
+
+describe('defaultAuthMethods', () => {
+  const enoent = (): never => { throw Object.assign(new Error('missing'), { code: 'ENOENT' }) }
+  const originalSock = process.env.SSH_AUTH_SOCK
+
+  afterEach(() => {
+    if (originalSock === undefined) delete process.env.SSH_AUTH_SOCK
+    else process.env.SSH_AUTH_SOCK = originalSock
+  })
+
+  it('tries the agent, then unencrypted default keys, like ssh does', () => {
+    process.env.SSH_AUTH_SOCK = '/tmp/agent.sock'
+    vi.mocked(statSync).mockImplementation(((path: string) => {
+      if (path.endsWith('id_ecdsa')) return enoent()
+      return { size: 400 }
+    }) as never)
+    vi.mocked(readFileSync).mockImplementation(((path: string) => `KEY:${path}`) as never)
+    // id_rsa is passphrase-protected, so parseKey rejects it.
+    vi.mocked(utils.parseKey).mockImplementation(((key: string) => (key.endsWith('id_rsa') ? new Error('encrypted') : {})) as never)
+
+    expect(defaultAuthMethods('deploy')).toEqual([
+      { type: 'agent', username: 'deploy', agent: '/tmp/agent.sock' },
+      { type: 'publickey', username: 'deploy', key: 'KEY:/home/me/.ssh/id_ed25519' },
+    ])
+  })
+
+  it('refuses to touch keys or the agent while noxed is locked', () => {
+    vi.mocked(isUnlocked).mockReturnValue(false)
+    vi.mocked(readFileSync).mockClear()
+    expect(() => defaultAuthMethods('deploy')).toThrow('App is locked')
+    expect(readFileSync).not.toHaveBeenCalled()
+    vi.mocked(isUnlocked).mockReturnValue(true)
+  })
+
+  it('offers default keys in OpenSSH order', () => {
+    delete process.env.SSH_AUTH_SOCK
+    vi.mocked(statSync).mockImplementation((() => ({ size: 400 })) as never)
+    vi.mocked(readFileSync).mockImplementation(((path: string) => `KEY:${path}`) as never)
+    vi.mocked(utils.parseKey).mockImplementation((() => ({})) as never)
+    const keys = (defaultAuthMethods('deploy') as unknown as Array<{ key: string }>).map((m) => m.key.split('/').pop())
+    expect(keys).toEqual(['id_rsa', 'id_ecdsa', 'id_ed25519'])
+  })
+
+  it('skips oversized keys and logs unreadable ones', () => {
+    delete process.env.SSH_AUTH_SOCK
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    vi.mocked(statSync).mockImplementation(((path: string) => {
+      if (path.endsWith('id_ed25519')) return { size: 10 * 1024 * 1024 }
+      if (path.endsWith('id_ecdsa')) throw Object.assign(new Error('denied'), { code: 'EACCES' })
+      return enoent()
+    }) as never)
+    expect(defaultAuthMethods('deploy')).toBeUndefined()
+    expect(errSpy).toHaveBeenCalledWith(expect.stringContaining('id_ecdsa'))
+    errSpy.mockRestore()
   })
 })

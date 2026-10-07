@@ -73,7 +73,10 @@ export default function Modal({ title, onClose, children, footer, tone = 'defaul
 
 interface ModalButtonProps {
   children: ReactNode
-  onClick: () => void
+  onClick?: () => void
+  /** `submit` (with `form`) lets the footer button submit a form in the body. */
+  type?: 'button' | 'submit'
+  form?: string
   variant?: 'primary' | 'secondary' | 'danger'
   /** Receives focus when the modal opens. */
   initialFocus?: boolean
@@ -86,10 +89,11 @@ const BUTTON_STYLES: Record<NonNullable<ModalButtonProps['variant']>, React.CSSP
   danger: { background: 'var(--nox-danger-bg)', color: '#fff' },
 }
 
-export function ModalButton({ children, onClick, variant = 'secondary', initialFocus, disabled }: Readonly<ModalButtonProps>) {
+export function ModalButton({ children, onClick, type = 'button', form, variant = 'secondary', initialFocus, disabled }: Readonly<ModalButtonProps>) {
   return (
     <button
-      type="button"
+      type={type}
+      form={form}
       onClick={onClick}
       data-autofocus={initialFocus ? '' : undefined}
       disabled={disabled}

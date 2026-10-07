@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto'
 import { ConnectionError, NotFoundError, OwnershipError, ValidationError, toMessage } from './errors'
 import { getOwnedSshClient, SSH_CONNECT_DEFAULTS, sshConnectOptions } from './ssh'
 import { isInsideHome, isLikelyTextFile, validateHost, validatePort } from './security'
-import { answerPromptsWith, connectSessionClient, openJumpSocket, ManagedSshConnection } from './sshClients'
+import { answerPromptsWith, connectSessionClient, defaultAuthMethods, openJumpSocket, ManagedSshConnection } from './sshClients'
 import { describeSshError, verifiedHandshake } from './hostKeys'
 
 interface SftpClient {
@@ -176,6 +176,7 @@ async function openSftp(event: IpcMainInvokeEvent, config: SftpConnectConfig): P
       sock,
       agent: process.env.SSH_AUTH_SOCK,
       tryKeyboard: true,
+      authHandler: config.password || config.privateKey ? undefined : defaultAuthMethods(config.username),
       ...sshConnectOptions(),
       ...verifiedHandshake(client, config.host, config.port),
       algorithms: { ...SSH_CONNECT_DEFAULTS.algorithms },

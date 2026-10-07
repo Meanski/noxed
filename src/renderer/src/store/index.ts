@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { clearAdhocPassword } from '../lib/sshCredentials'
 
 // ── Connection types ──────────────────────────────────────────────────────────
 
@@ -17,7 +18,7 @@ export interface Connection {
   createdAt: number
   // SSH / SFTP auth
   username?: string
-  authType?: 'password' | 'key'
+  authType?: 'password' | 'key' | 'agent'
   password?: string
   keyPath?: string
   // Database specific
@@ -39,7 +40,7 @@ export interface Session {
   host: string
   port: number
   username: string
-  authType: 'password' | 'key'
+  authType: 'password' | 'key' | 'agent'
   password?: string
   keyPath?: string
   group?: string
@@ -65,6 +66,8 @@ export interface Session {
   jumpHostId?: string
   // Set by main process — indicates a credential exists in the OS keychain
   hasPassword?: boolean
+  // Quick-connect session: lives only while its tabs are open, never saved
+  adhoc?: boolean
 }
 
 // ── Tabs ─────────────────────────────────────────────────────────────────────
@@ -140,6 +143,9 @@ interface AppState {
   activeTabId: string | null
   showAddSession: boolean
   showCommandPalette: boolean
+  // Prefilled target for the quick-connect dialog; null when it's closed
+  quickConnectTarget: string | null
+  adhocSessions: Session[]
   showAddConnection: boolean
   editingConnectionId: string | null
   notifications: AppNotification[]
@@ -184,6 +190,8 @@ interface AppState {
   toggleFilesDrawer: (tabId: string) => void
   setShowAddSession: (show: boolean) => void
   setShowCommandPalette: (show: boolean) => void
+  setQuickConnectTarget: (target: string | null) => void
+  openAdhocSession: (session: Session) => void
   setShowAddConnection: (show: boolean) => void
   setEditingConnectionId: (id: string | null) => void
   openRedisTab: (session: Session) => void
@@ -243,6 +251,8 @@ export const useAppStore = create<AppState>((set) => ({
   activeTabId: null,
   showAddSession: false,
   showCommandPalette: false,
+  quickConnectTarget: null,
+  adhocSessions: [],
   showAddConnection: false,
   editingConnectionId: null,
   notifications: [],
@@ -384,7 +394,13 @@ export const useAppStore = create<AppState>((set) => ({
         activeTabId = next?.id ?? null
       }
       const focusedPaneId = s.focusedPaneId === tabId || s.activeTabId === tabId ? null : s.focusedPaneId
-      return { tabs, activeTabId, focusedPaneId }
+      // A quick-connect session goes away with the last tab that uses it.
+      const adhocSessions = s.adhocSessions.filter((a) => {
+        const inUse = tabs.some((t) => t.sessionId === a.id)
+        if (!inUse) clearAdhocPassword(a.id)
+        return inUse
+      })
+      return { tabs, activeTabId, focusedPaneId, adhocSessions }
     }),
 
   setActiveTab: (tabId) => set({ activeTabId: tabId, focusedPaneId: null }),
@@ -435,6 +451,12 @@ export const useAppStore = create<AppState>((set) => ({
     set((s) => ({ tabs: s.tabs.map((t) => (t.id === tabId ? { ...t, filesOpen: !t.filesOpen } : t)) })),
   setShowAddSession: (show) => set({ showAddSession: show }),
   setShowCommandPalette: (show) => set({ showCommandPalette: show }),
+  setQuickConnectTarget: (target) => set({ quickConnectTarget: target }),
+  openAdhocSession: (session) => {
+    const adhoc = { ...session, adhoc: true }
+    set((s) => ({ adhocSessions: [...s.adhocSessions.filter((x) => x.id !== adhoc.id), adhoc], quickConnectTarget: null }))
+    useAppStore.getState().openTab(adhoc)
+  },
   setShowAddConnection: (show) => set({ showAddConnection: show }),
   setEditingConnectionId: (id) => set({ editingConnectionId: id }),
   openRedisTab: (session) =>
@@ -451,7 +473,12 @@ export const useAppStore = create<AppState>((set) => ({
       }
       return { tabs: [...s.tabs, tab], activeTabId: tab.id, focusedPaneId: null }
     }),
-  setLocked: (v) => set({ isLocked: v }),
+  // Locking closes dialogs that can hold typed credentials or act on
+  // connections; quick connect's would even sit above the lock screen (native
+  // modals live in the top layer).
+  setLocked: (v) => set(v
+    ? { isLocked: true, quickConnectTarget: null, showAddConnection: false, showAddSession: false, showCommandPalette: false }
+    : { isLocked: false }),
   setSidebarView: (view) => set({ sidebarView: view }),
   setSidebarExpanded: (v) => set({ sidebarExpanded: v }),
   setSidebarWidth: (px) => set({ sidebarWidth: px }),
@@ -503,3 +530,7 @@ export const useAppStore = create<AppState>((set) => ({
 
 // Re-export shared utilities so existing imports from store keep working
 export { groupColor, connectionColor, dbTypeLabel } from '../lib/colors'
+
+/** Looks a tab's session up among saved and quick-connect sessions. */
+export const selectSession = (id: string | undefined) => (s: AppState): Session | undefined =>
+  id === undefined ? undefined : s.sessions.find((x) => x.id === id) ?? s.adhocSessions.find((x) => x.id === id)

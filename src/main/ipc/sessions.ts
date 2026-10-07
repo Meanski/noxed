@@ -11,7 +11,8 @@ export interface Session {
   host: string
   port: number
   username: string
-  authType: 'password' | 'key'
+  // 'agent': the SSH agent, then unencrypted default keys — what plain `ssh` does
+  authType: 'password' | 'key' | 'agent'
   // password is NEVER stored here — lives in macOS Keychain
   keyPath?: string
   group?: string

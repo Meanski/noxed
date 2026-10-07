@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { useAppStore, Tab } from '../../store'
+import { useAppStore, Tab, selectSession } from '../../store'
 import { formatDate, formatFileSize, ipcErrorMessage, joinPath } from '../../lib/format'
 import { connectSftp } from '../../lib/sftpConnect'
 import SplitHandle from '../SplitHandle'
@@ -29,11 +29,10 @@ function compareBy(sortKey: SortKey, a: FileEntry, b: FileEntry): number {
 }
 
 export default function SftpBrowser({ tab }: Readonly<{ tab: Tab }>) {
-  const sessions = useAppStore(s => s.sessions)
   const updateTab = useAppStore(s => s.updateTab)
   const addNotification = useAppStore(s => s.addNotification)
   const openEditorTab = useAppStore(s => s.openEditorTab)
-  const session = sessions.find(s => s.id === tab.sessionId)
+  const session = useAppStore(selectSession(tab.sessionId))
 
   const [clientId, setClientId] = useState<string | null>(null)
   const [connecting, setConnecting] = useState(true)

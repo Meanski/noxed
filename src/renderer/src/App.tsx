@@ -11,6 +11,7 @@ import NotificationHost from './components/Notifications/NotificationHost'
 import UnlockScreen from './components/UnlockScreen'
 import SidebarResizeHandle, { clampSidebarWidth } from './components/Sidebar/SidebarResizeHandle'
 import HostKeyPrompt from './components/HostKeys/HostKeyPrompt'
+import QuickConnectModal from './components/QuickConnect/QuickConnectModal'
 
 export const SIDEBAR_W = 220
 
@@ -27,6 +28,7 @@ export default function App() {
   const setShowCommandPalette = useAppStore(s => s.setShowCommandPalette)
   const openDashboardTab = useAppStore(s => s.openDashboardTab)
   const isLocked = useAppStore(s => s.isLocked)
+  const quickConnectTarget = useAppStore(s => s.quickConnectTarget)
 
   const sidebarExpanded = useAppStore(s => s.sidebarExpanded)
   const setLocked = useAppStore(s => s.setLocked)
@@ -130,6 +132,9 @@ export default function App() {
       window.api.menu.on('open-connection', () => {
         if (!useAppStore.getState().isLocked) setShowCommandPalette(true)
       }),
+      window.api.menu.on('quick-connect', () => {
+        if (!useAppStore.getState().isLocked) useAppStore.getState().setQuickConnectTarget('')
+      }),
       window.api.menu.on('new-local-terminal', () => {
         if (!useAppStore.getState().isLocked) useAppStore.getState().openLocalTerminalTab()
       }),
@@ -172,6 +177,9 @@ export default function App() {
         <AddConnectionModal onClose={() => { setShowAddConnection(false); setShowAddSession(false) }} />
       )}
       {showCommandPalette && <CommandPalette onClose={() => setShowCommandPalette(false)} />}
+      {quickConnectTarget !== null && (
+        <QuickConnectModal initialTarget={quickConnectTarget} onClose={() => useAppStore.getState().setQuickConnectTarget(null)} />
+      )}
       <HostKeyPrompt />
     </div>
   )

@@ -243,4 +243,25 @@ describe('CommandPalette', () => {
     fireEvent.mouseMove(row)
     expect(screen.getByText('Connect')).toBeTruthy()
   })
+
+  it('offers to quick connect when the query looks like a host', () => {
+    render(<CommandPalette onClose={onClose} />)
+    type('deploy@10.0.0.5:2222')
+    fireEvent.click(screen.getByText('Quick connect to deploy@10.0.0.5:2222'))
+    expect(onClose).toHaveBeenCalled()
+    expect(useAppStore.getState().quickConnectTarget).toBe('deploy@10.0.0.5:2222')
+  })
+
+  it('does not offer quick connect for plain search terms', () => {
+    render(<CommandPalette onClose={onClose} />)
+    type('production')
+    expect(screen.queryByText(/Quick connect to/)).toBeNull()
+  })
+
+  it('lists a Quick Connect command that opens an empty dialog', () => {
+    render(<CommandPalette onClose={onClose} />)
+    type('quick')
+    fireEvent.click(screen.getByText('Quick Connect…'))
+    expect(useAppStore.getState().quickConnectTarget).toBe('')
+  })
 })

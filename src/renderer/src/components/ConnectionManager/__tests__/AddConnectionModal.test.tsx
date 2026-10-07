@@ -87,6 +87,20 @@ describe('AddConnectionModal — SSH', () => {
     expect(screen.getByPlaceholderText('Enter password')).toBeTruthy()
   })
 
+  it('saves an SSH agent connection without a password', async () => {
+    renderModal()
+    goToConfig('SSH Server')
+    fireEvent.change(screen.getByPlaceholderText('192.168.1.10'), { target: { value: '10.0.0.7' } })
+    fireEvent.change(screen.getByPlaceholderText('root'), { target: { value: 'deploy' } })
+    fireEvent.click(screen.getByText('SSH Agent'))
+    expect(screen.queryByPlaceholderText('Enter password')).toBeNull()
+    expect(screen.getByText(/Uses your SSH agent/)).toBeTruthy()
+    fireEvent.click(saveButton())
+    await waitFor(() => expect(api.sessions.create).toHaveBeenCalledWith(expect.objectContaining({
+      authType: 'agent', password: undefined, keyPath: undefined,
+    })))
+  })
+
   it('saves a password-auth connection with tags, group and jump host', async () => {
     useAppStore.setState({
       sessions: [makeSession({ id: 'jump-1', label: 'Bastion', type: 'ssh', group: 'Homelab' })],

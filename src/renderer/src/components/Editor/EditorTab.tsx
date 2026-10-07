@@ -1,15 +1,14 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { File, Save, RefreshCw, AlertTriangle, Loader2, Server, HardDrive } from 'lucide-react'
-import { useAppStore, Tab } from '../../store'
+import { useAppStore, Tab, selectSession } from '../../store'
 import { ipcErrorMessage } from '../../lib/format'
 import { connectSftp } from '../../lib/sftpConnect'
 import CodeEditor from './CodeEditor'
 
 export default function EditorTab({ tab }: Readonly<{ tab: Tab }>) {
-  const sessions = useAppStore(s => s.sessions)
   const updateTab = useAppStore(s => s.updateTab)
   const addNotification = useAppStore(s => s.addNotification)
-  const session = sessions.find(s => s.id === tab.sessionId)
+  const session = useAppStore(selectSession(tab.sessionId))
   const file = tab.editorFile
 
   const [content, setContent] = useState<string | null>(null)

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { Tab, useAppStore } from '../../store'
+import { Tab, useAppStore, selectSession } from '../../store'
 import { formatFileSize, ipcErrorMessage, joinPath } from '../../lib/format'
 import { connectSftp } from '../../lib/sftpConnect'
 import {
@@ -21,10 +21,9 @@ interface Props {
 }
 
 export default function FilesDrawer({ tab, onClose }: Props) {
-  const sessions = useAppStore((s) => s.sessions)
   const addNotification = useAppStore((s) => s.addNotification)
   const openEditorTab = useAppStore((s) => s.openEditorTab)
-  const session = sessions.find((s) => s.id === tab.sessionId)
+  const session = useAppStore(selectSession(tab.sessionId))
 
   const [clientId, setClientId] = useState<string | null>(null)
   const [path, setPath] = useState('/')

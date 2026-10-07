@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback, forwardRef } from 'react'
 import { useAppStore, Session, groupColor } from '../../store'
+import { looksLikeHost } from '../../lib/quickConnect'
 import {
   IconSearch, IconX, IconTerminal, IconArrowUp, IconArrowDown,
   IconCorner, IconPlus,
@@ -34,7 +35,7 @@ export default function CommandPalette({ onClose }: Props) {
   const listRef = useRef<HTMLDivElement>(null)
   const selectedRef = useRef<HTMLButtonElement>(null)
 
-  const { sessions, tabs, openTab, setShowAddSession, openTunnelsTab, openRunnerTab, openDockerTab, openDashboardTab, openLocalTerminalTab } = useAppStore()
+  const { sessions, tabs, openTab, setShowAddSession, setQuickConnectTarget, openTunnelsTab, openRunnerTab, openDockerTab, openDashboardTab, openLocalTerminalTab } = useAppStore()
 
   const connectedIds = useMemo(
     () => new Set(tabs.filter((t) => t.status === 'connected').map((t) => t.sessionId)),
@@ -83,6 +84,18 @@ export default function CommandPalette({ onClose }: Props) {
       !q || `${localTerminalCmd.label} ${localTerminalCmd.description} shell`.toLowerCase().includes(q)
         ? [localTerminalCmd]
         : []
+    // Typing a host (user@host, host:port, `ssh …`) offers to connect to it
+    // directly, ahead of any saved connections that merely contain the text.
+    if (looksLikeHost(query)) {
+      quickItems.unshift({
+        kind: 'command',
+        id: 'quick-connect-target',
+        label: `Quick connect to ${query.trim()}`,
+        description: 'Connect without saving it first',
+        Icon: IconTerminal,
+        action: () => { onClose(); setQuickConnectTarget(query.trim()) },
+      })
+    }
 
     const allCommands: CommandItem[] = [
       {
@@ -93,6 +106,15 @@ export default function CommandPalette({ onClose }: Props) {
         shortcut: '⌘N',
         Icon: IconPlus,
         action: () => { onClose(); setShowAddSession(true) },
+      },
+      {
+        kind: 'command',
+        id: 'quick-connect',
+        label: 'Quick Connect…',
+        description: 'Connect to user@host without saving it',
+        shortcut: '⌘⇧K',
+        Icon: IconTerminal,
+        action: () => { onClose(); setQuickConnectTarget('') },
       },
       {
         kind: 'command',
@@ -137,7 +159,7 @@ export default function CommandPalette({ onClose }: Props) {
     })
 
     return [...quickItems, ...sessionItems, ...matchedCommands]
-  }, [query, sessions, connectedIds, connectingIds, onClose, setShowAddSession, openTunnelsTab, openRunnerTab, openDockerTab, openDashboardTab, openLocalTerminalTab])
+  }, [query, sessions, connectedIds, connectingIds, onClose, setShowAddSession, setQuickConnectTarget, openTunnelsTab, openRunnerTab, openDockerTab, openDashboardTab, openLocalTerminalTab])
 
   useEffect(() => setSelectedIdx(0), [items.length])
 
