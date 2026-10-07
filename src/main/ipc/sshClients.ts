@@ -1,4 +1,4 @@
-import { Client, Algorithms, ClientChannel, ConnectConfig, utils } from 'ssh2'
+import { Client, Algorithms, ClientChannel, ConnectConfig, OpenSSHAgent, utils, type BaseAgent, type GetStreamCallback, type IdentityCallback, type ParsedKey, type SignCallback, type SigningRequestOptions } from 'ssh2'
 import { readFileSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
@@ -130,7 +130,7 @@ export function connectRawClient(target: SshTarget): Promise<Client> {
       password: target.password,
       privateKey: target.privateKey,
       sock: target.sock,
-      agent: localAgentPath(),
+      agent: localAgent(),
       ...agentForwardOptions(target.agentForward),
       tryKeyboard: true,
       authHandler: target.password || target.privateKey ? undefined : defaultAuthMethods(target.username),
@@ -166,6 +166,41 @@ const WINDOWS_OPENSSH_AGENT_PIPE = String.raw`\\.\pipe\openssh-ssh-agent`
 export function localAgentPath(): string | undefined {
   if (!isUnlocked()) return undefined
   return process.env.SSH_AUTH_SOCK || (process.platform === 'win32' ? WINDOWS_OPENSSH_AGENT_PIPE : undefined)
+}
+
+const lockedAgentError = () => new AuthError('noxed is locked, so your SSH agent is unavailable')
+
+/**
+ * The local agent, checking the lock on every use rather than only at connect
+ * time: locking hides noxed without closing its connections, and a server
+ * holding a forwarded agent must not keep signing with it.
+ */
+class LockAwareAgent extends OpenSSHAgent {
+  getIdentities(cb: IdentityCallback<ParsedKey>): void {
+    if (!isUnlocked()) return cb(lockedAgentError())
+    super.getIdentities(cb)
+  }
+
+  sign(pubKey: ParsedKey | Buffer | string, data: Buffer, options?: SigningRequestOptions | SignCallback, cb?: SignCallback): boolean {
+    const done = typeof options === 'function' ? options : cb
+    if (!isUnlocked()) {
+      done?.(lockedAgentError())
+      return false
+    }
+    return typeof options === 'function' ? super.sign(pubKey, data, options) : super.sign(pubKey, data, options ?? {}, cb)
+  }
+
+  // Each agent connection the server opens over a forwarded channel.
+  getStream(cb: GetStreamCallback): void {
+    if (!isUnlocked()) return cb(lockedAgentError())
+    super.getStream(cb)
+  }
+}
+
+/** The local agent for ssh2's `agent` option, or undefined when there's none (or noxed is locked). */
+export function localAgent(): BaseAgent | undefined {
+  const path = localAgentPath()
+  return path ? new LockAwareAgent(path) : undefined
 }
 
 /**
@@ -210,8 +245,8 @@ export function defaultAuthMethods(username: string): ConnectConfig['authHandler
   // Keys are secrets like stored passwords: nothing reads or offers them
   // while noxed is locked.
   if (!isUnlocked()) throw new AuthError('App is locked — unlock noxed to use your SSH keys')
-  const methods: Array<{ type: 'agent'; username: string; agent: string } | { type: 'publickey'; username: string; key: string }> = []
-  const agent = localAgentPath()
+  const methods: Array<{ type: 'agent'; username: string; agent: BaseAgent } | { type: 'publickey'; username: string; key: string }> = []
+  const agent = localAgent()
   if (agent) methods.push({ type: 'agent', username, agent })
   for (const key of readDefaultIdentities()) methods.push({ type: 'publickey', username, key })
   return methods.length > 0 ? methods : undefined

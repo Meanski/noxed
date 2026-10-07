@@ -88,7 +88,7 @@ vi.mock('ssh2', async () => {
     }
   }
 
-  return { Client: FakeClient }
+  return { Client: FakeClient, OpenSSHAgent: class { constructor(public socketPath: string) {} getIdentities(cb: (err?: Error) => void) { cb() } sign() { return true } getStream(cb: (err?: Error) => void) { cb() } } }
 })
 
 vi.mock('../sshClients', async (importOriginal) => {

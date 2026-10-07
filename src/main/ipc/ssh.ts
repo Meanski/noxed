@@ -11,7 +11,7 @@ import {
   answerPromptsWith,
   defaultAuthMethods,
   agentForwardOptions,
-  localAgentPath,
+  localAgent,
   openJumpSocket,
   ManagedSshConnection,
 } from './sshClients'
@@ -303,7 +303,7 @@ export function registerSshHandlers(): void {
           password: config.password,
           privateKey: config.privateKey,
           sock,
-          agent: localAgentPath(),
+          agent: localAgent(),
           ...agentForwardOptions(config.agentForward),
           tryKeyboard: true,
           authHandler: config.password || config.privateKey ? undefined : defaultAuthMethods(config.username),

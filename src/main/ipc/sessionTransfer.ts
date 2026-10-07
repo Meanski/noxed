@@ -43,6 +43,7 @@ function applyOptionalFields(session: ImportedSession, r: Record<string, unknown
   if (typeof r.isFavorite === 'boolean') session.isFavorite = r.isFavorite
   if (typeof r.pollingEnabled === 'boolean') session.pollingEnabled = r.pollingEnabled
   if (typeof r.connectOnStart === 'boolean') session.connectOnStart = r.connectOnStart
+  if (typeof r.agentForward === 'boolean') session.agentForward = r.agentForward
   if (typeof r.pollingIntervalSeconds === 'number' && Number.isFinite(r.pollingIntervalSeconds)) {
     session.pollingIntervalSeconds = r.pollingIntervalSeconds
   }

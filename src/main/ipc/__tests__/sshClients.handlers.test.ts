@@ -43,7 +43,7 @@ vi.mock('ssh2', async () => {
     }
   }
 
-  return { Client: FakeClient, utils: { parseKey: vi.fn() } }
+  return { Client: FakeClient, utils: { parseKey: vi.fn() }, OpenSSHAgent: class { constructor(public socketPath: string) {} getIdentities(cb: (err?: Error) => void) { cb() } sign() { return true } getStream(cb: (err?: Error) => void) { cb() } } }
 })
 
 vi.mock('../sessions', () => ({
@@ -70,6 +70,7 @@ import { Client, utils } from 'ssh2'
 import {
   agentForwardOptions,
   defaultAuthMethods,
+  localAgent,
   localAgentPath,
   parseKeepaliveIntervalMs,
   sshConnectOptions,
@@ -162,7 +163,7 @@ describe('connectRawClient', () => {
     process.env.SSH_AUTH_SOCK = '/tmp/agent.sock'
     try {
       const bare = await connectRawClient({ host: 'h', port: 22, username: 'u' }) as unknown as FakeSshClient
-      expect(bare.connectConfig.authHandler).toEqual(expect.arrayContaining([{ type: 'agent', username: 'u', agent: '/tmp/agent.sock' }]))
+      expect(bare.connectConfig.authHandler).toEqual(expect.arrayContaining([{ type: 'agent', username: 'u', agent: expect.objectContaining({ socketPath: '/tmp/agent.sock' }) }]))
       const withPassword = await connectRawClient({ host: 'h', port: 22, username: 'u', password: 'pw' }) as unknown as FakeSshClient
       expect(withPassword.connectConfig.authHandler).toBeUndefined()
     } finally {
@@ -402,7 +403,7 @@ describe('defaultAuthMethods', () => {
     vi.mocked(utils.parseKey).mockImplementation(((key: string) => (key.endsWith('id_rsa') ? new Error('encrypted') : {})) as never)
 
     expect(defaultAuthMethods('deploy')).toEqual([
-      { type: 'agent', username: 'deploy', agent: '/tmp/agent.sock' },
+      { type: 'agent', username: 'deploy', agent: expect.objectContaining({ socketPath: '/tmp/agent.sock' }) },
       { type: 'publickey', username: 'deploy', key: 'KEY:/home/me/.ssh/id_ed25519' },
     ])
   })
@@ -465,6 +466,24 @@ describe('local agent and forwarding', () => {
     delete process.env.SSH_AUTH_SOCK
     Object.defineProperty(process, 'platform', { value: 'linux' })
     expect(agentForwardOptions(true)).toEqual({ agentForward: false })
+  })
+
+  it('refuses agent use after locking, even on a connection opened while unlocked', () => {
+    process.env.SSH_AUTH_SOCK = '/tmp/agent.sock'
+    const agent = localAgent()!
+    const errors: unknown[] = []
+    const record = (err?: unknown) => { errors.push(err) }
+    agent.getIdentities(record)
+    agent.getStream!(record)
+    agent.sign('key', Buffer.from('x'), record)
+    expect(errors).toEqual([undefined, undefined])
+    vi.mocked(isUnlocked).mockReturnValue(false)
+    agent.getIdentities(record)
+    agent.getStream!(record)
+    agent.sign('key', Buffer.from('x'), record)
+    agent.sign('key', Buffer.from('x'), {}, record)
+    expect(errors.slice(2).map((e) => (e as Error).message)).toEqual(Array(4).fill('noxed is locked, so your SSH agent is unavailable'))
+    vi.mocked(isUnlocked).mockReturnValue(true)
   })
 
   it('neither uses nor forwards the agent while noxed is locked', () => {
