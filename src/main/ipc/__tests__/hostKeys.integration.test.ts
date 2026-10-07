@@ -65,6 +65,10 @@ function connect(port: number): Promise<'ready' | string> {
 
 let first: { server: Server; port: number }
 
+// Real handshakes and key generation can be slow while the rest of the suite
+// runs in parallel; the defaults (5s per test, 10s per hook) aren't enough.
+vi.setConfig({ testTimeout: 30_000, hookTimeout: 30_000 })
+
 beforeAll(async () => {
   registerHostKeyHandlers()
   first = await startServer(utils.generateKeyPairSync('ed25519').private)

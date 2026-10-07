@@ -22,6 +22,9 @@ vi.mock('@xterm/xterm', () => {
     resizeCb: ((size: { cols: number; rows: number }) => void) | null = null
     selectionCb: (() => void) | null = null
     bellCb: (() => void) | null = null
+    element = document.createElement('div')
+    modes = { bracketedPasteMode: false }
+    paste = vi.fn()
     open = vi.fn()
     write = vi.fn()
     dispose = vi.fn()
@@ -129,6 +132,19 @@ describe('LocalTerminalView', () => {
     await settle()
     expect(term().open).toHaveBeenCalled()
     expect(term().focus).toHaveBeenCalled()
+  })
+
+  it('asks before pasting multiple lines into the shell', async () => {
+    const tab = setup()
+    render(<LocalTerminalView tab={tab} />)
+    await settle()
+    const event = new Event('paste', { bubbles: true, cancelable: true })
+    Object.defineProperty(event, 'clipboardData', { value: { getData: () => 'ls\nrm -rf build' } })
+    act(() => { term().element.dispatchEvent(event) })
+    expect(screen.getByRole('dialog', { name: 'Paste 2 lines?' })).toBeTruthy()
+    fireEvent.click(screen.getByText('Paste'))
+    expect(term().paste).toHaveBeenCalledWith('ls\nrm -rf build')
+    expect(screen.queryByRole('dialog')).toBeNull()
   })
 
   it('routes pty output and exit to the terminal, then stops forwarding input', async () => {

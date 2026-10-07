@@ -94,6 +94,11 @@ describe('settings:set', () => {
     }
   })
 
+  it('only accepts a boolean for confirmMultilinePaste', () => {
+    expect((invoke('settings:set', 'confirmMultilinePaste', false) as AppSettings).confirmMultilinePaste).toBe(false)
+    expect(() => invoke('settings:set', 'confirmMultilinePaste', 'no')).toThrow('Invalid value for setting: confirmMultilinePaste')
+  })
+
   it('rejects unknown keys', () => {
     expect(() => invoke('settings:set', 'evilKey', true)).toThrow('Unknown setting: evilKey')
     expect((invoke('settings:get') as AppSettings)).not.toHaveProperty('evilKey')

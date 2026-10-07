@@ -8,8 +8,10 @@ import { useAppStore, Tab } from '../../store'
 import TerminalSearchBar from './TerminalSearchBar'
 import {
   DEFAULT_SCROLLBACK_SIZE, resolveTerminalTheme, applyTerminalSettings,
-  playBellSound, TerminalBehavior,
+  playBellSound, TerminalBehavior, DEFAULT_TERMINAL_BEHAVIOR,
 } from './terminalSettings'
+import { usePasteGuard } from './usePasteGuard'
+import PasteConfirmModal from './PasteConfirmModal'
 
 interface Props {
   tab: Tab
@@ -21,7 +23,8 @@ export default function LocalTerminalView({ tab }: Props) {
   const fitRef = useRef<FitAddon | null>(null)
   const searchAddonRef = useRef<SearchAddon | null>(null)
   const ptyIdRef = useRef<string | null>(null)
-  const behaviorRef = useRef<TerminalBehavior>({ copyOnSelect: false, bellSound: true, resourceAlerts: true })
+  const behaviorRef = useRef<TerminalBehavior>(DEFAULT_TERMINAL_BEHAVIOR)
+  const pasteGuard = usePasteGuard(behaviorRef)
   const activeTabId = useAppStore((s) => s.activeTabId)
   const [searchOpen, setSearchOpen] = useState(false)
   const [exitCode, setExitCode] = useState<number | null>(null)
@@ -60,6 +63,7 @@ export default function LocalTerminalView({ tab }: Props) {
     term.loadAddon(search)
     term.loadAddon(new WebLinksAddon())
     term.open(container)
+    const detachPasteGuard = pasteGuard.attach(term)
     termRef.current = term
     fitRef.current = fit
     searchAddonRef.current = search
@@ -111,6 +115,7 @@ export default function LocalTerminalView({ tab }: Props) {
 
     return () => {
       cancelled = true
+      detachPasteGuard()
       ro.disconnect()
       offData()
       offExit()
@@ -158,6 +163,9 @@ export default function LocalTerminalView({ tab }: Props) {
 
   return (
     <div className="relative flex flex-col h-full w-full" style={{ background: '#0c0b0f' }}>
+      {pasteGuard.pending && (
+        <PasteConfirmModal text={pasteGuard.pending.text} onPaste={pasteGuard.confirm} onCancel={pasteGuard.cancel} />
+      )}
       <div className="relative flex-1 min-w-0 min-h-0 px-3 pt-2 pb-1 overflow-hidden">
         <div ref={containerRef} className="h-full w-full" />
         {searchOpen && searchAddonRef.current && (

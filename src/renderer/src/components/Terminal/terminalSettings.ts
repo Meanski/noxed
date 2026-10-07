@@ -73,14 +73,23 @@ export interface TerminalSettingsConfig {
   terminalCursorStyle?: unknown
   terminalTheme?: unknown
   copyOnSelect?: unknown
+  confirmMultilinePaste?: unknown
   bellSound?: unknown
   resourceAlerts?: unknown
 }
 
 export interface TerminalBehavior {
   copyOnSelect: boolean
+  confirmMultilinePaste: boolean
   bellSound: boolean
   resourceAlerts: boolean
+}
+
+export const DEFAULT_TERMINAL_BEHAVIOR: TerminalBehavior = {
+  copyOnSelect: false,
+  confirmMultilinePaste: true,
+  bellSound: true,
+  resourceAlerts: true,
 }
 
 export function applyTerminalSettings(term: Terminal, behavior: { current: TerminalBehavior }, afterFit?: () => void): void {
@@ -93,6 +102,7 @@ export function applyTerminalSettings(term: Terminal, behavior: { current: Termi
     term.options.theme = resolveTerminalTheme(readString(cfg.terminalTheme, 'noxed Dark'))
     behavior.current = {
       copyOnSelect: cfg.copyOnSelect === true,
+      confirmMultilinePaste: cfg.confirmMultilinePaste !== false,
       bellSound: cfg.bellSound !== false,
       resourceAlerts: cfg.resourceAlerts !== false,
     }

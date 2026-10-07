@@ -13,8 +13,10 @@ import DisconnectedOverlay from './DisconnectedOverlay'
 import { registerStream, unregisterStream, LiveMetrics } from '../../lib/sshDispatch'
 import {
   DEFAULT_SCROLLBACK_SIZE, resolveTerminalTheme, applyTerminalSettings,
-  playBellSound, TerminalBehavior,
+  playBellSound, TerminalBehavior, DEFAULT_TERMINAL_BEHAVIOR,
 } from './terminalSettings'
+import { usePasteGuard } from './usePasteGuard'
+import PasteConfirmModal from './PasteConfirmModal'
 import FilesDrawer from '../SFTP/FilesDrawer'
 
 type Metrics = LiveMetrics
@@ -111,7 +113,8 @@ export default function TerminalView({ tab }: Props) {
   const wheelRemainderRef = useRef(0)
   const wheelEventsRef = useRef(0)
   const lastWheelDeltaRef = useRef<number | null>(null)
-  const behaviorRef = useRef<TerminalBehavior>({ copyOnSelect: false, bellSound: true, resourceAlerts: true })
+  const behaviorRef = useRef<TerminalBehavior>(DEFAULT_TERMINAL_BEHAVIOR)
+  const pasteGuard = usePasteGuard(behaviorRef)
 
   const session = useAppStore(selectSession(tab.sessionId))
 
@@ -334,6 +337,7 @@ export default function TerminalView({ tab }: Props) {
     searchAddonRef.current = search
     term.attachCustomWheelEventHandler((event) => handleTerminalWheel(event, term))
     term.open(container)
+    const detachPasteGuard = pasteGuard.attach(term)
     const onWheel = (event: WheelEvent) => handleTerminalWheel(event, term)
     container.addEventListener('wheel', onWheel, { capture: true, passive: false })
     document.fonts.ready.then(() => scheduleFit())
@@ -357,6 +361,7 @@ export default function TerminalView({ tab }: Props) {
 
     return () => {
       container.removeEventListener('wheel', onWheel, { capture: true })
+      detachPasteGuard()
       clearScheduledFits()
       ro.disconnect()
       onSelection.dispose()
@@ -548,6 +553,9 @@ export default function TerminalView({ tab }: Props) {
 
   return (
     <div className="relative flex flex-col h-full" style={{ background: '#0c0b0f' }}>
+      {pasteGuard.pending && (
+        <PasteConfirmModal text={pasteGuard.pending.text} onPaste={pasteGuard.confirm} onCancel={pasteGuard.cancel} />
+      )}
       {/* Combined host header with inline metrics + files toggle */}
       {session && (
         <HostHeader

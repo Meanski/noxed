@@ -129,6 +129,10 @@ describe('Settings — Terminal', () => {
 
     fireEvent.click(within(rowFor('Copy on Select')).getByRole('button'))
     await waitFor(() => expect(api.settings.set).toHaveBeenCalledWith('copyOnSelect', true))
+
+    // Multi-line paste confirmation defaults on; the switch turns it off.
+    fireEvent.click(within(rowFor('Confirm Multi-line Paste')).getByRole('button'))
+    await waitFor(() => expect(api.settings.set).toHaveBeenCalledWith('confirmMultilinePaste', false))
   })
 })
 
