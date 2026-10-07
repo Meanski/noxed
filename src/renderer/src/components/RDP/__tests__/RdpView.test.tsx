@@ -200,7 +200,7 @@ describe('RdpView', () => {
       act(() => { ctx.getFrameCb()('rdp-1', fullFrame(100, 100)) })
       const canvas = ctx.container.querySelector('canvas')!
       canvas.getBoundingClientRect = () => ({ left: 0, top: 0, width: 100, height: 100 }) as DOMRect
-      const pane = ctx.container.firstElementChild as HTMLElement
+      const pane = screen.getByLabelText('Remote desktop keyboard input')
       return { ...ctx, canvas, pane }
     }
 
@@ -234,6 +234,14 @@ describe('RdpView', () => {
       api.rdp.sendInput.mockClear()
       fireEvent.blur(pane)
       expect(api.rdp.sendInput.mock.calls.map((c: unknown[]) => c[1])).toEqual(['ku 29 0'])
+    })
+
+    it('focuses keyboard capture and sends button down/up on click', async () => {
+      const { api, canvas, pane } = await connected()
+      fireEvent.pointerDown(canvas, { button: 0, clientX: 5, clientY: 6 })
+      expect(document.activeElement).toBe(pane)
+      fireEvent.pointerUp(canvas, { button: 2, clientX: 5, clientY: 6 })
+      expect(api.rdp.sendInput.mock.calls.map((c: unknown[]) => c[1])).toEqual(['md 5 6 0', 'mu 5 6 1'])
     })
 
     it('accumulates small wheel deltas into whole notches', async () => {

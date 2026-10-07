@@ -1,0 +1,37 @@
+name: RDP sidecar
+
+# Compile the Windows RDP sidecar whenever its sources change, so a broken MSVC
+# build shows up on the PR instead of at release time (it broke v0.2.0).
+on:
+  pull_request:
+    paths:
+      - 'native/rdp-spike/**'
+      - '.github/workflows/sidecar.yml'
+  workflow_dispatch:
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Same key as release.yml so both workflows share the ~9 min FreeRDP build.
+      - name: Cache vcpkg FreeRDP
+        uses: actions/cache@v4
+        with:
+          path: |
+            C:/vcpkg/installed
+            C:/vcpkg/packages
+          key: vcpkg-freerdp-x64-windows-static-v1
+
+      - name: Build RDP sidecar
+        shell: pwsh
+        run: |
+          & "$env:VCPKG_INSTALLATION_ROOT\vcpkg.exe" install freerdp:x64-windows-static
+          cmake -S native/rdp-spike -B native/rdp-spike/build `
+            -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT\scripts\buildsystems\vcpkg.cmake" `
+            -DVCPKG_TARGET_TRIPLET=x64-windows-static `
+            -DCMAKE_BUILD_TYPE=Release
+          cmake --build native/rdp-spike/build --config Release
+          $exe = Get-ChildItem -Recurse -Filter rdp-sidecar.exe native/rdp-spike/build | Select-Object -First 1
+          if (-not $exe) { throw "rdp-sidecar.exe not produced by the build" }

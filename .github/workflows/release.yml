@@ -14,7 +14,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, windows-latest, ubuntu-latest]
+        # macos-15, not macos-latest: on the macos-26 image electron-builder 24's
+        # temporary signing keychain can't be unlocked (set-key-partition-list →
+        # "passphrase you entered is not correct"), which broke v0.2.0.
+        os: [macos-15, windows-latest, ubuntu-latest]
     runs-on: ${{ matrix.os }}
 
     steps:

@@ -24,6 +24,9 @@ const SIDECAR_BUTTON: Record<number, number> = { 0: 0, 1: 2, 2: 1 }
 export default function RdpView({ tab }: Readonly<{ tab: Tab }>) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
+  // Keystrokes are captured by a visually hidden textarea (the same trick
+  // xterm.js uses) so the focus target is a real interactive element.
+  const keyInputRef = useRef<HTMLTextAreaElement>(null)
   // Current live session id, mirrored from the connect effect so the DOM event
   // handlers (outside the effect) can address the sidecar.
   const rdpIdRef = useRef<string | null>(null)
@@ -154,7 +157,7 @@ export default function RdpView({ tab }: Readonly<{ tab: Tab }>) {
   // rescale by the ratio and clamp into range.
   const toDesktop = (e: React.MouseEvent): [number, number] | null => {
     const canvas = canvasRef.current
-    if (!canvas || !canvas.width || !canvas.height) return null
+    if (!canvas?.width || !canvas.height) return null
     const rect = canvas.getBoundingClientRect()
     if (!rect.width || !rect.height) return null
     const x = Math.round(((e.clientX - rect.left) / rect.width) * canvas.width)
@@ -182,7 +185,7 @@ export default function RdpView({ tab }: Readonly<{ tab: Tab }>) {
   const onPointerDown = (e: React.PointerEvent<HTMLCanvasElement>): void => {
     const button = SIDECAR_BUTTON[e.button]
     if (button === undefined) return
-    containerRef.current?.focus() // so keyboard events land on this pane
+    keyInputRef.current?.focus() // so keyboard events land on this pane
     // Capture so the matching button-up still reaches us when the pointer is
     // released outside the canvas; otherwise the remote button stays held.
     e.currentTarget.setPointerCapture?.(e.pointerId)
@@ -240,13 +243,19 @@ export default function RdpView({ tab }: Readonly<{ tab: Tab }>) {
   return (
     <div
       ref={containerRef}
-      tabIndex={0}
-      onKeyDown={onKeyDown}
-      onKeyUp={onKeyUp}
-      onBlur={releaseHeldKeys}
-      className="flex flex-col h-full w-full items-center justify-center overflow-hidden outline-none"
+      className="relative flex flex-col h-full w-full items-center justify-center overflow-hidden"
       style={{ background: '#000' }}
     >
+      <textarea
+        ref={keyInputRef}
+        aria-label="Remote desktop keyboard input"
+        onKeyDown={onKeyDown}
+        onKeyUp={onKeyUp}
+        onBlur={releaseHeldKeys}
+        autoComplete="off"
+        spellCheck={false}
+        className="absolute left-0 top-0 w-px h-px opacity-0 resize-none pointer-events-none"
+      />
       {status !== 'connected' && (
         <div className="text-center px-6">
           <p

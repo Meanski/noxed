@@ -157,17 +157,8 @@ function drainFrames(id: string, entry: RdpSession): void {
     const pixels = entry.buffer.subarray(HEADER_BYTES, total)
     if (!entry.sender.isDestroyed()) {
       // Copy out: the backing buffer is about to be sliced/reused.
-      entry.sender.send(
-        'rdp:frame',
-        id,
-        header.descW,
-        header.descH,
-        header.x,
-        header.y,
-        header.w,
-        header.h,
-        Buffer.from(pixels),
-      )
+      const { descW, descH, x, y, w, h } = header
+      entry.sender.send('rdp:frame', id, { descW, descH, x, y, w, h, pixels: Buffer.from(pixels) })
     }
     entry.buffer = entry.buffer.subarray(total)
   }
