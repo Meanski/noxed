@@ -7,6 +7,7 @@ import { join } from 'node:path'
 import type { Client, ConnectConfig } from 'ssh2'
 import { AuthError, ValidationError, toMessage } from './errors'
 import {
+  entriesForHost,
   fingerprintOf,
   keyTypeOf,
   matchKnownHostsEntries,
@@ -88,19 +89,27 @@ function saveTrustedHostKey(host: string, port: number, keyType: string, key: st
   store.set('hosts', [...kept, { host, port, keyType, key, fingerprint, addedAt: Date.now() }])
 }
 
-// Parsed once per file version: the runner can verify many hosts in a burst,
-// and re-reading a large known_hosts each time would stall the main process.
-let knownHostsCache: { mtimeMs: number; size: number; entries: KnownHostsLine[] } | null = null
+// Parsed once per file version, and narrowed once per host: the runner can
+// verify many hosts in a burst, and every hashed line costs an HMAC per host.
+const MAX_CACHED_HOSTS = 256
+let knownHostsCache: { mtimeMs: number; size: number; entries: KnownHostsLine[]; byHost: Map<string, KnownHostsLine[]> } | null = null
 
-function readOpenSshKnownHosts(): KnownHostsLine[] {
+function readOpenSshKnownHosts(host: string, port: number): KnownHostsLine[] {
   const path = join(homedir(), '.ssh', 'known_hosts')
   try {
     const { mtimeMs, size } = statSync(path)
     if (size > MAX_KNOWN_HOSTS_BYTES) return []
-    if (knownHostsCache?.mtimeMs === mtimeMs && knownHostsCache.size === size) return knownHostsCache.entries
-    const entries = parseKnownHosts(readFileSync(path, 'utf-8'))
-    knownHostsCache = { mtimeMs, size, entries }
-    return entries
+    if (knownHostsCache?.mtimeMs !== mtimeMs || knownHostsCache.size !== size) {
+      knownHostsCache = { mtimeMs, size, entries: parseKnownHosts(readFileSync(path, 'utf-8')), byHost: new Map() }
+    }
+    const hostKey = `${host.toLowerCase()}:${port}`
+    let forHost = knownHostsCache.byHost.get(hostKey)
+    if (!forHost) {
+      if (knownHostsCache.byHost.size >= MAX_CACHED_HOSTS) knownHostsCache.byHost.clear()
+      forHost = entriesForHost(knownHostsCache.entries, host, port)
+      knownHostsCache.byHost.set(hostKey, forHost)
+    }
+    return forHost
   } catch (err) {
     // Missing or unreadable known_hosts just means OpenSSH has no opinion.
     if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
@@ -236,7 +245,7 @@ async function decide(check: InflightCheck, host: string, port: number, blob: Bu
 
   // OpenSSH's file is always consulted first: an @revoked key is refused even
   // if noxed trusted it earlier.
-  const openssh = matchKnownHostsEntries(readOpenSshKnownHosts(), host, port, keyType, key)
+  const openssh = matchKnownHostsEntries(readOpenSshKnownHosts(host, port), host, port, keyType, key)
   if (openssh.verdict === 'revoked') {
     await askWhileWatched(check, { ...prompt, status: 'revoked' })
     return false

@@ -23,7 +23,7 @@ function hostLabel(p: HostKeyPromptRequest): string {
 function Fingerprint({ label, value }: Readonly<{ label: string; value: string }>) {
   return (
     <div>
-      <div className="text-[11px] mb-1" style={{ color: 'var(--nox-text-3)' }}>{label}</div>
+      <div className="text-[11px] mb-1" style={{ color: 'var(--nox-text-2)' }}>{label}</div>
       <code
         className="block font-['JetBrains_Mono'] text-[11.5px] px-2.5 py-1.5 rounded break-all select-text"
         style={{ background: 'var(--nox-sidebar)', color: 'var(--nox-text)' }}

@@ -1,11 +1,13 @@
 import { describe, it, expect } from 'vitest'
 import {
+  entriesForHost,
   fingerprintOf,
   hostFieldMatches,
   keyTypeOf,
   knownHostsName,
   matchKnownHosts,
   matchTrustedKeys,
+  parseKnownHosts,
 } from '../knownHosts'
 
 // Fixtures generated with OpenSSH (`ssh-keygen -t ed25519`, `ssh-keygen -lf`,
@@ -122,6 +124,21 @@ describe('matchKnownHosts', () => {
   it('returns none for unknown hosts and ports', () => {
     expect(matchKnownHosts(file, 'nowhere.com', 22, 'ssh-ed25519', KEY1).verdict).toBe('none')
     expect(matchKnownHosts(file, 'example.com', 2200, 'ssh-ed25519', KEY1).verdict).toBe('none')
+  })
+})
+
+describe('entriesForHost', () => {
+  it('keeps only the lines that apply to that host and port, hashed or not', () => {
+    const entries = parseKnownHosts([
+      `${HASHED_EXAMPLE_COM} ssh-ed25519 ${KEY1}`,
+      `[example.com]:2222 ssh-ed25519 ${KEY2}`,
+      `@cert-authority example.com ssh-ed25519 ${KEY2}`,
+      `@revoked example.com ssh-ed25519 ${KEY2}`,
+      `other.com ssh-ed25519 ${KEY1}`,
+    ].join('\n'))
+    expect(entriesForHost(entries, 'EXAMPLE.com', 22).map((e) => [e.marker, e.key])).toEqual([[undefined, KEY1], ['@revoked', KEY2]])
+    expect(entriesForHost(entries, 'example.com', 2222).map((e) => e.key)).toEqual([KEY2])
+    expect(entriesForHost(entries, 'nowhere.com', 22)).toEqual([])
   })
 })
 

@@ -63,7 +63,7 @@ export default function KnownHostsSection() {
                 onClick={() => remove(h)}
                 aria-label={`Remove ${h.keyType} host key for ${h.port === 22 ? h.host : `${h.host}:${h.port}`}`}
                 className="p-1.5 rounded hover:bg-[var(--nox-hover)]"
-                style={{ color: 'var(--nox-text-3)' }}
+                style={{ color: 'var(--nox-text-2)' }}
               >
                 <Trash2 className="w-3.5 h-3.5" />
               </button>

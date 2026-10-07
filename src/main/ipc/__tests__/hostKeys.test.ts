@@ -343,6 +343,13 @@ describe('verifyHostKey', () => {
     expect(fsReads.count).toBe(2)
   })
 
+  it('narrows the parsed file separately for each host', async () => {
+    setKnownHosts(`example.com ssh-ed25519 ${KEY1.toString('base64')}\n[example.com]:2222 ssh-ed25519 ${KEY2.toString('base64')}\n`)
+    expect(await verifyHostKey('example.com', 22, KEY1)).toBe(true)
+    expect(await verifyHostKey('example.com', 2222, KEY2)).toBe(true)
+    expect(await verifyHostKey('Example.COM', 22, KEY1)).toBe(true)
+  })
+
   it('ignores an oversized known_hosts file', async () => {
     setKnownHosts(`example.com ssh-ed25519 ${KEY1.toString('base64')}\n`.padEnd(5 * 1024 * 1024))
     const result = verifyHostKey('example.com', 22, KEY1)

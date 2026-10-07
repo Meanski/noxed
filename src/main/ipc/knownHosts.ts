@@ -111,6 +111,12 @@ export function matchKnownHosts(text: string, host: string, port: number, keyTyp
   return matchKnownHostsEntries(parseKnownHosts(text), host, port, keyType, key)
 }
 
+/** The entries that apply to `host:port`; the expensive part of a match (hashed names are an HMAC each). */
+export function entriesForHost(entries: readonly KnownHostsLine[], host: string, port: number): KnownHostsLine[] {
+  const name = knownHostsName(host, port)
+  return entries.filter((entry) => entry.marker !== '@cert-authority' && hostFieldMatches(entry.hostField, name))
+}
+
 /** matchKnownHosts over already-parsed entries. */
 export function matchKnownHostsEntries(entries: readonly KnownHostsLine[], host: string, port: number, keyType: string, key: string): KnownHostsVerdict {
   const name = knownHostsName(host, port)
