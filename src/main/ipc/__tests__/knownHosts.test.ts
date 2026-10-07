@@ -64,6 +64,12 @@ describe('hostFieldMatches', () => {
     expect(hostFieldMatches(HASHED_EXAMPLE_COM_2222, '[example.com]:2222')).toBe(true)
   })
 
+  it('matches hashed entries regardless of how the host was capitalised', () => {
+    expect(knownHostsName('EXAMPLE.com', 22)).toBe('example.com')
+    expect(matchKnownHosts(`${HASHED_EXAMPLE_COM} ssh-ed25519 ${KEY1}`, 'EXAMPLE.com', 22, 'ssh-ed25519', KEY1).verdict).toBe('match')
+    expect(knownHostsName('Example.COM', 2222)).toBe('[example.com]:2222')
+  })
+
   it('ignores malformed hashed entries', () => {
     expect(hostFieldMatches('|2|abc|def', 'example.com')).toBe(false)
     expect(hostFieldMatches('|1|abc', 'example.com')).toBe(false)

@@ -33,9 +33,14 @@ export function fingerprintOf(blob: Buffer): string {
   return `SHA256:${createHash('sha256').update(blob).digest('base64').replaceAll('=', '')}`
 }
 
-/** The name OpenSSH records for a host: bare for port 22, `[host]:port` otherwise. */
+/**
+ * The name OpenSSH records for a host: bare for port 22, `[host]:port`
+ * otherwise. Lowercased, as OpenSSH does before hashing, since DNS names are
+ * case-insensitive.
+ */
 export function knownHostsName(host: string, port: number): string {
-  return port === 22 ? host : `[${host}]:${port}`
+  const name = host.toLowerCase()
+  return port === 22 ? name : `[${name}]:${port}`
 }
 
 function globToRegExp(pattern: string): RegExp {
