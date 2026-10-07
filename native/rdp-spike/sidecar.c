@@ -489,6 +489,15 @@ static DWORD WINAPI input_reader_thread(LPVOID arg)
 	char line[256];
 	while (fgets(line, sizeof(line), stdin))
 	{
+		/* An overlong line arrives in pieces; parsing the tail on its own could
+		 * yield a valid-looking command, so drop the whole line instead. */
+		if (!strchr(line, '\n'))
+		{
+			int ch;
+			while ((ch = fgetc(stdin)) != EOF && ch != '\n')
+				;
+			continue;
+		}
 		InputEvent ev;
 		if (!parse_input_line(line, &ev))
 			continue;

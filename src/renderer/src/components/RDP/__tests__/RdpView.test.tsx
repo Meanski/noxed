@@ -218,6 +218,14 @@ describe('RdpView', () => {
       expect(api.rdp.sendInput).not.toHaveBeenCalled()
     })
 
+    it('still releases a forwarded key when Cmd is held at keyup', async () => {
+      const { api, pane } = await connected()
+      fireEvent.keyDown(pane, { code: 'KeyA' })
+      fireEvent.keyUp(pane, { code: 'KeyA', metaKey: true })
+      fireEvent.keyUp(pane, { code: 'KeyZ' }) // never pressed remotely → ignored
+      expect(api.rdp.sendInput.mock.calls.map((c: unknown[]) => c[1])).toEqual(['kd 30 0', 'ku 30 0'])
+    })
+
     it('releases held keys when the pane loses focus', async () => {
       const { api, pane } = await connected()
       fireEvent.keyDown(pane, { code: 'ControlLeft' })

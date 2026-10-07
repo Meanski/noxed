@@ -144,10 +144,27 @@ describe('rdp:input', () => {
     expect(proc.stdin.write).toHaveBeenCalledWith('mv 100 200\n')
   })
 
-  it('collapses embedded newlines so one call cannot smuggle extra commands', () => {
+  it.each([
+    ['embedded newline smuggling a second command', 'mv 1 2\nkd 30 0'],
+    ['trailing newline', 'mv 1 2\n'],
+    ['unknown verb', 'xx 1 2'],
+    ['too few arguments', 'mv 1'],
+    ['too many arguments', 'md 1 2 0 9'],
+    ['non-numeric argument', 'mv a 2'],
+    ['oversized number', 'mv 1234567 2'],
+    ['non-ASCII padding', '\u0800'.repeat(85) + 'mv 1 2'],
+  ])('drops a line that does not match the input grammar (%s)', (_label, line) => {
     const { proc, id, event } = connect()
-    onHandler('rdp:input')(event, id, 'mv 1 2\nkd 30 0')
-    expect(proc.stdin.write).toHaveBeenCalledWith('mv 1 2 kd 30 0\n')
+    onHandler('rdp:input')(event, id, line)
+    expect(proc.stdin.write).toHaveBeenCalledTimes(1) // password only
+  })
+
+  it('accepts every verb in the grammar, including negative wheel deltas', () => {
+    const { proc, id, event } = connect()
+    for (const line of ['md 1 2 0', 'mu 1 2 1', 'mw 5 5 -120', 'kd 72 1', 'ku 72 1', 'uc 1 233']) {
+      onHandler('rdp:input')(event, id, line)
+      expect(proc.stdin.write).toHaveBeenLastCalledWith(line + '\n')
+    }
   })
 
   it('drops input for an unknown/unowned session without throwing', () => {

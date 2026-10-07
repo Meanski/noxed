@@ -34,6 +34,10 @@ const MAGIC_BYTES = Buffer.from(MAGIC, 'ascii')
 const HEADER_BYTES = 32
 // Guardrail: reject absurd frame sizes so a desync can't make us buffer forever.
 const MAX_FRAME_BYTES = 64 * 1024 * 1024
+// The sidecar's stdin input grammar (see sidecar.c): a two-letter verb and
+// two or three integers. Anything else is dropped at the trust boundary rather
+// than handed to the sidecar's line parser.
+const INPUT_LINE = /^(?:mv|md|mu|mw|kd|ku|uc)(?: -?\d{1,6}){2,3}$/
 // Cap how many resync events we log per session so a chatty stream can't spam.
 const MAX_RESYNC_LOGS = 5
 
@@ -268,19 +272,18 @@ export function registerRdpHandlers(): void {
 
   // High-frequency input (pointer moves, key events). Fire-and-forget via .on
   // rather than invoke, so there's no per-event round-trip ack. Each message is
-  // one line in the sidecar's stdin grammar (see sidecar.c); we just enforce
-  // one-line-per-call and a length cap so a caller can't smuggle extra commands.
+  // one line in the sidecar's stdin grammar; anything that doesn't match it
+  // exactly (extra lines, non-ASCII, oversized numbers) is dropped.
   ipcMain.on('rdp:input', (event, rawId: unknown, rawLine: unknown) => {
-    if (typeof rawLine !== 'string') return
+    if (typeof rawLine !== 'string' || !INPUT_LINE.test(rawLine)) return
     let entry: RdpSession
     try {
       entry = requireSession(event, rawId)
     } catch {
       return // unknown/unowned session — the renderer may be racing a close
     }
-    const line = rawLine.replace(/[\r\n]+/g, ' ').slice(0, 128)
     try {
-      entry.proc.stdin.write(line + '\n')
+      entry.proc.stdin.write(rawLine + '\n')
     } catch (err) {
       console.error(`[rdp] input write failed: ${toMessage(err)}`)
     }

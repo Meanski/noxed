@@ -211,16 +211,25 @@ export default function RdpView({ tab }: Readonly<{ tab: Tab }>) {
     }
   }
 
-  const onKey = (e: React.KeyboardEvent, down: boolean): void => {
+  const onKeyDown = (e: React.KeyboardEvent): void => {
     // Let Cmd-shortcuts stay local (Cmd+Q/W/Tab, etc.) rather than swallowing
     // them into the remote — Ctrl-based combos still reach Windows normally.
     if (e.metaKey) return
     const sc = scancodeFor(e.code)
     if (!sc) return
     e.preventDefault()
-    if (down) heldKeys.current.set(e.code, sc)
-    else heldKeys.current.delete(e.code)
-    send(`${down ? 'kd' : 'ku'} ${sc.code} ${sc.extended ? 1 : 0}`)
+    heldKeys.current.set(e.code, sc)
+    send(`kd ${sc.code} ${sc.extended ? 1 : 0}`)
+  }
+
+  // Release whatever was actually pressed remotely, even if Cmd went down in
+  // between — otherwise the key stays held on the remote until blur.
+  const onKeyUp = (e: React.KeyboardEvent): void => {
+    const sc = heldKeys.current.get(e.code)
+    if (!sc) return
+    e.preventDefault()
+    heldKeys.current.delete(e.code)
+    send(`ku ${sc.code} ${sc.extended ? 1 : 0}`)
   }
 
   const releaseHeldKeys = (): void => {
@@ -232,8 +241,8 @@ export default function RdpView({ tab }: Readonly<{ tab: Tab }>) {
     <div
       ref={containerRef}
       tabIndex={0}
-      onKeyDown={(e) => onKey(e, true)}
-      onKeyUp={(e) => onKey(e, false)}
+      onKeyDown={onKeyDown}
+      onKeyUp={onKeyUp}
       onBlur={releaseHeldKeys}
       className="flex flex-col h-full w-full items-center justify-center overflow-hidden outline-none"
       style={{ background: '#000' }}
