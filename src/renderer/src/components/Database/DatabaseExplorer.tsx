@@ -100,13 +100,16 @@ export default function DatabaseExplorer({ tab }: Readonly<{ tab: Tab }>) {
     if (!session) return
     setConnecting(true); setError(null)
     try {
-      const creds = tab.sessionId
+      // SQLite is a local file: no server, credentials or keychain lookup.
+      const creds = tab.sessionId && session.dbType !== 'sqlite'
         ? await window.api.sessions.getCredentials(tab.sessionId).catch((err: any) => {
             const msg = err?.message ?? 'Failed to retrieve credentials'
             throw new Error(msg.includes('locked') ? 'App is locked — unlock noxed to reconnect' : msg)
           })
         : null
-      const id = await window.api.database.connect({ dbType: session.dbType || 'postgresql', host: session.host, port: session.port, username: session.username || '', password: creds?.password, database: session.databaseName || session.host, ssl: session.sslMode })
+      const id = await window.api.database.connect(session.dbType === 'sqlite'
+        ? { dbType: 'sqlite', filePath: session.filePath }
+        : { dbType: session.dbType || 'postgresql', host: session.host, port: session.port, username: session.username || '', password: creds?.password, database: session.databaseName || session.host, ssl: session.sslMode })
       setClientId(id); clientRef.current = id; updateTab(tab.id, { status: 'connected' }); setConnecting(false)
       refreshTables(id)
     } catch (err: any) { setError(err?.message ?? 'Connection failed'); updateTab(tab.id, { status: 'error', errorMessage: err?.message }); setConnecting(false) }
@@ -163,6 +166,7 @@ export default function DatabaseExplorer({ tab }: Readonly<{ tab: Tab }>) {
 
   async function runExplain() {
     const q = sql.trim(); if (!clientId || !q) return
+    if (!EXPLAIN_DIALECTS.has(sqlDialect)) { showToast('The plan view supports PostgreSQL, MySQL and MariaDB'); return }
     setExplainRunning(true); setExplainTree(null); setActivePanel('explain')
     try {
       const isPostgres = (session?.dbType || 'postgresql') === 'postgresql'
@@ -314,7 +318,7 @@ export default function DatabaseExplorer({ tab }: Readonly<{ tab: Tab }>) {
     <div className="flex h-full w-full min-w-0 min-h-0 overflow-hidden" style={{ background: 'var(--nox-bg)' }}>
       <SchemaSidebar
         dbLabel={session?.databaseName || 'Database'}
-        footer={`${dbType} · ${session?.host}:${session?.port}`}
+        footer={session?.dbType === 'sqlite' ? `${dbType} · ${session.filePath ?? ''}` : `${dbType} · ${session?.host}:${session?.port}`}
         tables={filteredTables}
         tableFilter={tableFilter}
         setTableFilter={setTableFilter}
@@ -432,7 +436,8 @@ export default function DatabaseExplorer({ tab }: Readonly<{ tab: Tab }>) {
 
 const BROWSE_LIMIT = 100
 
-const DB_TYPE_LABELS: Record<string, string> = { mysql: 'MySQL', mariadb: 'MariaDB', postgresql: 'PostgreSQL' }
+const DB_TYPE_LABELS: Record<string, string> = { mysql: 'MySQL', mariadb: 'MariaDB', postgresql: 'PostgreSQL', sqlite: 'SQLite', mssql: 'SQL Server' }
+const EXPLAIN_DIALECTS = new Set(['postgresql', 'mysql', 'mariadb'])
 
 function HistoryPanel({ history, onPick }: Readonly<{
   history: { sql: string; ts: number; duration?: number; rows?: number }[]; onPick: (sql: string) => void

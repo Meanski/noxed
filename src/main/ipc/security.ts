@@ -1,6 +1,6 @@
 import { homedir } from 'node:os'
-import { resolve, normalize } from 'node:path'
-import { statSync } from 'node:fs'
+import { basename, dirname, isAbsolute, join, normalize, relative, resolve } from 'node:path'
+import { realpathSync, statSync } from 'node:fs'
 
 const MAX_KEY_FILE_SIZE = 64 * 1024
 const MAX_KUBECONFIG_FILE_SIZE = 1024 * 1024
@@ -35,14 +35,36 @@ function checkPathBase(rawPath: string): { resolved: string } | { error: string 
   return { resolved }
 }
 
+/**
+ * Whether `child` is `dir` or inside it. path.relative handles both separator
+ * styles, Windows drive letters and Windows' case-insensitive paths, which a
+ * `startsWith(dir + '/')` check gets wrong.
+ */
+export function isWithin(child: string, dir: string): boolean {
+  const rel = relative(dir, child)
+  return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel))
+}
+
 function isInsideAny(resolvedPath: string, dirs: string[]): boolean {
-  return dirs.some((dir) => resolvedPath === dir || resolvedPath.startsWith(`${dir}/`))
+  return dirs.some((dir) => isWithin(resolvedPath, dir))
+}
+
+// A symlink inside an allowed folder may point anywhere, so paths are judged
+// by where they really live. For a path that doesn't exist yet, the nearest
+// existing parent is resolved and the rest re-appended.
+function realPathOrSelf(path: string): string {
+  try {
+    return realpathSync(path)
+  } catch {
+    const parent = dirname(path)
+    return parent === path ? path : join(realPathOrSelf(parent), basename(path))
+  }
 }
 
 function checkAllowedFile(rawPath: string, allowedDirs: string[], maxBytes: number, label: string): PathCheck {
   const base = checkPathBase(rawPath)
   if ('error' in base) return { ok: false, reason: base.error }
-  if (!isInsideAny(base.resolved, allowedDirs)) {
+  if (!isInsideAny(base.resolved, allowedDirs) || !isInsideAny(realPathOrSelf(base.resolved), allowedDirs.map(realPathOrSelf))) {
     return { ok: false, reason: `Access denied: ${label} path must be inside an allowed directory` }
   }
   try {
@@ -69,7 +91,7 @@ export function isInsideHome(rawPath: string): PathCheck {
   const base = checkPathBase(rawPath)
   if ('error' in base) return { ok: false, reason: base.error }
   const home = homedir()
-  if (base.resolved !== home && !base.resolved.startsWith(`${home}/`)) {
+  if (!isWithin(base.resolved, home) || !isWithin(realPathOrSelf(base.resolved), realPathOrSelf(home))) {
     return { ok: false, reason: 'Path must be inside your home directory' }
   }
   return { ok: true, resolved: base.resolved }

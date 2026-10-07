@@ -82,6 +82,7 @@ export function buildWindowApi() {
       schema: vi.fn().mockResolvedValue({ tables: [], foreignKeys: [], truncated: false }),
       exportTable: vi.fn().mockResolvedValue({ canceled: false, rows: 0, truncated: false }),
       importCsv: vi.fn().mockResolvedValue({ canceled: false, rows: 0 }),
+      pickSqliteFile: vi.fn().mockResolvedValue(null),
     },
     localfs: {
       home: vi.fn().mockResolvedValue('/home/user'),

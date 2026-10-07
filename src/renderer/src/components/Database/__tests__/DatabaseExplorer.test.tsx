@@ -733,6 +733,24 @@ describe('DatabaseExplorer — import and export', () => {
   })
 })
 
+describe('DatabaseExplorer — other engines', () => {
+  it('opens a SQLite file without touching the keychain', async () => {
+    const { api } = await renderConnected({ dbType: 'sqlite', filePath: '/Users/me/app.db', host: 'app.db', port: 0 })
+    expect(api.database.connect).toHaveBeenCalledWith({ dbType: 'sqlite', filePath: '/Users/me/app.db' })
+    expect(api.sessions.getCredentials).not.toHaveBeenCalled()
+    expect(screen.getByText('SQLite · /Users/me/app.db')).toBeTruthy()
+  })
+
+  it('browses SQL Server tables with TOP and explains the plan view is unavailable', async () => {
+    const { api } = await renderConnected({ dbType: 'mssql' })
+    fireEvent.click(screen.getByText('users'))
+    await waitFor(() => expect(api.database.query).toHaveBeenCalledWith('db-1', 'SELECT TOP 100 * FROM [users]'))
+    // The toolbar's Explain button (the results bar also has an Explain tab).
+    fireEvent.click(screen.getAllByText('Explain')[0])
+    expect(await screen.findByText('The plan view supports PostgreSQL, MySQL and MariaDB')).toBeTruthy()
+  })
+})
+
 describe('DatabaseExplorer — explain', () => {
   const pgPlan = {
     'Node Type': 'Seq Scan',

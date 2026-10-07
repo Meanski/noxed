@@ -1,9 +1,9 @@
 import { Pool as PgPool } from 'pg'
 import { ConnectionError, toMessage } from './errors'
 import { quoteIdentifier, type CellValue } from './dbTransfer'
-import { assembleSchema, rowsPerBatch, sslOption, type DbConnectConfig, type DbConnection, type QueryParam } from './dbTypes'
+import { assembleSchema, rowsPerBatch, sslOption, type ServerDbConfig, type DbConnection, type QueryParam } from './dbTypes'
 
-export async function connectPostgres(config: DbConnectConfig): Promise<DbConnection> {
+export async function connectPostgres(config: ServerDbConfig): Promise<DbConnection> {
   const pool = new PgPool({
     host: config.host,
     port: config.port,

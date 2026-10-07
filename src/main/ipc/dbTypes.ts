@@ -3,7 +3,8 @@ import type { CellValue } from './dbTransfer'
 // Shared shapes for the database drivers (dbPostgres, dbMysql) and the IPC
 // layer in database.ts.
 
-export type DbType = 'postgresql' | 'mysql' | 'mariadb'
+export type ServerDbType = 'postgresql' | 'mysql' | 'mariadb' | 'mssql'
+export type DbType = ServerDbType | 'sqlite'
 
 export type SslMode = 'disable' | 'require' | 'verify-ca' | 'verify-full'
 
@@ -79,8 +80,16 @@ export interface TableInfo {
   primaryKey: string[]
 }
 
-export interface DbConnectConfig {
-  dbType: DbType
+export type DbConnectConfig = ServerDbConfig | SqliteConfig
+
+export interface SqliteConfig {
+  dbType: 'sqlite'
+  /** Absolute path to the database file, already checked to be inside home. */
+  filePath: string
+}
+
+export interface ServerDbConfig {
+  dbType: ServerDbType
   host: string
   port: number
   username: string

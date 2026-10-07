@@ -11,6 +11,8 @@ vi.mock('node:fs/promises', async (importOriginal) => ({
   rm: (await importOriginal<typeof import('node:fs/promises')>()).rm,
   rename: (await importOriginal<typeof import('node:fs/promises')>()).rename,
 }))
+vi.mock('../dbSqlite', () => ({ connectSqlite: vi.fn(async () => ({ type: 'sqlite', close: vi.fn() })) }))
+vi.mock('../dbMssql', () => ({ connectMssql: vi.fn(async () => ({ type: 'mssql', close: vi.fn() })) }))
 vi.mock('pg', () => {
   const query = vi.fn().mockResolvedValue({ fields: [{ name: 'x' }], rows: [{ x: 1 }], rowCount: 1 })
   const clientQuery = vi.fn().mockResolvedValue({ rows: [] })
@@ -28,11 +30,13 @@ vi.mock('mysql2/promise', () => ({
 import { dialog, ipcMain } from 'electron'
 import { readFile, stat } from 'node:fs/promises'
 import { mkdtempSync, readdirSync, readFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import * as pg from 'pg'
 import { registerDatabaseHandlers, writeChunks } from '../database'
 import { assembleSchema } from '../dbTypes'
+import { connectSqlite } from '../dbSqlite'
+import { connectMssql } from '../dbMssql'
 
 registerDatabaseHandlers()
 
@@ -318,5 +322,29 @@ describe('import and export', () => {
     expect(conn.query).toHaveBeenCalledWith('INSERT INTO `users` (`id`) VALUES ?', [[['1'], ['2']]])
     expect(conn.commit).toHaveBeenCalled()
     expect(conn.release).toHaveBeenCalled()
+  })
+})
+
+describe('engines and connection config', () => {
+  it('opens SQLite files inside the home folder only', async () => {
+    const inside = join(homedir(), 'data', 'app.sqlite')
+    const id = await handler('db:connect')(event, { dbType: 'sqlite', filePath: inside })
+    expect(id).toMatch(/^db-/)
+    expect(connectSqlite).toHaveBeenCalledWith({ dbType: 'sqlite', filePath: inside })
+    await expect(handler('db:connect')(event, { dbType: 'sqlite', filePath: '/etc/passwd' })).rejects.toThrow('inside your home directory')
+    await expect(handler('db:connect')(event, { dbType: 'sqlite' })).rejects.toThrow('A SQLite database file is required')
+  })
+
+  it('routes SQL Server through its driver and rejects unknown engines', async () => {
+    await handler('db:connect')(event, { dbType: 'mssql', host: 'sql.example.com', port: 1433, username: 'sa', database: 'app' })
+    expect(connectMssql).toHaveBeenCalledWith(expect.objectContaining({ dbType: 'mssql', host: 'sql.example.com' }))
+    await expect(handler('db:connect')(event, { dbType: 'oracle', host: 'h', port: 1, username: 'u', database: 'd' })).rejects.toThrow('Unsupported database type: oracle')
+  })
+
+  it('returns the SQLite file the user picked, or null when cancelled', async () => {
+    vi.mocked(dialog.showOpenDialog).mockResolvedValueOnce({ canceled: false, filePaths: ['/Users/me/app.db'] })
+    expect(await handler('db:pickSqliteFile')(event)).toBe('/Users/me/app.db')
+    vi.mocked(dialog.showOpenDialog).mockResolvedValueOnce({ canceled: true, filePaths: [] })
+    expect(await handler('db:pickSqliteFile')(event)).toBeNull()
   })
 })

@@ -8,7 +8,8 @@ import { ipcErrorMessage } from '../../lib/format'
 import { readPrivateKey } from '../../lib/sshCredentials'
 import { rdpSupported } from '../../lib/platform'
 import SshFields, { PasswordInput } from './SshFields'
-import { FormField, FormInput, FormSelect, storedPasswordPlaceholder } from './FormControls'
+import { FormField, FormInput, storedPasswordPlaceholder } from './FormControls'
+import DatabaseFields, { defaultDatabasePort } from './DatabaseFields'
 import SshOptions from './SshOptions'
 
 interface K8sContextEntry {
@@ -72,6 +73,7 @@ export default function AddConnectionModal({ onClose }: Props) {
     connectOnStart: false,
     agentForward: false,
     dbType: 'postgresql',
+    filePath: '',
     databaseName: '',
     sslMode: 'disable',
     redisDb: '0',
@@ -101,6 +103,7 @@ export default function AddConnectionModal({ onClose }: Props) {
         connectOnStart: editingSession.connectOnStart ?? false,
         agentForward: editingSession.agentForward ?? false,
         dbType: editingSession.dbType ?? 'postgresql',
+        filePath: editingSession.filePath ?? '',
         databaseName: editingSession.databaseName ?? '',
         sslMode: editingSession.sslMode ?? 'disable',
         redisDb: String(editingSession.redisDb ?? 0),
@@ -137,14 +140,21 @@ export default function AddConnectionModal({ onClose }: Props) {
     setError('')
     setTestResult(null)
     if (field === 'password') setPasswordDirty(true)
-    setForm(f => ({ ...f, [field]: value }))
+    setForm(f => {
+      // Switching engines moves an untouched default port along with it
+      // (5432 → 1433 for SQL Server), but never overrides a port you typed.
+      if (field === 'dbType' && (f.port === '' || f.port === defaultDatabasePort(f.dbType))) {
+        return { ...f, dbType: value, port: defaultDatabasePort(value) }
+      }
+      return { ...f, [field]: value }
+    })
   }
 
   const getDefaultPort = (type: ConnectionType) => {
     switch (type) {
       case 'ssh': return '22'
       case 'sftp': return '22'
-      case 'database': return form.dbType === 'mysql' || form.dbType === 'mariadb' ? '3306' : '5432'
+      case 'database': return defaultDatabasePort(form.dbType)
       case 'redis': return '6379'
       case 'rdp': return '3389'
       default: return '443'
@@ -197,6 +207,8 @@ export default function AddConnectionModal({ onClose }: Props) {
     }
   }
 
+  const isSqlite = selectedType === 'database' && form.dbType === 'sqlite'
+
   const parsedPort = (): number => {
     const raw = form.port.trim()
     if (!raw) return Number.parseInt(getDefaultPort(selectedType))
@@ -213,6 +225,7 @@ export default function AddConnectionModal({ onClose }: Props) {
         if (form.authType === 'key' && !form.keyPath.trim()) return 'Private key path is required'
         return null
       case 'database':
+        if (form.dbType === 'sqlite') return form.filePath.trim() ? null : 'Choose a database file'
         if (!form.username.trim()) return 'Username is required'
         if (!form.databaseName.trim()) return 'Database name is required'
         return null
@@ -232,6 +245,8 @@ export default function AddConnectionModal({ onClose }: Props) {
     if (selectedType === 'kubernetes') {
       return k8sSelected ? null : 'Select a context to continue'
     }
+    // SQLite is a local file: no host or port to check.
+    if (isSqlite) return validateTypeFields()
     if (!form.host.trim()) return 'Host is required'
     const port = parsedPort()
     if (!Number.isInteger(port) || port < 1 || port > 65535) return 'Port must be between 1 and 65535'
@@ -295,7 +310,7 @@ export default function AddConnectionModal({ onClose }: Props) {
         const id = await window.api.redis.connect({ host, port, password, db: Number.parseInt(form.redisDb) })
         await window.api.redis.disconnect(id)
       } else if (selectedType === 'database') {
-        const id = await window.api.database.connect({
+        const id = await window.api.database.connect(isSqlite ? { dbType: 'sqlite', filePath: form.filePath.trim() } : {
           dbType: form.dbType,
           host,
           port,
@@ -337,8 +352,10 @@ export default function AddConnectionModal({ onClose }: Props) {
     return {
       type: selectedType,
       label: form.label.trim() || undefined,
-      host: form.host.trim(),
-      port: parsedPort(),
+      // A SQLite session shows its file name where others show a host.
+      host: isSqlite ? fileName(form.filePath.trim()) : form.host.trim(),
+      port: isSqlite ? 0 : parsedPort(),
+      filePath: isSqlite ? form.filePath.trim() : undefined,
       username: form.username.trim() || undefined,
       authType: form.authType,
       password: includePassword && form.authType === 'password' ? form.password : undefined,
@@ -600,58 +617,13 @@ function TypeSelector({ selected, onSelect }: Readonly<{
 }
 
 /* ── Config form ─────────────────────────────────────────────────────────── */
+function fileName(path: string): string {
+  return path.split(/[\\/]/).pop() || path
+}
+
 function saveButtonLabel(saving: boolean, editing: boolean): string {
   if (saving) return 'Saving…'
   return editing ? 'Save Changes' : 'Save Connection'
-}
-
-function DatabaseFields({ form, set, isEditing, hasExistingPassword }: Readonly<{
-  form: any
-  set: (f: string, v: any) => void
-  isEditing: boolean
-  hasExistingPassword: boolean
-}>) {
-  return (
-    <>
-      <FormField label="Database Type">
-        <FormSelect value={form.dbType} onChange={e => set('dbType', e.target.value)}>
-          <option value="postgresql">PostgreSQL</option>
-          <option value="mysql">MySQL</option>
-          <option value="mariadb">MariaDB</option>
-        </FormSelect>
-      </FormField>
-      <FormField label="Database Name">
-        <FormInput
-          placeholder="mydb"
-          value={form.databaseName}
-          onChange={e => set('databaseName', e.target.value)}
-        />
-      </FormField>
-      <FormField label="Username">
-        <FormInput
-          placeholder="postgres"
-          value={form.username}
-          onChange={e => set('username', e.target.value)}
-        />
-      </FormField>
-      <FormField label="Password">
-        <FormInput
-          type="password"
-          placeholder={storedPasswordPlaceholder(isEditing, hasExistingPassword, 'Enter password')}
-          value={form.password}
-          onChange={e => set('password', e.target.value)}
-        />
-      </FormField>
-      <FormField label="SSL Mode">
-        <FormSelect value={form.sslMode} onChange={e => set('sslMode', e.target.value)}>
-          <option value="disable">Disable</option>
-          <option value="require">Require</option>
-          <option value="verify-ca">Verify CA</option>
-          <option value="verify-full">Verify Full</option>
-        </FormSelect>
-      </FormField>
-    </>
-  )
 }
 
 function K8sContextList({ k8sContexts, k8sLoading, k8sSelected, dropActive, onK8sSelect }: Readonly<{
@@ -874,8 +846,8 @@ function ConfigForm({ type, form, set, error, testResult, isEditing, hasExisting
         />
       </FormField>
 
-      {/* Host + Port */}
-      <div className="grid grid-cols-3 gap-3">
+      {/* Host + Port (a SQLite database is a file instead) */}
+      {!(type === 'database' && form.dbType === 'sqlite') && <div className="grid grid-cols-3 gap-3">
         <div className="col-span-2">
           <FormField label="Hostname / IP">
             <FormInput
@@ -893,7 +865,7 @@ function ConfigForm({ type, form, set, error, testResult, isEditing, hasExisting
             className="font-mono"
           />
         </FormField>
-      </div>
+      </div>}
 
       {/* Type-specific fields */}
       {(type === 'ssh' || type === 'sftp') && (

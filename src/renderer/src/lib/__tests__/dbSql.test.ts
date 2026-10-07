@@ -101,3 +101,16 @@ describe('values JSON cannot encode', () => {
     expect(toParam({ big: 1n })).toBe('[object Object]')
   })
 })
+
+describe('SQL Server and SQLite', () => {
+  it('uses brackets, @pN parameters and TOP for SQL Server', () => {
+    expect(quoteIdent('a]b', 'mssql')).toBe('[a]]b]')
+    expect(selectRows('t', 'mssql', 100)).toBe('SELECT TOP 100 * FROM [t]')
+    expect(buildUpdate('t', 'n', 'x', ['id'], { id: 1 }, 'mssql')).toEqual({ sql: 'UPDATE [t] SET [n] = @p1 WHERE [id] = @p2', params: ['x', 1] })
+  })
+
+  it('uses double quotes and ? for SQLite', () => {
+    expect(bindPlaceholder('sqlite', 4)).toBe('?')
+    expect(buildDelete('t', ['id'], { id: 1 }, 'sqlite')).toEqual({ sql: 'DELETE FROM "t" WHERE "id" = ?', params: [1] })
+  })
+})

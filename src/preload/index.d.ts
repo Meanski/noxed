@@ -205,7 +205,7 @@ declare global {
         reset: () => Promise<Record<string, unknown>>
       }
       database: {
-        connect: (config: { dbType: string; host: string; port: number; username: string; password?: string; database: string; ssl?: string }) => Promise<string>
+        connect: (config: { dbType: string; host?: string; port?: number; username?: string; password?: string; database?: string; ssl?: string; filePath?: string }) => Promise<string>
         disconnect: (id: string) => Promise<void>
         query: (id: string, sql: string, params?: (string | number | boolean | null)[]) => Promise<{ columns: string[]; rows: any[]; rowCount: number; duration: number }>
         tables: (id: string) => Promise<string[]>
@@ -217,6 +217,7 @@ declare global {
         }>
         exportTable: (id: string, table: string, format: 'csv' | 'json' | 'sql') => Promise<{ canceled: boolean; rows: number; truncated: boolean }>
         importCsv: (id: string, table: string) => Promise<{ canceled: boolean; rows: number }>
+        pickSqliteFile: () => Promise<string | null>
       }
       redis: {
         connect: (config: any) => Promise<string>

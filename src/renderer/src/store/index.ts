@@ -57,6 +57,8 @@ export interface Session {
   dbType?: string
   databaseName?: string
   sslMode?: string
+  // SQLite connections: the database file
+  filePath?: string
   // Redis-specific
   redisDb?: number
   // Auto-connect on app start

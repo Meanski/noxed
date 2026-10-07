@@ -3,13 +3,23 @@ import { ValidationError } from './errors'
 // Pure helpers for moving table data in and out of files: CSV parsing and
 // writing, JSON, and SQL INSERT scripts. No I/O here.
 
-export type Dialect = 'postgresql' | 'mysql' | 'mariadb'
+export type Dialect = 'postgresql' | 'mysql' | 'mariadb' | 'sqlite' | 'mssql'
 export type CellValue = string | number | boolean | null
 
 const isMysqlFamily = (d: Dialect) => d === 'mysql' || d === 'mariadb'
 
 export function quoteIdentifier(name: string, dialect: Dialect): string {
-  return isMysqlFamily(dialect) ? '`' + name.replaceAll('`', '``') + '`' : '"' + name.replaceAll('"', '""') + '"'
+  if (isMysqlFamily(dialect)) return '`' + name.replaceAll('`', '``') + '`'
+  if (dialect === 'mssql') return '[' + name.replaceAll(']', ']]') + ']'
+  return '"' + name.replaceAll('"', '""') + '"'
+}
+
+/** Every row of a table (all columns, or the given select list), capped: SQL Server spells LIMIT as TOP. */
+export function selectAll(table: string, dialect: Dialect, limit: number, columns = '*'): string {
+  const n = Math.max(1, Math.floor(limit))
+  return dialect === 'mssql'
+    ? `SELECT TOP ${n} ${columns} FROM ${quoteIdentifier(table, dialect)}`
+    : `SELECT ${columns} FROM ${quoteIdentifier(table, dialect)} LIMIT ${n}`
 }
 
 interface Field {
@@ -143,7 +153,16 @@ function pgArrayLiteral(values: readonly unknown[]): string {
 function quoteString(text: string, dialect: Dialect): string {
   // MySQL treats backslash as an escape inside string literals by default.
   const escaped = isMysqlFamily(dialect) ? text.replaceAll('\\', '\\\\') : text
-  return `'${escaped.replaceAll("'", "''")}'`
+  // N'' keeps non-ASCII text intact in SQL Server's nvarchar columns.
+  return `${dialect === 'mssql' ? 'N' : ''}'${escaped.replaceAll("'", "''")}'`
+}
+
+/** A dialect's literal for raw bytes. */
+function bytesLiteral(bytes: Uint8Array, dialect: Dialect): string {
+  const hex = Buffer.from(bytes).toString('hex')
+  if (dialect === 'postgresql') return `'\\x${hex}'::bytea`
+  if (dialect === 'mssql') return `0x${hex}`
+  return `X'${hex}'`
 }
 
 /**
@@ -156,7 +175,9 @@ export function exportSelectList(columns: readonly { name: string; type: string 
   const sql = columns.map((c) => {
     const id = quoteIdentifier(c.name, dialect)
     if (!jsonColumns.includes(c.name)) return id
-    return isMysqlFamily(dialect) ? `CAST(${id} AS CHAR) AS ${id}` : `${id}::text AS ${id}`
+    if (dialect === 'postgresql') return `${id}::text AS ${id}`
+    // MySQL parses JSON values; SQLite and SQL Server already return JSON as text.
+    return isMysqlFamily(dialect) ? `CAST(${id} AS CHAR) AS ${id}` : id
   }).join(', ')
   return { sql, jsonColumns }
 }
@@ -165,15 +186,17 @@ function sqlLiteral(value: unknown, dialect: Dialect, isJson: boolean): string {
   // JSON columns arrive as JSON text (see exportSelectList): write it as is.
   if (isJson && typeof value === 'string') return quoteString(value, dialect)
   // Bytes go back in as bytes, not as the base64 text used for CSV and JSON.
-  if (value instanceof Uint8Array) {
-    const hex = Buffer.from(value).toString('hex')
-    return isMysqlFamily(dialect) ? `X'${hex}'` : `'\\x${hex}'::bytea`
-  }
-  if (Array.isArray(value) && !isJson && !isMysqlFamily(dialect)) return quoteString(pgArrayLiteral(value), dialect)
+  if (value instanceof Uint8Array) return bytesLiteral(value, dialect)
+  // Only PostgreSQL has array columns; elsewhere an array is JSON.
+  if (Array.isArray(value) && !isJson && dialect === 'postgresql') return quoteString(pgArrayLiteral(value), dialect)
   const v = plain(value)
   if (v === null) return 'NULL'
   if (typeof v === 'number') return Number.isFinite(v) ? String(v) : 'NULL'
-  if (typeof v === 'boolean') return v ? 'TRUE' : 'FALSE'
+  // SQLite and SQL Server have no boolean literals; both store bits as 1/0.
+  if (typeof v === 'boolean') {
+    if (dialect === 'sqlite' || dialect === 'mssql') return v ? '1' : '0'
+    return v ? 'TRUE' : 'FALSE'
+  }
   return quoteString(v, dialect)
 }
 

@@ -26,6 +26,8 @@ export interface Session {
   dbType?: string
   databaseName?: string
   sslMode?: string
+  // SQLite connections: the database file (inside the home folder)
+  filePath?: string
   redisDb?: number
   connectOnStart?: boolean
   // Kubernetes-specific
