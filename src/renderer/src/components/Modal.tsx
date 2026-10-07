@@ -45,10 +45,12 @@ export default function Modal({ title, onClose, children, footer, tone = 'defaul
       aria-labelledby={titleId}
       onKeyDown={onKeyDown}
       onCancel={(e) => e.preventDefault()}
-      className="m-auto p-0 rounded-xl shadow-2xl overflow-hidden backdrop:bg-black/50"
+      // Capped to the viewport with a scrolling body, so the footer buttons
+      // stay reachable however long the content is.
+      className="m-auto p-0 rounded-xl shadow-2xl overflow-hidden max-h-[calc(100vh-32px)] open:flex open:flex-col backdrop:bg-black/50"
       style={{ width, maxWidth: 'calc(100vw - 32px)', background: 'var(--nox-shell)', border: '1px solid var(--nox-border)' }}
     >
-      <div className="px-5 pt-4 pb-3" style={{ borderBottom: '1px solid var(--nox-border)' }}>
+      <div className="flex-shrink-0 px-5 pt-4 pb-3" style={{ borderBottom: '1px solid var(--nox-border)' }}>
         <h2
           id={titleId}
           className="font-['Plus_Jakarta_Sans'] font-bold text-[15px]"
@@ -57,11 +59,11 @@ export default function Modal({ title, onClose, children, footer, tone = 'defaul
           {title}
         </h2>
       </div>
-      <div className="px-5 py-4 font-['Inter'] text-[12.5px] space-y-3" style={{ color: 'var(--nox-text-2)' }}>
+      <div className="min-h-0 overflow-y-auto px-5 py-4 font-['Inter'] text-[12.5px] space-y-3" style={{ color: 'var(--nox-text-2)' }}>
         {children}
       </div>
       {footer && (
-        <div className="px-5 py-3 flex justify-end gap-2" style={{ borderTop: '1px solid var(--nox-border)' }}>
+        <div className="flex-shrink-0 px-5 py-3 flex justify-end gap-2" style={{ borderTop: '1px solid var(--nox-border)' }}>
           {footer}
         </div>
       )}

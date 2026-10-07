@@ -32,7 +32,7 @@ describe('KnownHostsSection', () => {
     expect(await screen.findByText('SHA256:abc')).toBeTruthy()
     expect(screen.getByText('example.com:2222')).toBeTruthy()
     expect(screen.getByText(/ssh-ed25519 · added 1h ago/)).toBeTruthy()
-    fireEvent.click(screen.getByRole('button', { name: 'Remove host key for example.com' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Remove ssh-ed25519 host key for example.com:2222' }))
     await waitFor(() => expect(api.hostKeys.remove).toHaveBeenCalledWith('example.com', 2222, 'ssh-ed25519'))
     expect(await screen.findByText('No host keys trusted in noxed yet.')).toBeTruthy()
   })
@@ -47,7 +47,7 @@ describe('KnownHostsSection', () => {
 
     api.hostKeys.remove.mockRejectedValueOnce(new Error('nope'))
     render(<KnownHostsSection />)
-    fireEvent.click(await screen.findByRole('button', { name: 'Remove host key for example.com' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Remove ssh-ed25519 host key for example.com:2222' }))
     await waitFor(() => expect(useAppStore.getState().notifications.some((n) => n.message === 'nope')).toBe(true))
   })
 })

@@ -37,6 +37,7 @@ vi.mock('electron-store', () => ({
     set(key: string, value: unknown) { this.data.set(key, value) }
   },
 }))
+vi.mock('../keychain', () => ({ isUnlocked: () => true }))
 // Keep the real ~/.ssh/known_hosts out of the test.
 vi.mock('node:os', async (orig) => ({ ...(await orig<typeof import('node:os')>()), homedir: () => fakeHome }))
 

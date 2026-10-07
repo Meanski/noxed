@@ -29,14 +29,27 @@ vi.mock('electron-store', () => ({
 }))
 
 let knownHostsFile: string | null = null
+// Bumped on every content change so the parsed-file cache sees a new mtime.
+let knownHostsMtime = 0
+const fsReads = vi.hoisted(() => ({ count: 0 }))
 vi.mock('node:fs', () => ({
   statSync: () => {
     if (knownHostsFile === null) throw Object.assign(new Error('missing'), { code: 'ENOENT' })
     if (knownHostsFile === 'EACCES') throw Object.assign(new Error('denied'), { code: 'EACCES' })
-    return { size: knownHostsFile.length }
+    return { size: knownHostsFile.length, mtimeMs: knownHostsMtime }
   },
-  readFileSync: () => knownHostsFile,
+  readFileSync: () => {
+    fsReads.count++
+    return knownHostsFile
+  },
 }))
+const unlocked = vi.hoisted(() => ({ value: true }))
+vi.mock('../keychain', () => ({ isUnlocked: () => unlocked.value }))
+
+function setKnownHosts(text: string | null) {
+  knownHostsFile = text
+  knownHostsMtime++
+}
 
 import {
   describeSshError,
@@ -72,7 +85,8 @@ registerHostKeyHandlers()
 beforeEach(() => {
   sent.length = 0
   windows = [{ isDestroyed: () => false, webContents }]
-  knownHostsFile = null
+  unlocked.value = true
+  setKnownHosts(null)
   clearTrusted()
   vi.spyOn(console, 'error').mockImplementation(() => {})
 })
@@ -126,13 +140,13 @@ describe('verifyHostKey', () => {
   })
 
   it('trusts keys already in ~/.ssh/known_hosts without prompting', async () => {
-    knownHostsFile = `example.com ssh-ed25519 ${KEY1.toString('base64')}\n`
+    setKnownHosts(`example.com ssh-ed25519 ${KEY1.toString('base64')}\n`)
     expect(await verifyHostKey('example.com', 22, KEY1)).toBe(true)
     expect(sent).toHaveLength(0)
   })
 
   it('reports a known_hosts mismatch as a changed key, with the old fingerprint', async () => {
-    knownHostsFile = `example.com ssh-ed25519 ${KEY1.toString('base64')}\n`
+    setKnownHosts(`example.com ssh-ed25519 ${KEY1.toString('base64')}\n`)
     const result = verifyHostKey('example.com', 22, KEY2)
     await respond('reject')
     expect(await result).toBe(false)
@@ -144,7 +158,7 @@ describe('verifyHostKey', () => {
     const first = verifyHostKey('example.com', 22, KEY1)
     await respond('trust')
     await first
-    knownHostsFile = `@revoked * ssh-ed25519 ${KEY1.toString('base64')}\n`
+    setKnownHosts(`@revoked * ssh-ed25519 ${KEY1.toString('base64')}\n`)
     const result = verifyHostKey('example.com', 22, KEY1)
     // Even a "trust" answer can't override revocation.
     await respond('trust')
@@ -173,7 +187,7 @@ describe('verifyHostKey', () => {
 
   it('does not let a replaced key stay valid through known_hosts', async () => {
     // OpenSSH knows KEY1; the user replaces it with KEY2 in noxed.
-    knownHostsFile = `example.com ssh-ed25519 ${KEY1.toString('base64')}\n`
+    setKnownHosts(`example.com ssh-ed25519 ${KEY1.toString('base64')}\n`)
     const replace = verifyHostKey('example.com', 22, KEY2)
     await respond('trust')
     expect(await replace).toBe(true)
@@ -213,7 +227,7 @@ describe('verifyHostKey', () => {
   })
 
   it('logs an unreadable known_hosts file and still prompts', async () => {
-    knownHostsFile = 'EACCES'
+    setKnownHosts('EACCES')
     const result = verifyHostKey('example.com', 22, KEY1)
     await respond('reject')
     await result
@@ -221,8 +235,19 @@ describe('verifyHostKey', () => {
     expect(console.error).toHaveBeenCalledWith(expect.stringContaining('could not read'))
   })
 
+  it('parses known_hosts once per file version', async () => {
+    setKnownHosts(`example.com ssh-ed25519 ${KEY1.toString('base64')}\n`)
+    fsReads.count = 0
+    expect(await verifyHostKey('example.com', 22, KEY1)).toBe(true)
+    expect(await verifyHostKey('example.com', 22, KEY1)).toBe(true)
+    expect(fsReads.count).toBe(1)
+    setKnownHosts(`example.com ssh-ed25519 ${KEY2.toString('base64')}\n`)
+    expect(await verifyHostKey('example.com', 22, KEY2)).toBe(true)
+    expect(fsReads.count).toBe(2)
+  })
+
   it('ignores an oversized known_hosts file', async () => {
-    knownHostsFile = `example.com ssh-ed25519 ${KEY1.toString('base64')}\n`.padEnd(5 * 1024 * 1024)
+    setKnownHosts(`example.com ssh-ed25519 ${KEY1.toString('base64')}\n`.padEnd(5 * 1024 * 1024))
     const result = verifyHostKey('example.com', 22, KEY1)
     await respond('reject')
     expect(await result).toBe(false)
@@ -230,6 +255,18 @@ describe('verifyHostKey', () => {
 })
 
 describe('hostkeys:respond', () => {
+  it('refuses to trust while the app is locked, keeping the prompt open', async () => {
+    const result = verifyHostKey('example.com', 22, KEY1)
+    await Promise.resolve()
+    unlocked.value = false
+    const respondHandler = handlers.get('hostkeys:respond')!
+    expect(() => respondHandler(sender, lastPrompt().requestId, 'trust')).toThrow('Unlock noxed to trust a host key')
+    // Rejecting needs no unlock.
+    respondHandler(sender, lastPrompt().requestId, 'reject')
+    expect(await result).toBe(false)
+    expect(listTrustedHostKeys()).toEqual([])
+  })
+
   it('ignores answers from a window that was not asked', async () => {
     const result = verifyHostKey('example.com', 22, KEY1)
     await respond('trust', { sender: { id: 99 } })
@@ -269,7 +306,7 @@ describe('verifiedHandshake', () => {
   }
 
   it('disables ssh2 readyTimeout and feeds the verdict to verify', async () => {
-    knownHostsFile = `example.com ssh-ed25519 ${KEY1.toString('base64')}\n`
+    setKnownHosts(`example.com ssh-ed25519 ${KEY1.toString('base64')}\n`)
     const client = fakeClient()
     const opts = verifiedHandshake(client as never, 'example.com', 22)
     expect(opts.readyTimeout).toBe(0)

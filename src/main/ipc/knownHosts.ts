@@ -66,11 +66,21 @@ export function hostFieldMatches(field: string, name: string): boolean {
   return matched
 }
 
-interface KnownHostsLine {
+export interface KnownHostsLine {
   marker?: string
   hostField: string
   keyType: string
   key: string
+}
+
+/** Parses known_hosts text once so repeated host checks can reuse it. */
+export function parseKnownHosts(text: string): KnownHostsLine[] {
+  const entries: KnownHostsLine[] = []
+  for (const rawLine of text.split('\n')) {
+    const entry = parseKnownHostsLine(rawLine)
+    if (entry) entries.push(entry)
+  }
+  return entries
 }
 
 function parseKnownHostsLine(rawLine: string): KnownHostsLine | null {
@@ -89,13 +99,17 @@ function parseKnownHostsLine(rawLine: string): KnownHostsLine | null {
  * key; `other-type` means it is only known under other key types.
  */
 export function matchKnownHosts(text: string, host: string, port: number, keyType: string, key: string): KnownHostsVerdict {
+  return matchKnownHostsEntries(parseKnownHosts(text), host, port, keyType, key)
+}
+
+/** matchKnownHosts over already-parsed entries. */
+export function matchKnownHostsEntries(entries: readonly KnownHostsLine[], host: string, port: number, keyType: string, key: string): KnownHostsVerdict {
   const name = knownHostsName(host, port)
   const sameTypeKeys: string[] = []
   let matched = false
   let sawOtherType = false
-  for (const rawLine of text.split('\n')) {
-    const entry = parseKnownHostsLine(rawLine)
-    if (!entry || entry.marker === '@cert-authority' || !hostFieldMatches(entry.hostField, name)) continue
+  for (const entry of entries) {
+    if (entry.marker === '@cert-authority' || !hostFieldMatches(entry.hostField, name)) continue
     if (entry.marker === '@revoked') {
       if (entry.key === key) return { verdict: 'revoked', sameTypeKeys: [] }
     } else if (entry.keyType !== keyType) {

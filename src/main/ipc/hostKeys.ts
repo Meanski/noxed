@@ -5,14 +5,17 @@ import { readFileSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { Client, ConnectConfig } from 'ssh2'
-import { ValidationError, toMessage } from './errors'
+import { AuthError, ValidationError, toMessage } from './errors'
 import {
   fingerprintOf,
   keyTypeOf,
-  matchKnownHosts,
+  matchKnownHostsEntries,
   matchTrustedKeys,
+  parseKnownHosts,
+  type KnownHostsLine,
   type TrustedHostKey,
 } from './knownHosts'
+import { isUnlocked } from './keychain'
 import { validateHost, validatePort } from './security'
 
 export type HostKeyDecision = 'trust' | 'once' | 'reject'
@@ -81,17 +84,25 @@ function saveTrustedHostKey(host: string, port: number, keyType: string, key: st
   store.set('hosts', [...kept, { host, port, keyType, key, fingerprint, addedAt: Date.now() }])
 }
 
-function readOpenSshKnownHosts(): string {
+// Parsed once per file version: the runner can verify many hosts in a burst,
+// and re-reading a large known_hosts each time would stall the main process.
+let knownHostsCache: { mtimeMs: number; size: number; entries: KnownHostsLine[] } | null = null
+
+function readOpenSshKnownHosts(): KnownHostsLine[] {
   const path = join(homedir(), '.ssh', 'known_hosts')
   try {
-    if (statSync(path).size > MAX_KNOWN_HOSTS_BYTES) return ''
-    return readFileSync(path, 'utf-8')
+    const { mtimeMs, size } = statSync(path)
+    if (size > MAX_KNOWN_HOSTS_BYTES) return []
+    if (knownHostsCache?.mtimeMs === mtimeMs && knownHostsCache.size === size) return knownHostsCache.entries
+    const entries = parseKnownHosts(readFileSync(path, 'utf-8'))
+    knownHostsCache = { mtimeMs, size, entries }
+    return entries
   } catch (err) {
     // Missing or unreadable known_hosts just means OpenSSH has no opinion.
     if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
       console.error(`[hostkeys] could not read ${path}: ${toMessage(err)}`)
     }
-    return ''
+    return []
   }
 }
 
@@ -154,7 +165,7 @@ async function decide(check: InflightCheck, host: string, port: number, blob: Bu
 
   // OpenSSH's file is always consulted first: an @revoked key is refused even
   // if noxed trusted it earlier.
-  const openssh = matchKnownHosts(readOpenSshKnownHosts(), host, port, keyType, key)
+  const openssh = matchKnownHostsEntries(readOpenSshKnownHosts(), host, port, keyType, key)
   if (openssh.verdict === 'revoked') {
     await askWhileWatched(check, { ...prompt, status: 'revoked' })
     return false
@@ -266,6 +277,9 @@ export function registerHostKeyHandlers(): void {
     const entry = pending.get(rawRequestId)
     // Only the window that was asked may answer; anything else is ignored.
     if (!entry || entry.webContentsId !== event.sender.id) return
+    // Trusting a key is a privileged action, so it waits behind the lock
+    // screen; the prompt stays pending until the app is unlocked.
+    if (rawDecision !== 'reject' && !isUnlocked()) throw new AuthError('Unlock noxed to trust a host key')
     entry.settle(rawDecision as HostKeyDecision)
   })
 }

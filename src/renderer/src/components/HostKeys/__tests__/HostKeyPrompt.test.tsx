@@ -28,7 +28,7 @@ function setup() {
       onDismiss: vi.fn((cb: (id: string) => void) => { emitDismiss = cb; return () => {} }),
     },
   })
-  seedStore({})
+  seedStore({ isLocked: false })
   render(<HostKeyPrompt />)
   return {
     api,
@@ -96,6 +96,15 @@ describe('HostKeyPrompt', () => {
     expect(document.activeElement?.textContent).toBe('Cancel connection')
     fireEvent.click(screen.getByText('Replace key and connect'))
     expect(api.hostKeys.respond).toHaveBeenCalledWith('req-1', 'trust')
+  })
+
+  it('holds prompts behind the lock screen and shows them after unlock', () => {
+    const { prompt } = setup()
+    act(() => useAppStore.setState({ isLocked: true }))
+    prompt(newPrompt())
+    expect(screen.queryByRole('dialog')).toBeNull()
+    act(() => useAppStore.setState({ isLocked: false }))
+    expect(screen.getByRole('dialog', { name: 'Trust example.com?' })).toBeTruthy()
   })
 
   it('drops a prompt main has timed out', () => {

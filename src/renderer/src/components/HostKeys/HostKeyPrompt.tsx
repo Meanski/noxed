@@ -31,6 +31,8 @@ function Fingerprint({ label, value }: Readonly<{ label: string; value: string }
 // (the runner can hit several new hosts at once) and are answered in order.
 export default function HostKeyPrompt() {
   const [queue, setQueue] = useState<HostKeyPromptRequest[]>([])
+  // Prompts keep queueing while locked but aren't actionable above the lock screen.
+  const isLocked = useAppStore((s) => s.isLocked)
 
   useEffect(() => {
     const offPrompt = window.api.hostKeys.onPrompt((prompt) => setQueue((q) => [...q, prompt]))
@@ -42,7 +44,7 @@ export default function HostKeyPrompt() {
   }, [])
 
   const current = queue[0]
-  if (!current) return null
+  if (!current || isLocked) return null
 
   // Removal by id keeps a double click (or Escape racing a click) from
   // consuming the next queued prompt; main ignores the duplicate answer.
