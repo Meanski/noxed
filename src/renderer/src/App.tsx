@@ -11,6 +11,7 @@ import NotificationHost from './components/Notifications/NotificationHost'
 import UnlockScreen from './components/UnlockScreen'
 import SidebarResizeHandle, { clampSidebarWidth } from './components/Sidebar/SidebarResizeHandle'
 import HostKeyPrompt from './components/HostKeys/HostKeyPrompt'
+import McpApprovalPrompt from './components/Mcp/McpApprovalPrompt'
 import QuickConnectModal from './components/QuickConnect/QuickConnectModal'
 import { useRecentsSync } from './lib/useRecentsSync'
 
@@ -182,6 +183,7 @@ export default function App() {
         <QuickConnectModal initialTarget={quickConnectTarget} onClose={() => useAppStore.getState().setQuickConnectTarget(null)} />
       )}
       <HostKeyPrompt />
+      <McpApprovalPrompt />
     </div>
   )
 }

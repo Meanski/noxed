@@ -138,6 +138,15 @@ export function buildWindowApi() {
       onData: vi.fn().mockImplementation(unsub),
       onExit: vi.fn().mockImplementation(unsub),
     },
+    mcp: {
+      status: vi.fn().mockResolvedValue({ enabled: false, running: false, port: 39847, error: null }),
+      setEnabled: vi.fn().mockResolvedValue({ enabled: true, running: true, port: 39847, error: null }),
+      connectionInfo: vi.fn().mockResolvedValue({ url: 'http://127.0.0.1:39847/mcp', token: 'tok', command: 'claude mcp add noxed tok' }),
+      regenerateToken: vi.fn().mockResolvedValue({ enabled: true, running: true, port: 39847, error: null }),
+      respond: vi.fn().mockResolvedValue(undefined),
+      onApproval: vi.fn().mockImplementation(unsub),
+      onApprovalDismiss: vi.fn().mockImplementation(unsub),
+    },
     runner: {
       run: vi.fn().mockResolvedValue('run-1'),
       cancel: vi.fn().mockResolvedValue(undefined),

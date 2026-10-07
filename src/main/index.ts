@@ -29,6 +29,7 @@ import { registerLocalFsHandlers } from './ipc/localfs'
 import { registerRdpHandlers, disposeRdpSessionsForSender } from './ipc/rdp'
 import { registerHostKeyHandlers } from './ipc/hostKeys'
 import { registerKeyFileHandlers } from './ipc/keyFiles'
+import { registerMcpHandlers, startMcpIfEnabled } from './ipc/mcp/mcp'
 import { buildAppMenu } from './menu'
 import { registerUpdaterHandlers, checkForUpdatesOnStartup } from './updater'
 
@@ -142,12 +143,14 @@ app.whenReady().then(() => {
   registerLocalFsHandlers()
   registerRdpHandlers()
   registerHostKeyHandlers()
+  registerMcpHandlers()
   registerUpdaterHandlers()
 
   registerKeyFileHandlers()
 
   createWindow()
   checkForUpdatesOnStartup()
+  startMcpIfEnabled().catch((err: unknown) => console.error('[mcp] could not start:', err))
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()

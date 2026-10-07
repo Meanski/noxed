@@ -10,6 +10,8 @@ import { ipcErrorMessage } from '../../lib/format'
 import Card from './Card'
 import Row from './Row'
 import KnownHostsSection from './KnownHostsSection'
+import Toggle from './Toggle'
+import McpSection from './McpSection'
 
 type SettingsTab = 'general' | 'security' | 'terminal' | 'about'
 
@@ -82,22 +84,6 @@ export default function Settings() {
         />
       )}
     </div>
-  )
-}
-
-/* ── Toggle switch ───────────────────────────────────────────────────────── */
-function Toggle({ on, onChange }: Readonly<{ on: boolean; onChange: (v: boolean) => void }>) {
-  return (
-    <button
-      onClick={() => onChange(!on)}
-      className="w-9 h-5 rounded-full relative transition-colors flex-shrink-0"
-      style={{ background: on ? '#3B5CCC' : 'var(--nox-border)' }}
-    >
-      <div
-        className="w-4 h-4 rounded-full absolute top-[2px] shadow-sm transition-all"
-        style={{ left: on ? 'calc(100% - 18px)' : '2px', background: on ? '#fff' : 'var(--nox-shell)' }}
-      />
-    </button>
   )
 }
 
@@ -373,6 +359,8 @@ function SecuritySettings({ onClear }: Readonly<{ onClear: () => void }>) {
         </Card>
 
         <KnownHostsSection />
+
+        <McpSection />
 
         <div
           className="rounded-md p-5"

@@ -3,7 +3,7 @@ import { homedir } from 'node:os'
 import { resolve, normalize } from 'node:path'
 
 // We test isLikelyTextFile directly (pure function, no FS dependency)
-import { isLikelyTextFile, isUuid } from '../security'
+import { blockedShellCommandReason, isLikelyTextFile, isUuid } from '../security'
 
 // For isAllowedKeyPath, we test the validation logic in isolation
 // since it depends on the filesystem. We extract the pure validation part.
@@ -152,5 +152,39 @@ describe('isUuid', () => {
     for (const bad of [42, null, '', 'not-a-uuid', '3f2b8c1e-9d4a-4b7e-8c2f-1a2b3c4d5e6f0', `${'a'.repeat(8)}-${'a'.repeat(4)}-0aaa-8aaa-${'a'.repeat(12)}`]) {
       expect(isUuid(bad)).toBe(false)
     }
+  })
+})
+
+describe('blockedShellCommandReason', () => {
+  it.each([
+    'rm -rf /',
+    'sudo rm -fr ~',
+    'rm -r -f /*',
+    'cd /tmp && rm --recursive --force $HOME',
+    'mkfs.ext4 /dev/sdb1',
+    '/sbin/shutdown -h now',
+    'sudo reboot',
+    'init 0',
+    'dd if=/dev/zero of=/dev/sda bs=1M',
+    'echo x > /dev/nvme0n1',
+    ':(){ :|:& };:',
+    'chmod -R 777 /',
+    'ls; sudo halt',
+  ])('blocks %j', (cmd) => {
+    expect(blockedShellCommandReason(cmd)).not.toBeNull()
+  })
+
+  it.each([
+    'ls -la /',
+    'rm -rf ./build',
+    'rm /tmp/file',
+    'df -h',
+    'cat /var/log/syslog | tail -n 50',
+    'dd if=/dev/zero of=/tmp/test.img bs=1M count=1',
+    'chmod -R 755 ./public',
+    'systemctl status nginx',
+    'grep -r "init 0" .',
+  ])('allows %j', (cmd) => {
+    expect(blockedShellCommandReason(cmd)).toBeNull()
   })
 })

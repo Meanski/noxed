@@ -28,7 +28,7 @@ vi.mock('electron-store', () => ({
   },
 }))
 
-import { registerSettingsHandlers, getStoredSettings, type AppSettings } from '../settings'
+import { registerSettingsHandlers, getStoredSettings, setStoredSetting, type AppSettings } from '../settings'
 
 registerSettingsHandlers()
 
@@ -97,6 +97,13 @@ describe('settings:set', () => {
   it('only accepts a boolean for confirmMultilinePaste', () => {
     expect((invoke('settings:set', 'confirmMultilinePaste', false) as AppSettings).confirmMultilinePaste).toBe(false)
     expect(() => invoke('settings:set', 'confirmMultilinePaste', 'no')).toThrow('Invalid value for setting: confirmMultilinePaste')
+  })
+
+  it('keeps Claude Code access out of the generic setter and through resets', () => {
+    expect(() => invoke('settings:set', 'mcpEnabled', true)).toThrow('can only be changed from its own settings section')
+    setStoredSetting('mcpEnabled', true)
+    expect((invoke('settings:reset') as AppSettings).mcpEnabled).toBe(true)
+    setStoredSetting('mcpEnabled', false)
   })
 
   it('rejects unknown keys', () => {

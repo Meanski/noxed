@@ -103,6 +103,17 @@ export async function getCredential(sessionId: string, field: 'password'): Promi
   return keytar.getPassword(KEYCHAIN_SERVICE, `${sessionId}:${field}`)
 }
 
+// noxed's own secrets (e.g. the MCP server token), for main-process use only:
+// unlike session credentials they're needed before the user unlocks, and any
+// IPC that hands one to the renderer must check isUnlocked() itself.
+export async function saveAppSecret(name: string, value: string): Promise<void> {
+  await keytar.setPassword(KEYCHAIN_SERVICE, `app:${name}`, value)
+}
+
+export async function getAppSecret(name: string): Promise<string | null> {
+  return keytar.getPassword(KEYCHAIN_SERVICE, `app:${name}`)
+}
+
 export async function deleteCredentials(sessionId: string): Promise<void> {
   try {
     await keytar.deletePassword(KEYCHAIN_SERVICE, `${sessionId}:password`)

@@ -184,7 +184,16 @@ async function openSftp(event: IpcMainInvokeEvent, config: SftpConnectConfig): P
   })
 }
 
-function listDir(sftp: SFTPWrapper, path: string): Promise<unknown[]> {
+export interface SftpEntry {
+  name: string
+  size: number
+  /** Milliseconds since the epoch. */
+  mtime: number
+  permissions: number
+  isDirectory: boolean
+}
+
+export function listDir(sftp: SFTPWrapper, path: string): Promise<SftpEntry[]> {
   return new Promise((resolve, reject) => {
     sftp.readdir(path, (err, list) => {
       if (err) return reject(new ConnectionError(toMessage(err)))
@@ -199,7 +208,7 @@ function listDir(sftp: SFTPWrapper, path: string): Promise<unknown[]> {
   })
 }
 
-function readTextFile(sftp: SFTPWrapper, remotePath: string): Promise<string> {
+export function readTextFile(sftp: SFTPWrapper, remotePath: string): Promise<string> {
   return new Promise((resolve, reject) => {
     sftp.stat(remotePath, (statErr, stats: Stats) => {
       if (statErr) return reject(new ConnectionError(toMessage(statErr)))

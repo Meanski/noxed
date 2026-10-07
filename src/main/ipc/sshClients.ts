@@ -142,6 +142,46 @@ export function connectRawClient(target: SshTarget): Promise<Client> {
   })
 }
 
+export interface ExecResult {
+  stdout: string
+  stderr: string
+  /** Null when the server reported no exit status (e.g. killed by a signal). */
+  code: number | null
+  /** True when output beyond `maxBytes` was dropped. */
+  truncated: boolean
+}
+
+/**
+ * Runs one command on a connected client and collects its output, keeping at
+ * most `maxBytes` of each stream and giving up after `timeoutMs`.
+ */
+export function execCapture(client: Client, command: string, { timeoutMs, maxBytes }: { timeoutMs: number; maxBytes: number }): Promise<ExecResult> {
+  return new Promise((resolve, reject) => {
+    client.exec(command, (err, stream) => {
+      if (err) return reject(new ConnectionError(toMessage(err)))
+      const out = { stdout: '', stderr: '', truncated: false }
+      const collect = (key: 'stdout' | 'stderr') => (d: Buffer) => {
+        if (out[key].length < maxBytes) out[key] += d.toString('utf8')
+        else out.truncated = true
+      }
+      const timer = setTimeout(() => {
+        stream.close()
+        reject(new ConnectionError('Remote command timed out'))
+      }, timeoutMs)
+      stream.on('data', collect('stdout'))
+      stream.stderr.on('data', collect('stderr'))
+      stream.on('close', (code: number | null) => {
+        clearTimeout(timer)
+        resolve({ ...out, code: code ?? null })
+      })
+      stream.on('error', (e: unknown) => {
+        clearTimeout(timer)
+        reject(new ConnectionError(toMessage(e)))
+      })
+    })
+  })
+}
+
 /** Opens a TCP channel through `via` to the destination, for ProxyJump-style chaining. */
 export function openJumpSocket(via: Client, destHost: string, destPort: number): Promise<ClientChannel> {
   return new Promise((resolve, reject) => {

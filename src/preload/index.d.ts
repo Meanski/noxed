@@ -13,6 +13,20 @@ interface TunnelInfo {
   connections: number
 }
 
+interface McpStatus {
+  enabled: boolean
+  running: boolean
+  port: number
+  error: string | null
+}
+
+interface McpApprovalRequest {
+  requestId: string
+  kind: 'command' | 'read'
+  connection: string
+  detail: string
+}
+
 type HostKeyDecision = 'trust' | 'once' | 'reject'
 
 interface TrustedHostKey {
@@ -63,6 +77,16 @@ declare global {
         kill: (id: string) => Promise<void>
         onData: (cb: (id: string, data: string) => void) => () => void
         onExit: (cb: (id: string, exitCode: number) => void) => () => void
+      }
+      mcp: {
+        status: () => Promise<McpStatus>
+        setEnabled: (enabled: boolean) => Promise<McpStatus>
+        /** Needs noxed unlocked. */
+        connectionInfo: () => Promise<{ url: string; token: string; command: string }>
+        regenerateToken: () => Promise<McpStatus>
+        respond: (requestId: string, decision: 'once' | 'session' | 'deny') => Promise<void>
+        onApproval: (cb: (request: McpApprovalRequest) => void) => () => void
+        onApprovalDismiss: (cb: (requestId: string) => void) => () => void
       }
       runner: {
         run: (sessionIds: string[], command: string) => Promise<string>
