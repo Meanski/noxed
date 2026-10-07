@@ -101,6 +101,8 @@ describe('table metadata and write results', () => {
     expect(pgQuery.mock.calls.at(-1)?.[1]).toEqual(['Members'])
     // Both lookups follow the connection's schema rather than assuming public.
     expect(pgQuery.mock.calls.slice(-2).every((c) => String(c[0]).includes('current_schema()'))).toBe(true)
+    // INCLUDE columns follow the key columns in indkey and aren't part of the key.
+    expect(String(pgQuery.mock.calls.at(-1)?.[0])).toContain('k.ord <= i.indnkeyatts')
   })
 
   async function connectMysql(responses: unknown[]) {

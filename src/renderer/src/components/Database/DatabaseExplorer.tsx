@@ -90,6 +90,7 @@ export default function DatabaseExplorer({ tab }: Readonly<{ tab: Tab }>) {
     primaryKey: browsingTable ? primaryKeys[browsingTable] : undefined,
     results, setResults, notify: showToast,
     reload: () => { if (browsingTable) runQuery(selectRows(browsingTable, sqlDialect, BROWSE_LIMIT), false, browsingTable) },
+    currentRun: () => queryRunRef.current,
   })
 
   const connect = useCallback(async () => {

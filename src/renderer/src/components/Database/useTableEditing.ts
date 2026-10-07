@@ -17,6 +17,11 @@ interface TableEditingOptions {
   notify: (message: string) => void
   /** Re-runs the browse query after an insert or delete. */
   reload: () => void
+  /**
+   * Identifies the query run that owns the grid. A write that finishes after
+   * another run started leaves that newer grid alone.
+   */
+  currentRun: () => number
 }
 
 /**
@@ -24,7 +29,7 @@ interface TableEditingOptions {
  * primary key (all of its columns) and must touch exactly one row; tables
  * without a primary key are read-only rather than guessed at.
  */
-export function useTableEditing({ clientId, dbType, table, primaryKey, results, setResults, notify, reload }: TableEditingOptions) {
+export function useTableEditing({ clientId, dbType, table, primaryKey, results, setResults, notify, reload, currentRun }: TableEditingOptions) {
   const [editingCell, setEditingCell] = useState<{ row: Row; col: string } | null>(null)
   const [editValue, setEditValue] = useState('')
   const [pendingDelete, setPendingDelete] = useState<Row | null>(null)
@@ -58,7 +63,12 @@ export function useTableEditing({ clientId, dbType, table, primaryKey, results, 
     const value: QueryParam = editValue === '' ? null : coerceLike(editValue, cell.row[cell.col])
     try {
       const { sql, params } = buildUpdate(table, cell.col, value, primaryKey, cell.row, dbType)
+      const startedOn = currentRun()
       const result = await run(sql, params)
+      if (currentRun() !== startedOn) {
+        notify(result.rowCount === 1 ? 'Updated' : `Update matched ${result.rowCount} rows`)
+        return
+      }
       if (result.rowCount !== 1) {
         notify(`Update matched ${result.rowCount} rows; reload to see the current data`)
         return
@@ -76,9 +86,10 @@ export function useTableEditing({ clientId, dbType, table, primaryKey, results, 
     if (!row || !editable || !table || !primaryKey) return
     try {
       const { sql, params } = buildDelete(table, primaryKey, row, dbType)
+      const startedOn = currentRun()
       const result = await run(sql, params)
       notify(result.rowCount === 1 ? 'Row deleted' : `Delete matched ${result.rowCount} rows`)
-      reload()
+      if (currentRun() === startedOn) reload()
     } catch (err) {
       notify(`Delete failed: ${ipcErrorMessage(err)}`)
     }
@@ -88,9 +99,10 @@ export function useTableEditing({ clientId, dbType, table, primaryKey, results, 
     if (!clientId || !table) return false
     try {
       const { sql, params } = buildInsert(table, values, dbType)
+      const startedOn = currentRun()
       await run(sql, params)
       notify('Row added')
-      reload()
+      if (currentRun() === startedOn) reload()
       return true
     } catch (err) {
       notify(`Insert failed: ${ipcErrorMessage(err)}`)

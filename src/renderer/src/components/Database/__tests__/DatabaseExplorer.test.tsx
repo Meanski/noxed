@@ -549,6 +549,25 @@ describe('DatabaseExplorer — row editing', () => {
     expect(screen.queryByText('alice')).toBeNull()
   })
 
+  it('leaves a newer table alone when an earlier edit finishes late', async () => {
+    let finishUpdate: (r: unknown) => void = () => undefined
+    const orders = { columns: ['id', 'total'], rows: [{ id: 9, total: 'ninety-nine' }], rowCount: 1, duration: 1 }
+    await renderConnected({}, {
+      query: vi.fn().mockImplementation((_id: string, q: string) => {
+        if (q.startsWith('UPDATE')) return new Promise((r) => { finishUpdate = r })
+        return Promise.resolve(q.includes('"orders"') ? orders : usersResult)
+      }),
+    })
+    fireEvent.click(screen.getByText('users'))
+    await screen.findByText('alice')
+    await editCell('alice', 'alicia')
+    fireEvent.click(screen.getByText('orders'))
+    await screen.findByText('ninety-nine')
+    await act(async () => { finishUpdate({ columns: [], rows: [], rowCount: 1, duration: 1 }) })
+    expect(screen.getByText('ninety-nine')).toBeTruthy()
+    expect(screen.queryByText('alicia')).toBeNull()
+  })
+
   it('keeps tables without a primary key read-only', async () => {
     await browseUsers({ tableInfo: vi.fn().mockResolvedValue({ ...tableInfoResult, primaryKey: [] }) })
     fireEvent.doubleClick(screen.getByText('alice'))

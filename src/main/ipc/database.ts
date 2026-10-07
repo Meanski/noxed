@@ -165,12 +165,16 @@ async function connectPostgres(config: DbConnectConfig): Promise<DbConnection> {
       )
       // The schema the connection works in (search_path's first), as for the
       // table list. quote_ident keeps mixed-case names intact; to_regclass
-      // returns NULL (no rows) instead of erroring for a missing table.
+      // returns NULL (no rows) instead of erroring for a missing table. Only
+      // the first indnkeyatts columns are the key: the rest are INCLUDE
+      // columns stored alongside it.
       const pk = await pool.query(
         `SELECT a.attname FROM pg_index i
-         JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey)
-         WHERE i.indrelid = to_regclass(quote_ident(current_schema()) || '.' || quote_ident($1)) AND i.indisprimary
-         ORDER BY array_position(i.indkey, a.attnum)`,
+         CROSS JOIN LATERAL unnest(i.indkey) WITH ORDINALITY AS k(attnum, ord)
+         JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = k.attnum
+         WHERE i.indrelid = to_regclass(quote_ident(current_schema()) || '.' || quote_ident($1))
+           AND i.indisprimary AND k.ord <= i.indnkeyatts
+         ORDER BY k.ord`,
         [table]
       )
       return {
