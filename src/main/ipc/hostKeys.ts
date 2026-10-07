@@ -241,6 +241,35 @@ async function decide(check: InflightCheck, host: string, port: number, blob: Bu
   return askAndRemember(check, { ...prompt, status: 'new', otherKeyTypes: [...new Set(forHost.map((e) => e.keyType))] }, key)
 }
 
+// Decisions for one host:port happen one after another, so a second key that
+// arrives while the first is being decided is judged against the outcome
+// (e.g. as a changed key once the first was trusted), not a stale snapshot.
+const hostTurns = new Map<string, Promise<void>>()
+
+async function decideInTurn(check: InflightCheck, host: string, port: number, blob: Buffer): Promise<boolean> {
+  const turnKey = `${host.toLowerCase()}|${port}`
+  const previous = hostTurns.get(turnKey)
+  let release = () => {}
+  const mine = new Promise<void>((resolve) => { release = resolve })
+  const queued = (previous ?? Promise.resolve()).then(() => mine)
+  hostTurns.set(turnKey, queued)
+  try {
+    if (previous) {
+      // Waiting on someone else's prompt counts as prompting: keep this
+      // connection's handshake clock stopped meanwhile.
+      check.prompting = true
+      check.watchers.forEach((w) => w.onPromptStart())
+      await previous
+      check.prompting = false
+      check.watchers.forEach((w) => w.onPromptEnd())
+    }
+    return await decide(check, host, port, blob)
+  } finally {
+    release()
+    if (hostTurns.get(turnKey) === queued) hostTurns.delete(turnKey)
+  }
+}
+
 /** Resolves true when the presented host key is trusted (or the user accepts it). */
 export function verifyHostKey(host: string, port: number, blob: Buffer, watcher?: PromptWatcher): Promise<boolean> {
   const dedupeKey = `${host.toLowerCase()}|${port}|${blob.toString('base64')}`
@@ -253,7 +282,7 @@ export function verifyHostKey(host: string, port: number, blob: Buffer, watcher?
     return existing.result
   }
   const check: InflightCheck = { result: Promise.resolve(false), watchers: new Set(watcher ? [watcher] : []), prompting: false, abandoned: false }
-  check.result = decide(check, host, port, blob)
+  check.result = decideInTurn(check, host, port, blob)
     .catch((err) => {
       console.error(`[hostkeys] verification failed for ${host}:${port}: ${toMessage(err)}`)
       return false

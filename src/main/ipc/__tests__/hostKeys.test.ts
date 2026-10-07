@@ -237,6 +237,39 @@ describe('verifyHostKey', () => {
     expect(sent.filter(([ch]) => ch === 'hostkeys:prompt')).toHaveLength(1)
   })
 
+  it('judges a second key for the same host after the first is decided', async () => {
+    const first = verifyHostKey('example.com', 22, KEY1)
+    const second = verifyHostKey('example.com', 22, KEY2)
+    await vi.waitFor(() => expect(sent.filter(([ch]) => ch === 'hostkeys:prompt')).toHaveLength(1))
+    expect(lastPrompt().status).toBe('new')
+    await respond('trust')
+    expect(await first).toBe(true)
+    // KEY1 is now trusted, so KEY2 must be presented as a changed key.
+    await vi.waitFor(() => expect(sent.filter(([ch]) => ch === 'hostkeys:prompt')).toHaveLength(2))
+    expect(lastPrompt().status).toBe('changed')
+    await respond('reject')
+    expect(await second).toBe(false)
+  })
+
+  it('keeps a connection waiting its turn from timing out', async () => {
+    vi.useFakeTimers()
+    const first = verifyHostKey('example.com', 22, KEY1)
+    await vi.advanceTimersByTimeAsync(0)
+    const client = Object.assign(new EventEmitter(), { destroy: vi.fn() })
+    const errors: Error[] = []
+    client.on('error', (e: Error) => errors.push(e))
+    const verify = vi.fn()
+    ;(verifiedHandshake(client as never, 'example.com', 22).hostVerifier as (k: Buffer, v: (ok: boolean) => void) => void)(KEY2, verify)
+    await vi.advanceTimersByTimeAsync(SSH_HANDSHAKE_TIMEOUT_MS * 2)
+    expect(errors).toHaveLength(0)
+    await respond('reject')
+    await first
+    await vi.advanceTimersByTimeAsync(0)
+    await respond('reject')
+    await vi.advanceTimersByTimeAsync(0)
+    expect(verify).toHaveBeenCalledWith(false)
+  })
+
   it('rejects immediately when there is no window to ask', async () => {
     windows = []
     expect(await verifyHostKey('example.com', 22, KEY1)).toBe(false)
