@@ -19,6 +19,7 @@ export interface AppSettings {
   terminalCursorStyle: string
   scrollbackSize: number
   copyOnSelect: boolean
+  confirmMultilinePaste: boolean
   bellSound: boolean
   autoLockTimeout: string
   isDarkMode: boolean
@@ -45,6 +46,7 @@ const DEFAULTS: Omit<AppSettings, `snippets:${string}`> = {
   terminalCursorStyle: 'Vertical Bar',
   scrollbackSize: 100000,
   copyOnSelect: false,
+  confirmMultilinePaste: true,
   bellSound: true,
   autoLockTimeout: '15 minutes',
   isDarkMode: false,

@@ -433,6 +433,7 @@ function TerminalSettings() {
   const terminalTheme = settings.terminalTheme ?? 'noxed Dark'
   const terminalCursorStyle = settings.terminalCursorStyle ?? 'Vertical Bar'
   const copyOnSelect = settings.copyOnSelect ?? false
+  const confirmMultilinePaste = settings.confirmMultilinePaste ?? true
   const bellSound = settings.bellSound ?? true
 
   const handleScrollbackChange = (raw: string) => {
@@ -530,6 +531,10 @@ function TerminalSettings() {
           <Divider />
           <Row label="Copy on Select" description="Automatically copy selected text to clipboard">
             <Toggle on={copyOnSelect} onChange={v => update('copyOnSelect', v)} />
+          </Row>
+          <Divider />
+          <Row label="Confirm Multi-line Paste" description="Ask before pasting text that would run several commands. Skipped when the shell uses bracketed paste">
+            <Toggle on={confirmMultilinePaste} onChange={v => update('confirmMultilinePaste', v)} />
           </Row>
           <Divider />
           <Row label="Bell Sound" description="Play sound on terminal bell character">
