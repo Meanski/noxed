@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { clearAdhocPassword } from '../lib/sshCredentials'
 import { withRecent, type RecentConnection } from '../lib/recents'
+import { ipcErrorMessage } from '../lib/format'
 
 // ── Connection types ──────────────────────────────────────────────────────────
 
@@ -170,6 +171,10 @@ interface AppState {
 
   /** True once saved connections have loaded; until then an empty list means "not known yet". */
   sessionsLoaded: boolean
+  /** Why loading saved connections failed, until a retry succeeds. */
+  sessionsLoadError: string | null
+  /** Loads saved connections from main (no credentials; those stay in the keychain). */
+  loadSessions: () => Promise<void>
   setSessions: (sessions: Session[]) => void
   addSession: (session: Session) => void
   updateSession: (id: string, data: Partial<Session>) => void
@@ -260,6 +265,7 @@ function openSingletonTab(set: SetState, view: TabView, label: string): void {
 export const useAppStore = create<AppState>((set) => ({
   sessions: [],
   sessionsLoaded: false,
+  sessionsLoadError: null,
   tabs: [],
   activeTabId: null,
   showAddSession: false,
@@ -284,7 +290,16 @@ export const useAppStore = create<AppState>((set) => ({
   pendingConnectionGroup: null,
   updateStatus: null,
 
-  setSessions: (sessions) => set({ sessions, sessionsLoaded: true }),
+  loadSessions: async () => {
+    set({ sessionsLoadError: null })
+    try {
+      const sessions = await window.api.sessions.list()
+      set({ sessions, sessionsLoaded: true })
+    } catch (err) {
+      set({ sessionsLoadError: ipcErrorMessage(err, 'Could not load your saved connections') })
+    }
+  },
+  setSessions: (sessions) => set({ sessions, sessionsLoaded: true, sessionsLoadError: null }),
   addSession: (session) => set((s) => ({ sessions: [...s.sessions, session] })),
   updateSession: (id, data) =>
     set((s) => ({ sessions: s.sessions.map((sess) => (sess.id === id ? { ...sess, ...data } : sess)) })),

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { useAppStore, selectSession } from '../index'
 import { resolveSshCredentials, setAdhocPassword } from '../../lib/sshCredentials'
 import { groupColor, connectionColor, dbTypeLabel } from '../../lib/colors'
@@ -545,5 +545,19 @@ describe('recent connections across openers', () => {
     useAppStore.setState({ sessionsLoaded: false })
     useAppStore.getState().setSessions([])
     expect(useAppStore.getState().sessionsLoaded).toBe(true)
+  })
+})
+
+describe('loadSessions', () => {
+  it('loads saved connections, or records why it could not', async () => {
+    const list = vi.fn().mockRejectedValueOnce(new Error('store unreadable')).mockResolvedValueOnce([makeSession({ id: 'x' })])
+    vi.stubGlobal('window', { api: { sessions: { list } } })
+    useAppStore.setState({ sessions: [], sessionsLoaded: false, sessionsLoadError: null })
+    await useAppStore.getState().loadSessions()
+    expect(useAppStore.getState()).toMatchObject({ sessionsLoaded: false, sessionsLoadError: 'store unreadable' })
+    await useAppStore.getState().loadSessions()
+    expect(useAppStore.getState()).toMatchObject({ sessionsLoaded: true, sessionsLoadError: null })
+    expect(useAppStore.getState().sessions.map((s) => s.id)).toEqual(['x'])
+    vi.unstubAllGlobals()
   })
 })

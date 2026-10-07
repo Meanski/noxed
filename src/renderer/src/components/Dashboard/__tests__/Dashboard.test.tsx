@@ -16,9 +16,21 @@ describe('Dashboard', () => {
   })
 
   it('waits for saved connections to load before calling it a first run', () => {
-    useAppStore.setState({ sessions: [], sessionsLoaded: false })
+    useAppStore.setState({ sessions: [], sessionsLoaded: false, sessionsLoadError: null })
     render(<Dashboard />)
     expect(screen.queryByText('Welcome to noxed')).toBeNull()
+    expect(screen.queryByText(/No connections match/)).toBeNull()
+    expect(screen.getByLabelText('Loading connections')).toBeTruthy()
+  })
+
+  it('explains a failed load and retries it', async () => {
+    const api = installWindowApi()
+    api.sessions.list.mockResolvedValueOnce([])
+    useAppStore.setState({ sessions: [], sessionsLoaded: false, sessionsLoadError: 'Could not load your saved connections' })
+    render(<Dashboard />)
+    expect(screen.getByRole('alert').textContent).toBe('Could not load your saved connections')
+    fireEvent.click(screen.getByText('Retry'))
+    expect(await screen.findByText('Welcome to noxed')).toBeTruthy()
   })
 
   it('welcomes first-run users with ways to start', async () => {

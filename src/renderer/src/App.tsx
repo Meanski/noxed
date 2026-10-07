@@ -1,6 +1,5 @@
 import { useEffect } from 'react'
 import { useAppStore } from './store'
-import { ipcErrorMessage } from './lib/format'
 import Sidebar from './components/Sidebar/Sidebar'
 import TopBar from './components/TopBar/TopBar'
 import TabBar from './components/TabBar/TabBar'
@@ -18,7 +17,6 @@ import { useRecentsSync } from './lib/useRecentsSync'
 export const SIDEBAR_W = 220
 
 export default function App() {
-  const setSessions = useAppStore(s => s.setSessions)
   const tabs = useAppStore(s => s.tabs)
   const activeTabId = useAppStore(s => s.activeTabId)
   const setActiveTab = useAppStore(s => s.setActiveTab)
@@ -39,9 +37,7 @@ export default function App() {
 
   // Load sessions on startup (no credentials — those stay in keychain)
   useEffect(() => {
-    window.api.sessions.list().then(setSessions, (err: unknown) => {
-      useAppStore.getState().addNotification({ type: 'error', message: ipcErrorMessage(err, 'Could not load your saved connections') })
-    })
+    useAppStore.getState().loadSessions()
     window.api.settings.get().then((cfg: any) => {
       if (cfg.sidebarDefault === 'collapsed') setSidebarExpanded(false)
       if (typeof cfg.sidebarWidth === 'number') useAppStore.getState().setSidebarWidth(clampSidebarWidth(cfg.sidebarWidth))

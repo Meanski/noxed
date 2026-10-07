@@ -10,6 +10,7 @@ import { CompactServerCard, HealthCard, ServerListRow } from './ServerViews'
 import { ServerContextMenu } from '../ServerContextMenu'
 import ImportSshConfigModal from '../ConnectionManager/ImportSshConfigModal'
 import EmptyDashboard from './EmptyDashboard'
+import SessionsLoadState from './SessionsLoadState'
 import QuickActions from './QuickActions'
 import RecentConnections from './RecentConnections'
 
@@ -215,8 +216,10 @@ export default function Dashboard() {
 
   const importModal = importOpen && <ImportSshConfigModal onClose={() => setImportOpen(false)} />
 
-  // Only a confirmed-empty list means first run; before loading it's unknown.
-  if (sessionsLoaded && sessions.length === 0) {
+  // Until saved connections load, an empty list says nothing: not a first
+  // run, and not "nothing matches".
+  if (!sessionsLoaded) return <SessionsLoadState />
+  if (sessions.length === 0) {
     return (
       <>
         <EmptyDashboard onImportSshConfig={() => setImportOpen(true)} />
