@@ -24,7 +24,8 @@ vi.mock('../ssh', () => ({
   sshConnectOptions: () => ({ readyTimeout: 1000, keepaliveInterval: 0, keepaliveCountMax: 1 }),
   SSH_CONNECT_DEFAULTS: { algorithms: { kex: [] } },
 }))
-vi.mock('../sshClients', () => ({
+vi.mock('../sshClients', async (importOriginal) => ({
+  answerPromptsWith: (await importOriginal<typeof import('../sshClients')>()).answerPromptsWith,
   connectSessionClient: vi.fn(),
   openJumpSocket: vi.fn(),
 }))

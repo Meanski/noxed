@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import Modal, { ModalButton } from '../Modal'
-import { ipcErrorMessage } from '../../lib/format'
+import { hostWithPort, ipcErrorMessage } from '../../lib/format'
 import { useAppStore } from '../../store'
 
 type HostKeyPromptRequest = Parameters<Parameters<Window['api']['hostKeys']['onPrompt']>[0]>[0]
@@ -8,6 +8,10 @@ type Decision = Parameters<Window['api']['hostKeys']['respond']>[1]
 
 const withoutRequest = (requestId: string) => (queue: HostKeyPromptRequest[]) =>
   queue.filter((p) => p.requestId !== requestId)
+
+// Puts a prompt back at the front unless it's already queued.
+const withRequest = (prompt: HostKeyPromptRequest) => (queue: HostKeyPromptRequest[]) =>
+  queue.some((p) => p.requestId === prompt.requestId) ? queue : [prompt, ...queue]
 
 // Where sshd keeps the public host key for each algorithm family.
 function hostKeyFile(keyType: string): string {
@@ -17,7 +21,7 @@ function hostKeyFile(keyType: string): string {
 }
 
 function hostLabel(p: HostKeyPromptRequest): string {
-  return p.port === 22 ? p.host : `${p.host}:${p.port}`
+  return hostWithPort(p.host, p.port)
 }
 
 function Fingerprint({ label, value }: Readonly<{ label: string; value: string }>) {
@@ -62,7 +66,7 @@ export default function HostKeyPrompt() {
       useAppStore.getState().addNotification({ type: 'error', message: ipcErrorMessage(err, 'Could not send host key decision') })
       // Main still holds the request (e.g. it refused "trust" because the app
       // just auto-locked), so bring the prompt back to retry or reject.
-      setQueue((q) => (q.some((p) => p.requestId === answered.requestId) ? q : [answered, ...q]))
+      setQueue(withRequest(answered))
     })
   }
   const reject = () => answer('reject')

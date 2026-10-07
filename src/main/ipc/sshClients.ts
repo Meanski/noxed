@@ -95,15 +95,19 @@ export interface SshTarget {
   sock?: ClientChannel
 }
 
+/** A keyboard-interactive listener that answers every prompt with the password (or gives up without one). */
+export function answerPromptsWith(password: string | undefined) {
+  return (_name: string, _instructions: string, _lang: string, prompts: unknown[], finish: (answers: string[]) => void): void => {
+    finish(password ? prompts.map(() => password) : [])
+  }
+}
+
 export function connectRawClient(target: SshTarget): Promise<Client> {
   return new Promise((resolve, reject) => {
     const client = new Client()
     let settled = false
 
-    client.on('keyboard-interactive', (_name, _instructions, _lang, prompts, finish) => {
-      if (!target.password) { finish([]); return }
-      finish(prompts.map(() => target.password ?? ''))
-    })
+    client.on('keyboard-interactive', answerPromptsWith(target.password))
     client.on('ready', () => {
       settled = true
       client.setNoDelay(true)

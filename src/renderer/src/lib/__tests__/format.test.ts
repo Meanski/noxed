@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   formatBytes, formatBytesLong, formatFileSize, formatK8sMemory,
-  joinPath, formatUptime, sparkline, ipcErrorMessage,
+  joinPath, formatUptime, sparkline, ipcErrorMessage, hostWithPort,
 } from '../format'
 
 describe('formatK8sMemory', () => {
@@ -81,5 +81,18 @@ describe('ipcErrorMessage', () => {
 
   it('falls back for non-errors', () => {
     expect(ipcErrorMessage(undefined, 'nope')).toBe('nope')
+  })
+})
+
+describe('hostWithPort', () => {
+  it('omits the default port', () => {
+    expect(hostWithPort('web', 22)).toBe('web')
+    expect(hostWithPort('web', 2222)).toBe('web:2222')
+    expect(hostWithPort('web', 21, 21)).toBe('web')
+  })
+
+  it('brackets IPv6 addresses before a port', () => {
+    expect(hostWithPort('2001:db8::1', 2222)).toBe('[2001:db8::1]:2222')
+    expect(hostWithPort('2001:db8::1', 22)).toBe('2001:db8::1')
   })
 })
