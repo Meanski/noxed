@@ -1,9 +1,11 @@
 import { ipcMain } from 'electron'
 import Store from 'electron-store'
+import { ValidationError } from './errors'
 
 export interface AppSettings {
   dateFormat: string
   sidebarDefault: 'expanded' | 'collapsed'
+  sidebarWidth: number
   confirmClose: boolean
   dashboardView: 'grid' | 'compact' | 'list'
   connAlerts: boolean
@@ -28,6 +30,7 @@ export interface AppSettings {
 const DEFAULTS: Omit<AppSettings, `snippets:${string}`> = {
   dateFormat: 'YYYY-MM-DD HH:mm',
   sidebarDefault: 'expanded',
+  sidebarWidth: 220,
   confirmClose: true,
   dashboardView: 'compact',
   connAlerts: true,
@@ -50,6 +53,12 @@ const DEFAULTS: Omit<AppSettings, `snippets:${string}`> = {
 
 const KNOWN_KEYS = new Set(Object.keys(DEFAULTS))
 
+// Value checks for settings whose type or range matters to the app. The
+// renderer clamps too, but settings:set is reachable from untrusted code.
+const VALUE_VALIDATORS: Partial<Record<keyof AppSettings, (value: unknown) => boolean>> = {
+  sidebarWidth: (v) => typeof v === 'number' && Number.isInteger(v) && v >= 180 && v <= 480,
+}
+
 function isValidKey(key: string): boolean {
   return KNOWN_KEYS.has(key) || key.startsWith('snippets:')
 }
@@ -68,6 +77,8 @@ export function registerSettingsHandlers(): void {
 
   ipcMain.handle('settings:set', (_e, key: string, value: unknown) => {
     if (!isValidKey(key)) throw new Error(`Unknown setting: ${key}`)
+    const validate = VALUE_VALIDATORS[key as keyof AppSettings]
+    if (validate && !validate(value)) throw new ValidationError(`Invalid value for setting: ${key}`)
     const settings = settingsStore.get('settings')
     ;(settings as any)[key] = value
     settingsStore.set('settings', settings)

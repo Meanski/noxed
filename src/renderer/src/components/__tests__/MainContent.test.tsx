@@ -115,6 +115,48 @@ describe('MainContent terminal panes', () => {
     expect(third.style.gridColumn).toBe('span 2')
   })
 
+  it('resizes split columns and rows with the drag handles', () => {
+    const parent = makeTab({ view: 'terminal' })
+    // Parent + two children = the three-pane layout.
+    const panes = [1, 2].map(() => makeTab({ view: 'terminal', paneOf: parent.id }))
+    seedStore({ tabs: [parent, ...panes], activeTabId: parent.id })
+    render(<MainContent />)
+    const grid = screen.getByTestId(`terminal-${parent.id}`).parentElement!.parentElement as HTMLElement
+    grid.getBoundingClientRect = () => ({ left: 0, top: 0, width: 1000, height: 500 }) as DOMRect
+    expect(grid.style.gridTemplateColumns).toBe('50fr 50fr')
+
+    const columns = screen.getByLabelText('Resize terminal columns').parentElement as HTMLElement
+    fireEvent.pointerDown(columns, { button: 0, clientX: 500 })
+    fireEvent.pointerMove(columns, { clientX: 300 })
+    fireEvent.pointerUp(columns)
+    expect(grid.style.gridTemplateColumns).toBe('30fr 70fr')
+
+    // Clamped so no pane collapses.
+    fireEvent.change(screen.getByLabelText('Resize terminal rows'), { target: { value: '99' } })
+    expect(grid.style.gridTemplateRows).toBe('85fr 15fr')
+    // With three panes the bottom one spans both columns, so the column
+    // handle stops at the row divider.
+    expect(columns.style.height).toBe('85%')
+  })
+
+  it('runs the column handle full height for four panes', () => {
+    const parent = makeTab({ view: 'terminal' })
+    const panes = [1, 2, 3].map(() => makeTab({ view: 'terminal', paneOf: parent.id }))
+    seedStore({ tabs: [parent, ...panes], activeTabId: parent.id })
+    render(<MainContent />)
+    const columns = screen.getByLabelText('Resize terminal columns').parentElement as HTMLElement
+    expect(columns.style.height).toBe('100%')
+  })
+
+  it('shows only a column handle for two panes', () => {
+    const parent = makeTab({ view: 'terminal' })
+    const pane = makeTab({ view: 'terminal', paneOf: parent.id })
+    seedStore({ tabs: [parent, pane], activeTabId: parent.id })
+    render(<MainContent />)
+    expect(screen.getByLabelText('Resize terminal columns')).toBeTruthy()
+    expect(screen.queryByLabelText('Resize terminal rows')).toBeNull()
+  })
+
   it('focuses a pane on mouse down when split', () => {
     const parent = makeTab({ view: 'terminal' })
     const pane = makeTab({ view: 'terminal', paneOf: parent.id })

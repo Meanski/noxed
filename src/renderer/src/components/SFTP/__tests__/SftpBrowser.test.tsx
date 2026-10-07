@@ -336,3 +336,25 @@ describe('SftpBrowser — diff mode and file management', () => {
     await waitFor(() => expect(api.sftp.list.mock.calls.length).toBeGreaterThan(before))
   })
 })
+
+describe('SftpBrowser — pane splitter', () => {
+  it('resizes the local and remote panes by dragging the divider, clamped to 20–80%', async () => {
+    setup()
+    await ready()
+    const handle = screen.getByLabelText('Resize file panes').parentElement as HTMLElement
+    const container = handle.parentElement as HTMLElement
+    container.getBoundingClientRect = () => ({ left: 100, top: 0, width: 1000, height: 600 }) as DOMRect
+    const [localPane, remotePane] = [handle.previousElementSibling, handle.nextElementSibling] as HTMLElement[]
+    expect([localPane.style.width, remotePane.style.width]).toEqual(['50%', '50%'])
+
+    fireEvent.pointerDown(handle, { button: 0, clientX: 600 })
+    fireEvent.pointerMove(handle, { clientX: 400 })
+    expect([localPane.style.width, remotePane.style.width]).toEqual(['30%', '70%'])
+    fireEvent.pointerMove(handle, { clientX: 1080 })
+    expect([localPane.style.width, remotePane.style.width]).toEqual(['80%', '20%'])
+    fireEvent.pointerUp(handle)
+
+    fireEvent.doubleClick(handle)
+    expect(localPane.style.width).toBe('50%')
+  })
+})

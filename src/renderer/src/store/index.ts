@@ -146,6 +146,7 @@ interface AppState {
   serverMetrics: Record<string, ServerMetrics>
   sidebarView: 'type' | 'project'
   sidebarExpanded: boolean
+  sidebarWidth: number
   isDarkMode: boolean
   isLocked: boolean
   sectionOrder: Record<string, string[]>
@@ -189,6 +190,7 @@ interface AppState {
   setLocked: (v: boolean) => void
   setSidebarView: (view: 'type' | 'project') => void
   setSidebarExpanded: (v: boolean) => void
+  setSidebarWidth: (px: number) => void
   setSectionOrder: (section: string, order: string[]) => void
   setProjectGroupOrder: (order: string[]) => void
   setGroupColor: (group: string, color: string | null) => void
@@ -247,6 +249,7 @@ export const useAppStore = create<AppState>((set) => ({
   serverMetrics: {},
   sidebarView: 'type',
   sidebarExpanded: true,
+  sidebarWidth: 220,
   isDarkMode: false,
   isLocked: true,
   sectionOrder: {},
@@ -451,6 +454,7 @@ export const useAppStore = create<AppState>((set) => ({
   setLocked: (v) => set({ isLocked: v }),
   setSidebarView: (view) => set({ sidebarView: view }),
   setSidebarExpanded: (v) => set({ sidebarExpanded: v }),
+  setSidebarWidth: (px) => set({ sidebarWidth: px }),
   setSectionOrder: (section, order) =>
     set((s) => {
       const sectionOrder = { ...s.sectionOrder, [section]: order }

@@ -23,6 +23,7 @@ function applySavedOrder(list: Session[], order?: string[]): Session[] {
 }
 
 export default function Sidebar() {
+  const sidebarWidth = useAppStore(s => s.sidebarWidth)
   const {
     sessions, tabs, activeTabId,
     openTab, openDashboardTab, openConnectionsTab, openSettingsTab, openRedisTab,
@@ -116,7 +117,7 @@ export default function Sidebar() {
   return (
     <div
       className="flex flex-col flex-shrink-0 h-full overflow-hidden"
-      style={{ width: 220, background: 'var(--nox-sidebar)', borderRight: '1px solid var(--nox-border)' }}
+      style={{ width: sidebarWidth, background: 'var(--nox-sidebar)' }}
     >
       {/* Search */}
       <div className="px-3 py-2 flex-shrink-0">

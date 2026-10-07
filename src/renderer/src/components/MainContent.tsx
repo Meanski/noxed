@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useRef, useState } from 'react'
 import { useAppStore, Tab } from '../store'
 import TerminalView from './Terminal/TerminalView'
 import SftpBrowser from './SFTP/SftpBrowser'
@@ -14,6 +14,7 @@ import DockerDashboard from './Docker/DockerDashboard'
 import RunnerView from './Runner/RunnerView'
 import LocalTerminalView from './Terminal/LocalTerminalView'
 import RdpView from './RDP/RdpView'
+import SplitHandle from './SplitHandle'
 
 // ── Error boundary — prevents a crashed tab from taking down the whole app ──
 class TabErrorBoundary extends React.Component<
@@ -51,11 +52,18 @@ class TabErrorBoundary extends React.Component<
   }
 }
 
-// Grid templates for 1–4 terminal panes; the third pane spans the bottom row.
-const PANE_GRIDS: Record<number, React.CSSProperties> = {
-  2: { gridTemplateColumns: '1fr 1fr' },
-  3: { gridTemplateColumns: '1fr 1fr', gridTemplateRows: '1fr 1fr' },
-  4: { gridTemplateColumns: '1fr 1fr', gridTemplateRows: '1fr 1fr' },
+// Split panes are sized in percent of the tab; keep every pane usable.
+const PANE_MIN_PCT = 15
+const PANE_MAX_PCT = 85
+const PANE_DEFAULT_PCT = 50
+
+// 2 panes sit side by side; 3–4 form a 2×2 grid. With exactly three panes the
+// third spans the whole bottom row; with four, each takes its own cell.
+// Column/row splits are shared by every pane in the grid.
+function paneGrid(count: number, colPct: number, rowPct: number): React.CSSProperties {
+  const columns = `${colPct}fr ${100 - colPct}fr`
+  if (count === 2) return { gridTemplateColumns: columns }
+  return { gridTemplateColumns: columns, gridTemplateRows: `${rowPct}fr ${100 - rowPct}fr` }
 }
 
 // Single-view tabs; terminal tabs are special-cased for split panes below.
@@ -86,14 +94,29 @@ function TerminalPanes({ tab, style }: Readonly<{ tab: Tab; style: React.CSSProp
   const focusedPaneId = useAppStore(s => s.focusedPaneId)
   const setFocusedPane = useAppStore(s => s.setFocusedPane)
 
+  const gridRef = useRef<HTMLDivElement>(null)
+  const [colPct, setColPct] = useState(PANE_DEFAULT_PCT)
+  const [rowPct, setRowPct] = useState(PANE_DEFAULT_PCT)
+
   const panes = [tab, ...tabs.filter(p => p.paneOf === tab.id)]
-  const split = panes.length > 1
+  const count = Math.min(panes.length, 4)
+  const split = count > 1
+  const pctAlong = (axis: 'x' | 'y') => (clientX: number, clientY: number) => {
+    const rect = gridRef.current?.getBoundingClientRect()
+    if (!rect?.width || !rect.height) return PANE_DEFAULT_PCT
+    return axis === 'x'
+      ? ((clientX - rect.left) / rect.width) * 100
+      : ((clientY - rect.top) / rect.height) * 100
+  }
+  const handleProps = { min: PANE_MIN_PCT, max: PANE_MAX_PCT, defaultValue: PANE_DEFAULT_PCT }
+
   return (
     <div style={style}>
       <div
-        className="flex-1 min-w-0 min-h-0 overflow-hidden h-full"
+        ref={gridRef}
+        className="relative flex-1 min-w-0 min-h-0 overflow-hidden h-full"
         style={split
-          ? { display: 'grid', gap: 1, background: 'var(--nox-border)', ...PANE_GRIDS[Math.min(panes.length, 4)] }
+          ? { display: 'grid', gap: 1, background: 'var(--nox-border)', ...paneGrid(count, colPct, rowPct) }
           : { display: 'flex', flexDirection: 'column' }}
       >
         {panes.map((pane, i) => (
@@ -111,6 +134,30 @@ function TerminalPanes({ tab, style }: Readonly<{ tab: Tab; style: React.CSSProp
             </TabErrorBoundary>
           </div>
         ))}
+        {split && (
+          <SplitHandle
+            orientation="vertical"
+            label="Resize terminal columns"
+            value={colPct}
+            onChange={setColPct}
+            valueFromPointer={pctAlong('x')}
+            {...handleProps}
+            // With three panes the bottom one spans both columns, so the column
+            // handle only covers the top row.
+            style={{ position: 'absolute', top: 0, left: `calc(${colPct}% - 2px)`, height: count === 3 ? `${rowPct}%` : '100%' }}
+          />
+        )}
+        {count > 2 && (
+          <SplitHandle
+            orientation="horizontal"
+            label="Resize terminal rows"
+            value={rowPct}
+            onChange={setRowPct}
+            valueFromPointer={pctAlong('y')}
+            {...handleProps}
+            style={{ position: 'absolute', left: 0, top: `calc(${rowPct}% - 2px)`, width: '100%' }}
+          />
+        )}
       </div>
     </div>
   )

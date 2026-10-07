@@ -405,12 +405,16 @@ describe('DatabaseExplorer — results grid', () => {
     const handle = container.querySelector('.cursor-row-resize') as HTMLElement
     const editorWrap = editor().parentElement as HTMLElement
     expect(editorWrap.style.height).toBe('120px')
-    fireEvent.mouseDown(handle, { clientY: 100 })
-    fireEvent.mouseMove(window, { clientY: 180 })
+    // jsdom lays the editor out at top 0, so pointer y is the new height.
+    fireEvent.pointerDown(handle, { button: 0, clientY: 120 })
+    fireEvent.pointerMove(handle, { clientY: 200 })
     expect(editorWrap.style.height).toBe('200px')
-    fireEvent.mouseUp(window)
-    fireEvent.mouseMove(window, { clientY: 400 })
+    fireEvent.pointerUp(handle)
+    fireEvent.pointerMove(handle, { clientY: 300 })
     expect(editorWrap.style.height).toBe('200px')
+    // Keyboard users resize through the handle's range input.
+    fireEvent.change(screen.getByLabelText('Resize query editor'), { target: { value: '90' } })
+    expect(editorWrap.style.height).toBe('90px')
   })
 })
 
