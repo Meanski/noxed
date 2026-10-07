@@ -25,7 +25,14 @@ const tableInfoResult = {
     { name: 'uid', type: 'uuid', nullable: true },
     { name: 'blob', type: 'bytea', nullable: true },
   ],
+  primaryKey: ['id'],
 }
+
+// Browsing returns rows; writes report one affected row, like the drivers.
+const writeOk = { columns: [], rows: [], rowCount: 1, duration: 1 }
+const routedQuery = (rows = usersResult) =>
+  vi.fn().mockImplementation((_id: string, q: string) =>
+    Promise.resolve(/^(UPDATE|INSERT|DELETE)/.test(q) ? writeOk : rows))
 
 function setup(sessionOverrides: Record<string, any> = {}, dbOverrides: Record<string, any> = {}) {
   const session = makeSession({
@@ -43,7 +50,7 @@ function setup(sessionOverrides: Record<string, any> = {}, dbOverrides: Record<s
     database: {
       connect: vi.fn().mockResolvedValue('db-1'),
       disconnect: vi.fn().mockResolvedValue(undefined),
-      query: vi.fn().mockResolvedValue(usersResult),
+      query: routedQuery(),
       tables: vi.fn().mockResolvedValue(['users', 'orders', 'audit_log']),
       tableInfo: vi.fn().mockResolvedValue(tableInfoResult),
       ...dbOverrides,
@@ -308,6 +315,18 @@ describe('DatabaseExplorer — results grid', () => {
     expect(orderOf(container, 'alice', 'bob')).toBe(true)
   })
 
+  it('keeps the selection on the same row when the grid is re-sorted', async () => {
+    const { api } = await renderConnected({}, { query: vi.fn().mockResolvedValue(sortResult) })
+    await runSql(api, 'SELECT * FROM t')
+    fireEvent.click((await screen.findByText('bob')).closest('tr')!)
+    fireEvent.click(screen.getByTitle('Row detail'))
+    expect(screen.getByText('Row 1')).toBeTruthy()
+    fireEvent.click(screen.getAllByText('name')[0])
+    // bob is now second; the detail panel still shows bob, numbered by position.
+    const detail = screen.getByText('Row 2').parentElement!.parentElement as HTMLElement
+    expect(within(detail).getByText('bob')).toBeTruthy()
+  })
+
   it('selects rows via click and Enter/Space keydown and shows the detail panel', async () => {
     const { api } = await renderConnected()
     await runSql(api, 'SELECT * FROM users')
@@ -418,7 +437,7 @@ describe('DatabaseExplorer — results grid', () => {
   })
 })
 
-describe('DatabaseExplorer — cell editing', () => {
+describe('DatabaseExplorer — row editing', () => {
   async function browseUsers(dbOverrides: Record<string, any> = {}) {
     const ctx = await renderConnected({}, dbOverrides)
     fireEvent.click(screen.getByText('users'))
@@ -426,7 +445,14 @@ describe('DatabaseExplorer — cell editing', () => {
     return ctx
   }
 
-  it('edits a cell (object value uses JSON.stringify) and issues an UPDATE', async () => {
+  async function editCell(text: string, value: string) {
+    fireEvent.doubleClick(screen.getByText(text))
+    const input = await screen.findByDisplayValue(text)
+    fireEvent.change(input, { target: { value } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+  }
+
+  it('edits a cell (object value uses JSON.stringify) and issues an UPDATE keyed on the primary key', async () => {
     const { api } = await browseUsers()
     const metaBadge = screen.getByText('{1}').closest('td')!
     fireEvent.doubleClick(metaBadge)
@@ -443,40 +469,55 @@ describe('DatabaseExplorer — cell editing', () => {
     await screen.findByText('Updated')
   })
 
-  it('sets NULL when the edit value is emptied, binding a string pk', async () => {
-    const res = {
-      columns: ['code', 'label'],
-      rows: [{ code: "o'k", label: 'old' }],
-      rowCount: 1,
-      duration: 1,
-    }
-    const query = vi.fn().mockResolvedValue(res)
-    const { api } = await renderConnected({}, { query })
+  it('sets NULL when emptied and identifies rows by a composite key', async () => {
+    const res = { columns: ['org', 'code', 'label'], rows: [{ org: 7, code: "o'k", label: 'old' }], rowCount: 1, duration: 1 }
+    const { api } = await renderConnected({}, {
+      query: routedQuery(res as any),
+      tableInfo: vi.fn().mockResolvedValue({ columns: [], primaryKey: ['org', 'code'] }),
+    })
     fireEvent.click(screen.getByText('users'))
-    const cell = await screen.findByText('old')
-    fireEvent.doubleClick(cell)
-    const input = await screen.findByDisplayValue('old')
-    fireEvent.change(input, { target: { value: '' } })
-    fireEvent.keyDown(input, { key: 'Enter' })
+    await screen.findByText('old')
+    await editCell('old', '')
     await waitFor(() =>
       expect(api.database.query).toHaveBeenCalledWith(
         'db-1',
-        'UPDATE "users" SET "label" = $1 WHERE "code" = $2',
-        [null, "o'k"],
+        'UPDATE "users" SET "label" = $1 WHERE "org" = $2 AND "code" = $3',
+        [null, 7, "o'k"],
       )
     )
     await screen.findByText('NULL')
   })
 
+  it('uses MySQL quoting and placeholders for browsing and edits', async () => {
+    const { api } = await renderConnected({ dbType: 'mysql' })
+    fireEvent.click(screen.getByText('users'))
+    await screen.findByText('alice')
+    expect(api.database.query).toHaveBeenCalledWith('db-1', 'SELECT * FROM `users` LIMIT 100')
+    await editCell('alice', 'alicia')
+    await waitFor(() =>
+      expect(api.database.query).toHaveBeenCalledWith('db-1', 'UPDATE `users` SET `name` = ? WHERE `id` = ?', ['alicia', 1])
+    )
+  })
+
+  it('edits the row that is shown, even when the grid is sorted', async () => {
+    const { api } = await browseUsers()
+    // Sort descending by name so bob is shown first.
+    const header = within(screen.getByRole('table')).getAllByRole('button').find((b) => b.textContent?.startsWith('name'))!
+    fireEvent.click(header)
+    fireEvent.click(header)
+    await editCell('bob', 'robert')
+    await waitFor(() =>
+      expect(api.database.query).toHaveBeenCalledWith('db-1', 'UPDATE "users" SET "name" = $1 WHERE "id" = $2', ['robert', 2])
+    )
+  })
+
   it('skips the UPDATE when the value is unchanged and cancels on Escape', async () => {
     const { api } = await browseUsers()
     const callsBefore = api.database.query.mock.calls.length
-    const cell = screen.getByText('alice')
-    fireEvent.doubleClick(cell)
+    fireEvent.doubleClick(screen.getByText('alice'))
     const input = await screen.findByDisplayValue('alice')
     fireEvent.keyDown(input, { key: 'Enter' })
     expect(api.database.query.mock.calls).toHaveLength(callsBefore)
-    // escape path
     fireEvent.doubleClick(screen.getByText('bob'))
     const input2 = await screen.findByDisplayValue('bob')
     fireEvent.keyDown(input2, { key: 'Escape' })
@@ -484,43 +525,130 @@ describe('DatabaseExplorer — cell editing', () => {
     expect(api.database.query.mock.calls).toHaveLength(callsBefore)
   })
 
-  it('toasts when no primary key identifies the row', async () => {
-    const res = {
-      columns: ['id', 'name'],
-      rows: [{ id: null, name: 'orphan' }],
-      rowCount: 1,
-      duration: 1,
-    }
-    await renderConnected({}, { query: vi.fn().mockResolvedValue(res) })
+  it('never edits free-form query results, even right after browsing a table', async () => {
+    const { api } = await browseUsers()
+    await runSql(api, 'SELECT * FROM users WHERE id > 0')
+    await screen.findByText('alice')
+    fireEvent.doubleClick(screen.getByText('alice'))
+    expect(screen.queryByDisplayValue('alice')).toBeNull()
+    expect(api.database.query).not.toHaveBeenCalledWith('db-1', expect.stringMatching(/^UPDATE/), expect.anything())
+  })
+
+  it('shows only the latest table when an earlier query answers late', async () => {
+    let finishUsers: (r: unknown) => void = () => undefined
+    const orders = { columns: ['id', 'total'], rows: [{ id: 9, total: 'ninety-nine' }], rowCount: 1, duration: 1 }
+    await renderConnected({}, {
+      query: vi.fn().mockImplementation((_id: string, q: string) =>
+        q.includes('"users"') ? new Promise((r) => { finishUsers = r }) : Promise.resolve(orders)),
+    })
     fireEvent.click(screen.getByText('users'))
-    const cell = await screen.findByText('orphan')
-    fireEvent.doubleClick(cell)
-    const input = await screen.findByDisplayValue('orphan')
-    fireEvent.change(input, { target: { value: 'renamed' } })
-    fireEvent.keyDown(input, { key: 'Enter' })
-    expect(await screen.findByText('No primary key to identify row')).toBeTruthy()
+    fireEvent.click(screen.getByText('orders'))
+    await screen.findByText('ninety-nine')
+    await act(async () => { finishUsers(usersResult) })
+    expect(screen.getByText('ninety-nine')).toBeTruthy()
+    expect(screen.queryByText('alice')).toBeNull()
+  })
+
+  it('leaves a newer table alone when an earlier edit finishes late', async () => {
+    let finishUpdate: (r: unknown) => void = () => undefined
+    const orders = { columns: ['id', 'total'], rows: [{ id: 9, total: 'ninety-nine' }], rowCount: 1, duration: 1 }
+    await renderConnected({}, {
+      query: vi.fn().mockImplementation((_id: string, q: string) => {
+        if (q.startsWith('UPDATE')) return new Promise((r) => { finishUpdate = r })
+        return Promise.resolve(q.includes('"orders"') ? orders : usersResult)
+      }),
+    })
+    fireEvent.click(screen.getByText('users'))
+    await screen.findByText('alice')
+    await editCell('alice', 'alicia')
+    fireEvent.click(screen.getByText('orders'))
+    await screen.findByText('ninety-nine')
+    await act(async () => { finishUpdate({ columns: [], rows: [], rowCount: 1, duration: 1 }) })
+    expect(screen.getByText('ninety-nine')).toBeTruthy()
+    expect(screen.queryByText('alicia')).toBeNull()
+  })
+
+  it('keeps tables without a primary key read-only', async () => {
+    await browseUsers({ tableInfo: vi.fn().mockResolvedValue({ ...tableInfoResult, primaryKey: [] }) })
+    fireEvent.doubleClick(screen.getByText('alice'))
+    expect(await screen.findByText('users has no primary key, so its rows are read-only')).toBeTruthy()
+    expect(screen.queryByDisplayValue('alice')).toBeNull()
+    expect(screen.queryByTitle('Add row')).toBeNull()
+  })
+
+  it('does not apply an update that matched other than one row', async () => {
+    const query = vi.fn().mockImplementation((_id: string, q: string) =>
+      Promise.resolve(q.startsWith('UPDATE') ? { ...writeOk, rowCount: 0 } : usersResult))
+    await browseUsers({ query })
+    await editCell('alice', 'alicia')
+    expect(await screen.findByText('Update matched 0 rows; reload to see the current data')).toBeTruthy()
+    expect(screen.getByText('alice')).toBeTruthy()
   })
 
   it('toasts when the UPDATE fails', async () => {
     const query = vi.fn().mockImplementation((_id: string, q: string) =>
-      q.startsWith('UPDATE')
-        ? Promise.reject(new Error('permission denied'))
-        : Promise.resolve(usersResult)
-    )
+      q.startsWith('UPDATE') ? Promise.reject(new Error('permission denied')) : Promise.resolve(usersResult))
     await browseUsers({ query })
-    fireEvent.doubleClick(screen.getByText('alice'))
-    const input = await screen.findByDisplayValue('alice')
-    fireEvent.change(input, { target: { value: 'alicia' } })
-    fireEvent.keyDown(input, { key: 'Enter' })
+    await editCell('alice', 'alicia')
     expect(await screen.findByText('Update failed: permission denied')).toBeTruthy()
   })
 
   it('does not open the editor when results did not come from browsing a table', async () => {
     const { api } = await renderConnected()
     await runSql(api, 'SELECT * FROM users')
-    const cell = await screen.findByText('alice')
-    fireEvent.doubleClick(cell)
+    fireEvent.doubleClick(await screen.findByText('alice'))
     expect(screen.queryByDisplayValue('alice')).toBeNull()
+  })
+
+  it('adds a row, leaving blank fields to their defaults, then reloads', async () => {
+    const { api } = await browseUsers()
+    fireEvent.click(screen.getByTitle('Add row'))
+    const dialog = await screen.findByRole('dialog', { name: 'Add row to users' })
+    fireEvent.change(within(dialog).getByLabelText(/^name/), { target: { value: 'carol' } })
+    fireEvent.change(within(dialog).getByLabelText(/^active/), { target: { value: 'true' } })
+    fireEvent.click(within(dialog).getByText('Add row'))
+    await waitFor(() =>
+      expect(api.database.query).toHaveBeenCalledWith('db-1', 'INSERT INTO "users" ("name", "active") VALUES ($1, $2)', ['carol', true])
+    )
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(api.database.query).toHaveBeenLastCalledWith('db-1', 'SELECT * FROM "users" LIMIT 100')
+  })
+
+  it('keeps the insert form open when the INSERT fails', async () => {
+    const query = vi.fn().mockImplementation((_id: string, q: string) =>
+      q.startsWith('INSERT') ? Promise.reject(new Error('null value in column "id"')) : Promise.resolve(usersResult))
+    await browseUsers({ query })
+    fireEvent.click(screen.getByTitle('Add row'))
+    const dialog = await screen.findByRole('dialog', { name: 'Add row to users' })
+    fireEvent.click(within(dialog).getByText('Add row'))
+    expect(await screen.findByText('Insert failed: null value in column "id"')).toBeTruthy()
+    expect(screen.getByRole('dialog', { name: 'Add row to users' })).toBeTruthy()
+    fireEvent.click(within(dialog).getByText('Cancel'))
+  })
+
+  it('deletes the selected row after confirming its key', async () => {
+    const { api } = await browseUsers()
+    expect(screen.queryByTitle('Delete selected row')).toBeNull()
+    fireEvent.click(screen.getByTitle('Select row 2'))
+    fireEvent.click(screen.getByTitle('Delete selected row'))
+    const dialog = await screen.findByRole('dialog', { name: 'Delete row from users?' })
+    expect(within(dialog).getByText('id = 2')).toBeTruthy()
+    fireEvent.click(within(dialog).getByText('Delete row'))
+    await waitFor(() => expect(api.database.query).toHaveBeenCalledWith('db-1', 'DELETE FROM "users" WHERE "id" = $1', [2]))
+    expect(await screen.findByText('Row deleted')).toBeTruthy()
+  })
+
+  it('cancels a delete, and reports a failed one', async () => {
+    const query = vi.fn().mockImplementation((_id: string, q: string) =>
+      q.startsWith('DELETE') ? Promise.reject(new Error('foreign key violation')) : Promise.resolve(usersResult))
+    const { api } = await browseUsers({ query })
+    fireEvent.click(screen.getByTitle('Select row 1'))
+    fireEvent.click(screen.getByTitle('Delete selected row'))
+    fireEvent.click(within(await screen.findByRole('dialog')).getByText('Cancel'))
+    expect(api.database.query.mock.calls.some((c: unknown[]) => String(c[1]).startsWith('DELETE'))).toBe(false)
+    fireEvent.click(screen.getByTitle('Delete selected row'))
+    fireEvent.click(within(await screen.findByRole('dialog')).getByText('Delete row'))
+    expect(await screen.findByText('Delete failed: foreign key violation')).toBeTruthy()
   })
 })
 
@@ -640,6 +768,24 @@ describe('DatabaseExplorer — watch mode', () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(6000) })
     expect(api.database.query.mock.calls).toHaveLength(callsAfterStop)
     expect((screen.getByText('bob').closest('td') as HTMLElement).style.background).not.toContain('245')
+  })
+
+  it('stops watching when another query runs, so stale results never replace the grid', async () => {
+    const orders = { columns: ['id', 'total'], rows: [{ id: 9, total: 'ninety-nine' }], rowCount: 1, duration: 1 }
+    const query = vi.fn().mockImplementation((_id: string, q: string) => Promise.resolve(q.includes('orders') ? orders : usersResult))
+    const { api } = await renderConnected({}, { query })
+    await runSql(api, 'SELECT * FROM users')
+    await screen.findByText('alice')
+    vi.useFakeTimers()
+    fireEvent.click(screen.getByText('Watch'))
+    fireEvent.click(screen.getByText('orders'))
+    await act(async () => { await vi.advanceTimersByTimeAsync(0) })
+    expect(screen.getByText('ninety-nine')).toBeTruthy()
+    expect(screen.getByText('Watch')).toBeTruthy()
+    const calls = api.database.query.mock.calls.length
+    await act(async () => { await vi.advanceTimersByTimeAsync(10_000) })
+    expect(api.database.query.mock.calls).toHaveLength(calls)
+    expect(screen.queryByText('alice')).toBeNull()
   })
 
   it('keeps polling silently through query errors and clears timers on unmount', async () => {

@@ -1,64 +1,21 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useAppStore, Tab } from '../../store'
-import { relativeTime } from '../../lib/format'
 import SplitHandle from '../SplitHandle'
+import ResultsGrid from './ResultsGrid'
+import SchemaSidebar from './SchemaSidebar'
+import RowDetailPanel from './RowDetailPanel'
+import ExplainTreeView, { parseExplainJson, type ExplainNode } from './ExplainTreeView'
+import type { QueryResult, ResultSort, TableColumn } from './types'
+import { selectRows } from '../../lib/dbSql'
+import { useTableEditing } from './useTableEditing'
+import InsertRowModal from './InsertRowModal'
+import DeleteRowModal from './DeleteRowModal'
 import {
-  Database, Table2, Play, Loader2, AlertTriangle, X, ChevronRight,
-  ChevronDown, RefreshCw, Copy, Download, Search, Hash,
-  Zap, RotateCcw, ArrowUpDown, Pin, PanelRightOpen, PanelRightClose,
-  ExternalLink, Activity, Eye, EyeOff,
+  Database, Play, Loader2, AlertTriangle, Copy, Download, RotateCcw, Pin, PanelRightOpen, PanelRightClose, Activity, Eye, EyeOff, Plus, Trash2,
 } from 'lucide-react'
 
-interface QueryResult { columns: string[]; rows: any[]; rowCount: number; duration: number }
-interface TableColumn { name: string; type: string; nullable: boolean }
 interface SavedQuery { sql: string; label: string; ts: number }
-type ResultSort = { col: string; dir: 'asc' | 'desc' } | null
 type ActivePanel = 'results' | 'history' | 'saved' | 'explain'
-
-/* ── Smart cell detection ──────────────────────────────────────────────── */
-
-const URL_RE = /^https?:\/\/[^\s]+$/i
-const HEX_COLOR_RE = /^#([0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i
-const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/
-
-function isJsonString(s: string): boolean {
-  if (s.length < 2) return false
-  return (s.startsWith('{') && s.endsWith('}')) || (s.startsWith('[') && s.endsWith(']'))
-}
-
-/* ── Explain plan parsing ─────────────────────────────────────────────── */
-
-interface ExplainNode {
-  type: string
-  relation?: string
-  cost: number
-  rows: number
-  width?: number
-  actualTime?: number
-  actualRows?: number
-  children: ExplainNode[]
-}
-
-function parseExplainJson(data: any): ExplainNode | null {
-  try {
-    const plan = Array.isArray(data) ? data[0]?.Plan ?? data[0] : data?.Plan ?? data
-    if (!plan) return null
-    return walkPlan(plan)
-  } catch { return null }
-}
-
-function walkPlan(p: any): ExplainNode {
-  return {
-    type: p['Node Type'] || p.nodeType || 'Unknown',
-    relation: p['Relation Name'] || p.relationName,
-    cost: p['Total Cost'] ?? p.totalCost ?? 0,
-    rows: p['Plan Rows'] ?? p.planRows ?? 0,
-    width: p['Plan Width'] ?? p.planWidth,
-    actualTime: p['Actual Total Time'] ?? p.actualTotalTime,
-    actualRows: p['Actual Rows'] ?? p.actualRows,
-    children: (p.Plans || p.plans || []).map(walkPlan),
-  }
-}
 
 /* ── Watch mode diff ──────────────────────────────────────────────────── */
 
@@ -94,6 +51,7 @@ export default function DatabaseExplorer({ tab }: Readonly<{ tab: Tab }>) {
   const [tableFilter, setTableFilter] = useState('')
   const [activeTable, setActiveTable] = useState<string | null>(null)
   const [tableColumns, setTableColumns] = useState<Record<string, TableColumn[]>>({})
+  const [primaryKeys, setPrimaryKeys] = useState<Record<string, string[]>>({})
   const [sql, setSql] = useState('')
   const [results, setResults] = useState<QueryResult | null>(null)
   const [queryError, setQueryError] = useState<string | null>(null)
@@ -103,12 +61,13 @@ export default function DatabaseExplorer({ tab }: Readonly<{ tab: Tab }>) {
   const [activePanel, setActivePanel] = useState<ActivePanel>('results')
   const [toast, setToast] = useState<string | null>(null)
   const [editorHeight, setEditorHeight] = useState(120)
-  const [selectedRow, setSelectedRow] = useState<number | null>(null)
+  // The selected row itself, not its position, so re-sorting can't move the
+  // selection (or a delete) onto a different row.
+  const [selectedRow, setSelectedRow] = useState<Record<string, unknown> | null>(null)
   const [detailOpen, setDetailOpen] = useState(false)
   const [resultSort, setResultSort] = useState<ResultSort>(null)
-  const [editingCell, setEditingCell] = useState<{ row: number; col: string } | null>(null)
-  const [editValue, setEditValue] = useState('')
   const [browsingTable, setBrowsingTable] = useState<string | null>(null)
+  const queryRunRef = useRef(0)
   const [explainTree, setExplainTree] = useState<ExplainNode | null>(null)
   const [explainRunning, setExplainRunning] = useState(false)
   const [expandedJson, setExpandedJson] = useState<Set<string>>(new Set())
@@ -123,9 +82,16 @@ export default function DatabaseExplorer({ tab }: Readonly<{ tab: Tab }>) {
   const clientRef = useRef<string | null>(null)
   const editorRef = useRef<HTMLTextAreaElement>(null)
   const editorWrapRef = useRef<HTMLDivElement>(null)
-  const editInputRef = useRef<HTMLInputElement>(null)
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 3000) }
+  const sqlDialect = session?.dbType || 'postgresql'
+  const editing = useTableEditing({
+    clientId, dbType: sqlDialect, table: browsingTable,
+    primaryKey: browsingTable ? primaryKeys[browsingTable] : undefined,
+    results, setResults, notify: showToast,
+    reload: () => { if (browsingTable) runQuery(selectRows(browsingTable, sqlDialect, BROWSE_LIMIT), false, browsingTable) },
+    currentRun: () => queryRunRef.current,
+  })
 
   const connect = useCallback(async () => {
     if (!session) return
@@ -164,18 +130,32 @@ export default function DatabaseExplorer({ tab }: Readonly<{ tab: Tab }>) {
 
   async function loadColumns(table: string) {
     if (!clientId || tableColumns[table]) return
-    try { const info = await window.api.database.tableInfo(clientId, table); setTableColumns(prev => ({ ...prev, [table]: info.columns })) }
+    try {
+      const info = await window.api.database.tableInfo(clientId, table)
+      setTableColumns(prev => ({ ...prev, [table]: info.columns }))
+      setPrimaryKeys(prev => ({ ...prev, [table]: info.primaryKey }))
+    }
     catch (err: any) { showToast(err?.message) }
   }
 
-  async function runQuery(query?: string, addToHistory = true) {
+  // `table` is the table these results browse (row edits target it); null
+  // for free-form SQL, which is never editable. Only the latest run's
+  // response is shown, so a slow earlier query can't pair its rows with
+  // another table.
+  async function runQuery(query?: string, addToHistory = true, table: string | null = null) {
     const q = (query || sql).trim(); if (!clientId || !q) return
-    setRunning(true); setQueryError(null); setResults(null); setSelectedRow(null); setEditingCell(null); setResultSort(null); setActivePanel('results')
+    const run = ++queryRunRef.current
+    // A watch keeps re-running its own query; a new run replaces it.
+    if (watchTimerRef.current) stopWatch()
+    setBrowsingTable(table)
+    setRunning(true); setQueryError(null); setResults(null); setSelectedRow(null); editing.cancelEdit(); setResultSort(null); setActivePanel('results')
     try {
-      const result = await window.api.database.query(clientId, q); setResults(result)
+      const result = await window.api.database.query(clientId, q)
+      if (run !== queryRunRef.current) return
+      setResults(result)
       if (addToHistory) setHistory(prev => [{ sql: q, ts: Date.now(), duration: result.duration, rows: result.rowCount }, ...prev.slice(0, 99)])
-    } catch (err: any) { setQueryError(err?.message ?? 'Query failed') }
-    finally { setRunning(false) }
+    } catch (err: any) { if (run === queryRunRef.current) setQueryError(err?.message ?? 'Query failed') }
+    finally { if (run === queryRunRef.current) setRunning(false) }
   }
 
   async function runExplain() {
@@ -196,9 +176,9 @@ export default function DatabaseExplorer({ tab }: Readonly<{ tab: Tab }>) {
 
   function selectTable(table: string) {
     if (activeTable === table) { setActiveTable(null); return }
-    setActiveTable(table); loadColumns(table); setBrowsingTable(table)
-    const q = `SELECT * FROM "${table}" LIMIT 100`
-    setSql(q); runQuery(q)
+    setActiveTable(table); loadColumns(table)
+    const q = selectRows(table, sqlDialect, BROWSE_LIMIT)
+    setSql(q); runQuery(q, true, table)
   }
 
   function saveCurrentQuery() {
@@ -233,33 +213,6 @@ export default function DatabaseExplorer({ tab }: Readonly<{ tab: Tab }>) {
     editorRef.current?.focus()
   }
 
-  function startCellEdit(row: number, col: string, val: unknown) {
-    if (!browsingTable) return
-    setEditingCell({ row, col })
-    setEditValue(toEditable(val))
-    setTimeout(() => editInputRef.current?.focus(), 0)
-  }
-
-  async function commitEdit() {
-    if (!clientId || !editingCell || !results || !browsingTable) { setEditingCell(null); return }
-    const row = results.rows[editingCell.row]; const col = editingCell.col
-    if (String(row[col] ?? '') === editValue) { setEditingCell(null); return }
-    const pk = results.columns.includes('id') ? 'id' : results.columns[0]
-    const pkVal = row[pk]; if (pkVal == null) { showToast('No primary key to identify row'); setEditingCell(null); return }
-    const dbType = session?.dbType || 'postgresql'
-    const q = (name: string) => quoteIdent(name, dbType)
-    try {
-      await window.api.database.query(
-        clientId,
-        `UPDATE ${q(browsingTable)} SET ${q(col)} = ${bindPlaceholder(dbType, 1)} WHERE ${q(pk)} = ${bindPlaceholder(dbType, 2)}`,
-        [editValue === '' ? null : editValue, typeof pkVal === 'number' ? pkVal : String(pkVal)],
-      )
-      const updated = [...results.rows]; updated[editingCell.row] = { ...row, [col]: editValue === '' ? null : editValue }
-      setResults({ ...results, rows: updated }); showToast('Updated')
-    } catch (err: any) { showToast(`Update failed: ${err?.message}`) }
-    setEditingCell(null)
-  }
-
   function startWatch() {
     if (!sql.trim() || !clientRef.current) return
     prevResultsRef.current = results ? { ...results } : null
@@ -284,8 +237,11 @@ export default function DatabaseExplorer({ tab }: Readonly<{ tab: Tab }>) {
     if (!clientRef.current) return
     const q = sql.trim()
     if (!q) { stopWatch(); return }
+    const run = queryRunRef.current
     try {
       const result = await window.api.database.query(clientRef.current, q)
+      // A query run since this tick started owns the grid now.
+      if (run !== queryRunRef.current) return
       const diff = computeRowDiff(prevResultsRef.current, result)
       if (diff.size > 0) {
         setChangedCells(diff)
@@ -321,7 +277,8 @@ export default function DatabaseExplorer({ tab }: Readonly<{ tab: Tab }>) {
 
   const filteredTables = filterTables(tables, tableFilter)
   const dbType = DB_TYPE_LABELS[session?.dbType ?? ''] ?? 'PostgreSQL'
-  const detailRow = getDetailRow(sortedRows, selectedRow)
+  const selectedIndex = selectedRow ? sortedRows.indexOf(selectedRow) : -1
+  const detailRow = selectedIndex === -1 ? null : selectedRow
 
   if (connecting) return <div className="flex items-center justify-center h-full" style={{ background: 'var(--nox-bg)' }}><div className="text-center"><Loader2 className="w-5 h-5 animate-spin mx-auto mb-3" style={{ color: '#3B5CCC' }} /><p className="text-[11px]" style={{ color: 'var(--nox-text-2)' }}>Connecting to {session?.databaseName || session?.host}</p></div></div>
   if (error && !clientId) return <div className="flex items-center justify-center h-full" style={{ background: 'var(--nox-bg)' }}><div className="text-center max-w-md px-6"><AlertTriangle className="w-6 h-6 mx-auto mb-3" style={{ color: '#EF4444' }} /><p className="text-[10px] mb-4 font-mono" style={{ color: 'var(--nox-text-3)' }}>{error}</p><button onClick={connect} className="px-4 py-1.5 rounded text-[11px] text-white" style={{ background: '#3B5CCC' }}>Retry</button></div></div>
@@ -370,6 +327,10 @@ export default function DatabaseExplorer({ tab }: Readonly<{ tab: Tab }>) {
           activePanel={activePanel} onSelect={setActivePanel} results={results} hasExplain={!!explainTree}
           historyCount={history.length} savedCount={savedQueries.length} detailOpen={detailOpen}
           onCopy={copyResults} onExport={exportCsv} onToggleDetail={() => setDetailOpen(d => !d)}
+          rowActions={editing.editable ? {
+            onAdd: editing.openInsert,
+            onDelete: detailRow ? () => editing.requestDelete(detailRow) : undefined,
+          } : undefined}
         />
 
         {/* Panel content */}
@@ -389,9 +350,9 @@ export default function DatabaseExplorer({ tab }: Readonly<{ tab: Tab }>) {
               {results && (
                 <ResultsGrid
                   results={results} sortedRows={sortedRows} resultSort={resultSort} onToggleSort={toggleResultSort}
-                  selectedRow={selectedRow} onSelectRow={setSelectedRow}
-                  editingCell={editingCell} editValue={editValue} setEditValue={setEditValue} editInputRef={editInputRef}
-                  commitEdit={commitEdit} cancelEdit={() => setEditingCell(null)} startCellEdit={startCellEdit}
+                  selectedRow={selectedIndex === -1 ? null : selectedIndex} onSelectRow={(i) => setSelectedRow(i === null ? null : sortedRows[i] ?? null)}
+                  editingCell={editing.editingCell} editValue={editing.editValue} setEditValue={editing.setEditValue} editInputRef={editing.editInputRef}
+                  commitEdit={editing.commitEdit} cancelEdit={editing.cancelEdit} startCellEdit={editing.startCellEdit}
                   changedCells={changedCells} expandedJson={expandedJson} onToggleJson={toggleJsonExpand}
                 />
               )}
@@ -403,7 +364,7 @@ export default function DatabaseExplorer({ tab }: Readonly<{ tab: Tab }>) {
 
             {/* Row detail panel */}
             {detailOpen && detailRow && results && (
-              <RowDetailPanel columns={results.columns} row={detailRow} rowNumber={selectedRow! + 1} onClose={() => setDetailOpen(false)} />
+              <RowDetailPanel columns={results.columns} row={detailRow} rowNumber={selectedIndex + 1} onClose={() => setDetailOpen(false)} />
             )}
           </>}
 
@@ -424,10 +385,21 @@ export default function DatabaseExplorer({ tab }: Readonly<{ tab: Tab }>) {
         </div>
       </div>
 
+      {editing.insertOpen && browsingTable && (
+        <InsertRowModal table={browsingTable} columns={tableColumns[browsingTable] ?? []} onInsert={editing.insertRow} onClose={editing.closeInsert} />
+      )}
+      {editing.pendingDelete && browsingTable && (
+        <DeleteRowModal
+          table={browsingTable} primaryKey={primaryKeys[browsingTable] ?? []} row={editing.pendingDelete}
+          onConfirm={editing.confirmDelete} onCancel={editing.cancelDelete}
+        />
+      )}
       {toast && <div className="fixed bottom-4 right-4 z-50 px-4 py-2 rounded-lg text-[11px] font-medium" style={{ background: 'var(--nox-surface)', border: '1px solid var(--nox-border)', color: '#3B5CCC', boxShadow: '0 8px 24px rgba(0,0,0,0.12)' }}>{toast}</div>}
     </div>
   )
 }
+
+const BROWSE_LIMIT = 100
 
 const DB_TYPE_LABELS: Record<string, string> = { mysql: 'MySQL', mariadb: 'MariaDB', postgresql: 'PostgreSQL' }
 
@@ -478,10 +450,12 @@ function WatchControls({ watchActive, watchSec, watchCountdown, running, hasSql,
   )
 }
 
-function ResultsTabsBar({ activePanel, onSelect, results, hasExplain, historyCount, savedCount, detailOpen, onCopy, onExport, onToggleDetail }: Readonly<{
+function ResultsTabsBar({ activePanel, onSelect, results, hasExplain, historyCount, savedCount, detailOpen, onCopy, onExport, onToggleDetail, rowActions }: Readonly<{
   activePanel: ActivePanel; onSelect: (p: ActivePanel) => void; results: QueryResult | null; hasExplain: boolean
   historyCount: number; savedCount: number; detailOpen: boolean
   onCopy: () => void; onExport: () => void; onToggleDetail: () => void
+  /** Present when browsing a table with a primary key; delete needs a selected row. */
+  rowActions?: { onAdd: () => void; onDelete?: () => void }
 }>) {
   return (
     <div className="flex items-center gap-0 flex-shrink-0" style={{ borderBottom: '1px solid var(--nox-border)', background: 'var(--nox-shell)' }}>
@@ -492,194 +466,15 @@ function ResultsTabsBar({ activePanel, onSelect, results, hasExplain, historyCou
       <div className="flex-1" />
       {results && activePanel === 'results' && <>
         <span className="text-[10px] font-mono mr-2" style={{ color: 'var(--nox-text-3)' }}>{results.columns.length} cols · {results.duration}ms</span>
+        {rowActions && <>
+          <TinyBtn title="Add row" onClick={rowActions.onAdd}><Plus className="w-3 h-3" /></TinyBtn>
+          {rowActions.onDelete && <TinyBtn title="Delete selected row" onClick={rowActions.onDelete}><Trash2 className="w-3 h-3" /></TinyBtn>}
+        </>}
         <TinyBtn title="Copy" onClick={onCopy}><Copy className="w-3 h-3" /></TinyBtn>
         <TinyBtn title="CSV" onClick={onExport}><Download className="w-3 h-3" /></TinyBtn>
         <TinyBtn title={detailOpen ? 'Close detail' : 'Row detail'} onClick={onToggleDetail} active={detailOpen}>{detailOpen ? <PanelRightClose className="w-3 h-3" /> : <PanelRightOpen className="w-3 h-3" />}</TinyBtn>
         <div className="w-2" />
       </>}
-    </div>
-  )
-}
-
-function ResultsGrid({ results, sortedRows, resultSort, onToggleSort, selectedRow, onSelectRow, editingCell, editValue, setEditValue, editInputRef, commitEdit, cancelEdit, startCellEdit, changedCells, expandedJson, onToggleJson }: Readonly<{
-  results: QueryResult; sortedRows: any[]; resultSort: ResultSort; onToggleSort: (col: string) => void
-  selectedRow: number | null; onSelectRow: (i: number | null) => void
-  editingCell: { row: number; col: string } | null; editValue: string; setEditValue: (v: string) => void
-  editInputRef: React.Ref<HTMLInputElement>; commitEdit: () => void; cancelEdit: () => void
-  startCellEdit: (row: number, col: string, val: unknown) => void
-  changedCells: Set<string>; expandedJson: Set<string>; onToggleJson: (k: string) => void
-}>) {
-  const tableWidth = 48 + results.columns.length * 160
-  const gridColumns = `48px repeat(${results.columns.length}, 160px)`
-  // Result rows have no inherent identity; key on the pk-ish column value,
-  // disambiguating duplicates with an occurrence counter (not the array index).
-  const pkCol = results.columns.includes('id') ? 'id' : results.columns[0]
-  const seen = new Map<string, number>()
-  const rowKeys = sortedRows.map(row => {
-    const base = toEditable(row[pkCol])
-    const n = (seen.get(base) ?? 0) + 1
-    seen.set(base, n)
-    return n > 1 ? `${base}#${n}` : base
-  })
-  return (
-    <div className="flex-1 min-w-0 min-h-0 overflow-hidden">
-      <div className="w-full h-full overflow-auto" style={{ scrollbarWidth: 'thin' }}>
-        {/* Real table semantics with the CSS grid layout kept via display
-            overrides: thead is the header grid, each tr is a row grid (grid
-            items blockify, so td/th render like the previous divs), and
-            display:contents wrappers keep buttons as direct grid items. */}
-        <table className="text-[11px] font-mono" style={{ width: tableWidth, minWidth: '100%', display: 'block' }}>
-          <thead className="sticky top-0 z-20 grid" style={{ gridTemplateColumns: gridColumns }}>
-            <tr style={{ display: 'contents' }}>
-              <th className="text-right px-2 py-2 text-[10px] font-normal sticky left-0 z-30 whitespace-nowrap" style={{ color: 'var(--nox-text-3)', background: 'var(--nox-shell)', borderBottom: '2px solid var(--nox-border)' }}>#</th>
-              {results.columns.map(col => (
-                <th key={col} style={{ display: 'contents' }}>
-                  <button className="text-left px-3 py-2 text-[10px] font-semibold uppercase tracking-wider whitespace-nowrap cursor-pointer select-none overflow-hidden text-ellipsis" style={{ color: resultSort?.col === col ? 'var(--nox-text)' : 'var(--nox-text-2)', background: 'var(--nox-shell)', borderBottom: '2px solid var(--nox-border)' }} onClick={() => onToggleSort(col)}>
-                    {col}{resultSort?.col === col && <ArrowUpDown className="w-2.5 h-2.5 inline-block ml-1" style={{ transform: resultSort.dir === 'desc' ? 'scaleY(-1)' : undefined }} />}
-                  </button>
-                </th>
-              ))}
-            </tr>
-          </thead>
-          {/* Rows contain interactive cells (JsonCell buttons), so the row keydown
-              ignores bubbled events from those child buttons so Enter there
-              doesn't both activate and select. tabIndex={-1} lets a clicked row
-              take focus so Enter/Space toggles selection on the row itself. */}
-          <tbody style={{ display: 'contents' }}>
-            {sortedRows.map((row, i) => (
-              <tr key={rowKeys[i]} tabIndex={-1} aria-selected={selectedRow === i}
-                onClick={() => onSelectRow(i === selectedRow ? null : i)}
-                onKeyDown={e => { if (e.target !== e.currentTarget) { return } if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelectRow(i === selectedRow ? null : i) } }}
-                className="grid cursor-default transition-colors" style={{ gridTemplateColumns: gridColumns, background: selectedRow === i ? 'rgba(59,92,204,0.06)' : undefined }}
-                onMouseEnter={e => { if (selectedRow !== i) e.currentTarget.style.background = 'var(--nox-hover)' }} onMouseLeave={e => { if (selectedRow !== i) e.currentTarget.style.background = '' }}>
-                <td style={{ display: 'contents' }}>
-                  <button type="button" aria-pressed={selectedRow === i} title={`Select row ${i + 1}`}
-                    onClick={e => { e.stopPropagation(); onSelectRow(i === selectedRow ? null : i) }}
-                    className="text-right px-2 py-[5px] text-[10px] sticky left-0 z-10 whitespace-nowrap" style={{ color: 'var(--nox-text-3)', background: selectedRow === i ? 'rgba(59,92,204,0.06)' : 'var(--nox-bg)', borderBottom: '1px solid var(--nox-border)' }}>{i + 1}</button>
-                </td>
-                {results.columns.map(col => (
-                  <ResultCell key={col} row={row} rowIndex={i} col={col}
-                    editing={editingCell?.row === i && editingCell?.col === col}
-                    changed={changedCells.has(`${i}-${col}`)}
-                    editValue={editValue} setEditValue={setEditValue} editInputRef={editInputRef}
-                    commitEdit={commitEdit} cancelEdit={cancelEdit}
-                    startCellEdit={startCellEdit}
-                    expandedJson={expandedJson} onToggleJson={onToggleJson} />
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        {sortedRows.length === 0 && <div className="flex items-center justify-center py-12"><p className="text-[11px]" style={{ color: 'var(--nox-text-3)' }}>No rows</p></div>}
-      </div>
-    </div>
-  )
-}
-
-function SchemaSidebar({ dbLabel, footer, tables, tableFilter, setTableFilter, activeTable, tableColumns, onSelect, onRefresh }: Readonly<{
-  dbLabel: string; footer: string; tables: string[]; tableFilter: string; setTableFilter: (v: string) => void
-  activeTable: string | null; tableColumns: Record<string, TableColumn[]>; onSelect: (t: string) => void; onRefresh: () => void
-}>) {
-  return (
-    <div className="flex flex-col flex-shrink-0 overflow-hidden" style={{ width: 240, borderRight: '1px solid var(--nox-border)', background: 'var(--nox-shell)' }}>
-      <div className="flex items-center gap-2 px-3 flex-shrink-0" style={{ height: 36, borderBottom: '1px solid var(--nox-border)' }}>
-        <Database className="w-3.5 h-3.5" style={{ color: '#3B5CCC' }} />
-        <p className="text-[11px] font-semibold truncate flex-1" style={{ color: 'var(--nox-text)' }}>{dbLabel}</p>
-        <button onClick={onRefresh} className="w-5 h-5 flex items-center justify-center rounded" style={{ color: 'var(--nox-text-3)' }}><RefreshCw className="w-3 h-3" /></button>
-      </div>
-      <div className="px-2 py-2 flex-shrink-0">
-        <div className="flex items-center gap-1.5 px-2 py-1 rounded" style={{ background: 'var(--nox-bg)', border: '1px solid var(--nox-border)' }}>
-          <Search className="w-3 h-3" style={{ color: 'var(--nox-text-3)' }} />
-          <input value={tableFilter} onChange={e => setTableFilter(e.target.value)} placeholder="Filter tables…" className="flex-1 bg-transparent text-[10px] font-mono focus:outline-none" style={{ color: 'var(--nox-text)' }} />
-          {tableFilter && <button onClick={() => setTableFilter('')} style={{ color: 'var(--nox-text-3)' }}><X className="w-2.5 h-2.5" /></button>}
-        </div>
-      </div>
-      <div className="px-3 pb-1 flex-shrink-0"><span className="text-[9px] uppercase tracking-wider font-semibold" style={{ color: 'var(--nox-text-3)' }}>Tables ({tables.length})</span></div>
-      <div className="flex-1 overflow-y-auto" style={{ scrollbarWidth: 'thin' }}>
-        {tables.map(table => (
-          <div key={table}>
-            <button onClick={() => onSelect(table)}
-              className="w-full flex items-center gap-1.5 px-3 py-[5px] text-left transition-colors"
-              style={{ color: activeTable === table ? 'var(--nox-text)' : 'var(--nox-text-2)', background: activeTable === table ? 'rgba(59,92,204,0.06)' : undefined }}
-              onMouseEnter={e => { if (activeTable !== table) e.currentTarget.style.background = 'var(--nox-hover)' }}
-              onMouseLeave={e => { if (activeTable !== table) e.currentTarget.style.background = '' }}>
-              {activeTable === table ? <ChevronDown className="w-2.5 h-2.5 flex-shrink-0" style={{ color: '#3B5CCC' }} /> : <ChevronRight className="w-2.5 h-2.5 flex-shrink-0" style={{ color: 'var(--nox-text-3)' }} />}
-              <Table2 className="w-3 h-3 flex-shrink-0" style={{ color: activeTable === table ? '#3B5CCC' : '#8B5CF6' }} />
-              <span className="text-[11px] font-mono truncate">{table}</span>
-            </button>
-            {activeTable === table && tableColumns[table] && (
-              <div className="pb-1">{tableColumns[table].map(col => (
-                <div key={col.name} className="flex items-center gap-1.5 px-3 pl-8 py-[2px]">
-                  <Hash className="w-2.5 h-2.5 flex-shrink-0" style={{ color: 'var(--nox-text-3)', opacity: 0.3 }} />
-                  <span className="text-[10px] font-mono truncate flex-1" style={{ color: 'var(--nox-text-3)' }}>{col.name}</span>
-                  <span className="text-[9px] font-mono px-1 py-[1px] rounded flex-shrink-0" style={{ color: typeColor(col.type), background: `${typeColor(col.type)}11` }}>{col.type}</span>
-                </div>
-              ))}</div>
-            )}
-          </div>
-        ))}
-      </div>
-      <div className="px-3 py-2 flex-shrink-0" style={{ borderTop: '1px solid var(--nox-border)' }}>
-        <div className="flex items-center gap-1.5"><Zap className="w-2.5 h-2.5" style={{ color: '#10B981' }} /><span className="text-[9px] font-mono" style={{ color: 'var(--nox-text-3)' }}>{footer}</span></div>
-      </div>
-    </div>
-  )
-}
-
-function ResultCell({ row, rowIndex, col, editing, changed, editValue, setEditValue, editInputRef, commitEdit, cancelEdit, startCellEdit, expandedJson, onToggleJson }: Readonly<{
-  row: any; rowIndex: number; col: string; editing: boolean; changed: boolean
-  editValue: string; setEditValue: (v: string) => void; editInputRef: React.Ref<HTMLInputElement>
-  commitEdit: () => void; cancelEdit: () => void; startCellEdit: (row: number, col: string, val: unknown) => void
-  expandedJson: Set<string>; onToggleJson: (k: string) => void
-}>) {
-  const val = row[col]
-  const isNull = val == null
-  return (
-    <td className="px-3 py-[5px] whitespace-nowrap overflow-hidden text-ellipsis" style={{ color: isNull ? 'var(--nox-text-3)' : 'var(--nox-text)', borderBottom: '1px solid var(--nox-border)', background: changed ? 'rgba(245,158,11,0.12)' : undefined, transition: 'background 0.5s' }}
-      onDoubleClick={e => { e.stopPropagation(); startCellEdit(rowIndex, col, val) }}>
-      {editing ? (
-        <input ref={editInputRef} value={editValue} onChange={e => setEditValue(e.target.value)}
-          onBlur={commitEdit} onKeyDown={e => {
-            if (e.key === 'Enter') commitEdit()
-            if (e.key === 'Escape') cancelEdit()
-          }}
-          className="bg-transparent text-[11px] font-mono px-0 py-0 focus:outline-none w-full" style={{ color: 'var(--nox-text)', borderBottom: '1px solid #3B5CCC' }} />
-      ) : (
-        <SmartCell value={val} cellKey={`${rowIndex}-${col}`} expandedJson={expandedJson} onToggleJson={onToggleJson} />
-      )}
-    </td>
-  )
-}
-
-function RowDetailPanel({ columns, row, rowNumber, onClose }: Readonly<{
-  columns: string[]; row: any; rowNumber: number; onClose: () => void
-}>) {
-  return (
-    <div className="flex-shrink-0 flex flex-col overflow-hidden" style={{ width: 300, borderLeft: '1px solid var(--nox-border)', background: 'var(--nox-shell)' }}>
-      <div className="flex items-center gap-2 px-3 py-2 flex-shrink-0" style={{ borderBottom: '1px solid var(--nox-border)' }}>
-        <span className="text-[11px] font-semibold flex-1" style={{ color: 'var(--nox-text)' }}>Row {rowNumber}</span>
-        <button onClick={onClose} style={{ color: 'var(--nox-text-3)' }}><X className="w-3 h-3" /></button>
-      </div>
-      <div className="flex-1 overflow-y-auto p-3" style={{ scrollbarWidth: 'thin' }}>
-        {columns.map(col => {
-          const val = row[col]
-          if (val == null) {
-            return (
-              <div key={col} className="mb-3">
-                <p className="text-[9px] uppercase tracking-wider font-semibold mb-0.5" style={{ color: 'var(--nox-text-3)' }}>{col}</p>
-                <p className="text-[11px] font-mono italic opacity-40" style={{ color: 'var(--nox-text-3)' }}>NULL</p>
-              </div>
-            )
-          }
-          const str = typeof val === 'object' ? JSON.stringify(val, null, 2) : String(val)
-          return (
-            <div key={col} className="mb-3">
-              <p className="text-[9px] uppercase tracking-wider font-semibold mb-0.5" style={{ color: 'var(--nox-text-3)' }}>{col}</p>
-              <pre className="text-[11px] font-mono break-all leading-relaxed whitespace-pre-wrap" style={{ color: 'var(--nox-text)' }}>{str}</pre>
-            </div>
-          )
-        })}
-      </div>
     </div>
   )
 }
@@ -725,173 +520,13 @@ function SavedPanel({ savedQueries, onPick }: Readonly<{ savedQueries: SavedQuer
 /* ── Smart cell renderer ───────────────────────────────────────────────── */
 
 // Returns the parsed object for object values / JSON-looking strings, else null.
-function tryParseJsonCell(value: any, str: string): any {
-  if (typeof value === 'object') return value
-  if (!isJsonString(str)) return null
-  try { return JSON.parse(str) } catch { return null }
-}
-
-// JSON object/array — expandable inline
-function JsonCell({ parsed, expanded, onToggle }: Readonly<{ parsed: any; expanded: boolean; onToggle: () => void }>) {
-  return (
-    <span>
-      <button onClick={e => { e.stopPropagation(); onToggle() }}
-        className="inline-flex items-center gap-0.5 px-1 py-[1px] rounded text-[9px] font-mono font-medium"
-        style={{ color: '#8B5CF6', background: 'rgba(139,92,246,0.08)' }}>
-        {Array.isArray(parsed) ? `[${parsed.length}]` : `{${Object.keys(parsed).length}}`}
-        <ChevronRight className="w-2 h-2" style={{ transform: expanded ? 'rotate(90deg)' : undefined, transition: 'transform 0.15s' }} />
-      </button>
-      {expanded && (
-        <pre className="mt-1 text-[10px] font-mono leading-relaxed whitespace-pre-wrap" style={{ color: '#8B5CF6' }}>{JSON.stringify(parsed, null, 2)}</pre>
-      )}
-    </span>
-  )
-}
-
-function SmartCell({ value, cellKey, expandedJson, onToggleJson }: Readonly<{
-  value: any; cellKey: string; expandedJson: Set<string>; onToggleJson: (k: string) => void
-}>) {
-  if (value == null) return <span className="italic opacity-40">NULL</span>
-
-  const str = typeof value === 'object' ? JSON.stringify(value) : String(value)
-
-  const parsed = tryParseJsonCell(value, str)
-  if (parsed) {
-    return <JsonCell parsed={parsed} expanded={expandedJson.has(cellKey)} onToggle={() => onToggleJson(cellKey)} />
-  }
-
-  // URL — clickable link
-  if (URL_RE.test(str)) {
-    return (
-      <span className="inline-flex items-center gap-1" style={{ color: '#3B5CCC' }}>
-        <a href={str} target="_blank" rel="noopener noreferrer" className="underline underline-offset-2 hover:opacity-70">{str.length > 60 ? str.slice(0, 57) + '…' : str}</a>
-        <ExternalLink className="w-2.5 h-2.5 flex-shrink-0 opacity-40" />
-      </span>
-    )
-  }
-
-  // Hex color — swatch
-  if (HEX_COLOR_RE.test(str)) {
-    return (
-      <span className="inline-flex items-center gap-1.5">
-        <span className="w-3 h-3 rounded-sm flex-shrink-0" style={{ background: str, border: '1px solid var(--nox-border)' }} />
-        <span className="font-mono">{str}</span>
-      </span>
-    )
-  }
-
-  // ISO timestamp — show relative time tooltip
-  if (ISO_DATE_RE.test(str)) {
-    const d = new Date(str)
-    if (!Number.isNaN(d.getTime())) {
-      return (
-        <span title={str} style={{ color: '#3B5CCC' }}>
-          {d.toLocaleString()} <span className="text-[9px] opacity-50">({relativeTime(d)})</span>
-        </span>
-      )
-    }
-  }
-
-  // Boolean
-  if (typeof value === 'boolean') {
-    return (
-      <span className="inline-flex items-center gap-1">
-        <span className="w-2 h-2 rounded-full" style={{ background: value ? '#10B981' : '#EF4444' }} />
-        <span>{str}</span>
-      </span>
-    )
-  }
-
-  return <span title={str}>{str}</span>
-}
-
 /* ── Explain tree visualizer ───────────────────────────────────────────── */
 
-function explainCostColor(costPct: number): string {
-  if (costPct > 70) return '#EF4444'
-  if (costPct > 40) return '#F59E0B'
-  return '#10B981'
-}
-
-function ExplainTreeView({ node, maxCost, depth }: Readonly<{ node: ExplainNode; maxCost: number; depth: number }>) {
-  const [expanded, setExpanded] = useState(true)
-  const costPct = maxCost > 0 ? Math.max(2, (node.cost / maxCost) * 100) : 0
-  const costColor = explainCostColor(costPct)
-
-  return (
-    <div style={{ marginLeft: depth > 0 ? 24 : 0 }}>
-      <div className="flex items-start gap-2 mb-1.5 group">
-        {node.children.length > 0 ? (
-          <button onClick={() => setExpanded(!expanded)} className="w-4 h-4 flex items-center justify-center flex-shrink-0 rounded" style={{ color: 'var(--nox-text-3)', marginTop: 2 }}>
-            <ChevronRight className="w-3 h-3" style={{ transform: expanded ? 'rotate(90deg)' : undefined, transition: 'transform 0.15s' }} />
-          </button>
-        ) : <div className="w-4" />}
-
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-[11px] font-semibold font-mono" style={{ color: 'var(--nox-text)' }}>{node.type}</span>
-            {node.relation && <span className="text-[10px] font-mono px-1.5 py-[1px] rounded" style={{ color: '#8B5CF6', background: 'rgba(139,92,246,0.08)' }}>on {node.relation}</span>}
-          </div>
-
-          {/* Cost bar */}
-          <div className="flex items-center gap-2 mt-1">
-            <div className="flex-1 h-[6px] rounded-full overflow-hidden" style={{ background: 'var(--nox-active)', maxWidth: 200 }}>
-              <div className="h-full rounded-full transition-all" style={{ width: `${costPct}%`, background: costColor }} />
-            </div>
-            <span className="text-[9px] font-mono whitespace-nowrap" style={{ color: costColor }}>cost {node.cost.toFixed(1)}</span>
-          </div>
-
-          {/* Stats row */}
-          <div className="flex items-center gap-3 mt-0.5">
-            <span className="text-[9px] font-mono" style={{ color: 'var(--nox-text-3)' }}>est. {node.rows} rows</span>
-            {node.width !== undefined && <span className="text-[9px] font-mono" style={{ color: 'var(--nox-text-3)' }}>width {node.width}</span>}
-            {node.actualTime !== undefined && <span className="text-[9px] font-mono" style={{ color: '#3B5CCC' }}>actual {node.actualTime.toFixed(2)}ms</span>}
-            {node.actualRows !== undefined && <span className="text-[9px] font-mono" style={{ color: '#3B5CCC' }}>actual {node.actualRows} rows</span>}
-          </div>
-        </div>
-      </div>
-
-      {expanded && node.children.map((child, i) => (
-        <ExplainTreeView key={`${child.type}-${child.relation ?? i}`} node={child} maxCost={maxCost} depth={depth + 1} />
-      ))}
-    </div>
-  )
-}
-
-// Identifier quoting per dialect — values themselves always travel as bind
-// parameters, never interpolated into the SQL string.
-function quoteIdent(name: string, dbType: string): string {
-  if (dbType === 'mysql' || dbType === 'mariadb') return '`' + name.replaceAll('`', '``') + '`'
-  return '"' + name.replaceAll('"', '""') + '"'
-}
-
-function bindPlaceholder(dbType: string, n: number): string {
-  return dbType === 'mysql' || dbType === 'mariadb' ? '?' : `$${n}`
-}
-
 /* ── Helpers ────────────────────────────────────────────────────────────── */
-
-function toEditable(v: unknown): string {
-  if (v == null) return ''
-  switch (typeof v) {
-    case 'string':
-      return v
-    case 'number':
-    case 'boolean':
-    case 'bigint':
-      return v.toString()
-    default:
-      return JSON.stringify(v) ?? ''
-  }
-}
 
 function filterTables(tables: string[], filter: string): string[] {
   if (!filter) return tables
   return tables.filter(t => t.toLowerCase().includes(filter.toLowerCase()))
-}
-
-function getDetailRow(rows: any[], selectedRow: number | null): any {
-  return selectedRow === null ? null : rows[selectedRow] ?? null
 }
 
 function PanelTab({ active, onClick, badge, children }: Readonly<{ active: boolean; onClick: () => void; badge?: number; children: React.ReactNode }>) {
@@ -905,16 +540,5 @@ function PanelTab({ active, onClick, badge, children }: Readonly<{ active: boole
 }
 
 function TinyBtn({ title, onClick, active, children }: Readonly<{ title: string; onClick: () => void; active?: boolean; children: React.ReactNode }>) {
-  return <button onClick={onClick} title={title} className="w-6 h-6 flex items-center justify-center rounded mr-0.5" style={{ color: active ? '#3B5CCC' : 'var(--nox-text-3)' }} onMouseEnter={e => (e.currentTarget.style.background = 'var(--nox-hover)')} onMouseLeave={e => (e.currentTarget.style.background = '')}>{children}</button>
-}
-
-function typeColor(type: string): string {
-  const t = type.toLowerCase()
-  if (t.includes('int') || t.includes('serial') || t.includes('numeric') || t.includes('decimal') || t.includes('float') || t.includes('double')) return '#F59E0B'
-  if (t.includes('text') || t.includes('char') || t.includes('varchar') || t.includes('string')) return '#10B981'
-  if (t.includes('bool')) return '#EC4899'
-  if (t.includes('time') || t.includes('date')) return '#3B5CCC'
-  if (t.includes('json')) return '#8B5CF6'
-  if (t.includes('uuid')) return '#06B6D4'
-  return 'var(--nox-text-3)'
+  return <button type="button" onClick={onClick} title={title} aria-label={title} className="w-6 h-6 flex items-center justify-center rounded mr-0.5" style={{ color: active ? '#3B5CCC' : 'var(--nox-text-2)' }} onMouseEnter={e => (e.currentTarget.style.background = 'var(--nox-hover)')} onMouseLeave={e => (e.currentTarget.style.background = '')}>{children}</button>
 }

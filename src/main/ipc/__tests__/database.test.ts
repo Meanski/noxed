@@ -82,3 +82,57 @@ describe('db:query parameter validation', () => {
       .rejects.toThrow('Invalid query parameters')
   })
 })
+
+describe('table metadata and write results', () => {
+  it('reads postgres columns and its primary key in key order', async () => {
+    const id = await connectPg()
+    const pgQuery = (pg as unknown as { __query: Mock }).__query
+    pgQuery
+      .mockResolvedValueOnce({ rows: [{ column_name: 'org', data_type: 'int', is_nullable: 'NO' }, { column_name: 'id', data_type: 'int', is_nullable: 'NO' }] })
+      .mockResolvedValueOnce({ rows: [{ attname: 'org' }, { attname: 'id' }] })
+    const info = await handler('db:tableInfo')(event, id, 'Members')
+    expect(info).toEqual({
+      columns: [
+        { name: 'org', type: 'int', nullable: false },
+        { name: 'id', type: 'int', nullable: false },
+      ],
+      primaryKey: ['org', 'id'],
+    })
+    expect(pgQuery.mock.calls.at(-1)?.[1]).toEqual(['Members'])
+    // Both lookups follow the connection's schema rather than assuming public.
+    expect(pgQuery.mock.calls.slice(-2).every((c) => String(c[0]).includes('current_schema()'))).toBe(true)
+    // INCLUDE columns follow the key columns in indkey and aren't part of the key.
+    expect(String(pgQuery.mock.calls.at(-1)?.[0])).toContain('k.ord <= i.indnkeyatts')
+  })
+
+  async function connectMysql(responses: unknown[]) {
+    const query = vi.fn()
+    for (const r of responses) query.mockResolvedValueOnce(r)
+    const mysql = (await import('mysql2/promise')).default
+    ;(mysql.createPool as Mock).mockReturnValue({
+      query,
+      getConnection: vi.fn().mockResolvedValue({ release: vi.fn() }),
+      end: vi.fn().mockResolvedValue(undefined),
+    })
+    const id = (await handler('db:connect')(event, {
+      dbType: 'mysql', host: 'db.example.com', port: 3306, username: 'u', database: 'appdb',
+    })) as string
+    return { id, query }
+  }
+
+  it('reports affected rows for mysql writes', async () => {
+    const { id } = await connectMysql([[{ affectedRows: 1, insertId: 0 }, undefined]])
+    const result = (await handler('db:query')(event, id, 'UPDATE `t` SET `a` = ? WHERE `id` = ?', ['x', 1])) as { rowCount: number; rows: unknown[] }
+    expect(result).toMatchObject({ rowCount: 1, rows: [] })
+  })
+
+  it('reads the mysql primary key ordered by its position in the index', async () => {
+    const { id, query } = await connectMysql([
+      [[{ Field: 'id', Type: 'int', Null: 'NO' }, { Field: 'org', Type: 'int', Null: 'NO' }]],
+      [[{ Column_name: 'id', Seq_in_index: 2 }, { Column_name: 'org', Seq_in_index: 1 }]],
+    ])
+    const info = (await handler('db:tableInfo')(event, id, 'members')) as { primaryKey: string[] }
+    expect(info.primaryKey).toEqual(['org', 'id'])
+    expect(query).toHaveBeenLastCalledWith("SHOW KEYS FROM ?? WHERE Key_name = 'PRIMARY'", ['members'])
+  })
+})
