@@ -381,6 +381,14 @@ describe('Zustand Store', () => {
       expect(useAppStore.getState().isLocked).toBe(false)
     })
 
+    it('closes credential and connection dialogs when the app locks', () => {
+      useAppStore.setState({ quickConnectTarget: 'root@box', showAddConnection: true, showAddSession: true, showCommandPalette: true })
+      useAppStore.getState().setLocked(true)
+      expect(useAppStore.getState()).toMatchObject({ quickConnectTarget: null, showAddConnection: false, showAddSession: false, showCommandPalette: false })
+      useAppStore.getState().setLocked(false)
+      expect(useAppStore.getState().quickConnectTarget).toBeNull()
+    })
+
     it('setSidebarView changes sidebar view', () => {
       useAppStore.getState().setSidebarView('project')
       expect(useAppStore.getState().sidebarView).toBe('project')

@@ -473,7 +473,12 @@ export const useAppStore = create<AppState>((set) => ({
       }
       return { tabs: [...s.tabs, tab], activeTabId: tab.id, focusedPaneId: null }
     }),
-  setLocked: (v) => set({ isLocked: v }),
+  // Locking closes dialogs that can hold typed credentials or act on
+  // connections; quick connect's would even sit above the lock screen (native
+  // modals live in the top layer).
+  setLocked: (v) => set(v
+    ? { isLocked: true, quickConnectTarget: null, showAddConnection: false, showAddSession: false, showCommandPalette: false }
+    : { isLocked: false }),
   setSidebarView: (view) => set({ sidebarView: view }),
   setSidebarExpanded: (v) => set({ sidebarExpanded: v }),
   setSidebarWidth: (px) => set({ sidebarWidth: px }),
