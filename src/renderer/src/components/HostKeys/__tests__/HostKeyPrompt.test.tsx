@@ -51,6 +51,7 @@ describe('HostKeyPrompt', () => {
     expect(screen.getByRole('dialog', { name: 'Trust example.com:2222?' })).toBeTruthy()
     expect(screen.getByText('SHA256:abc')).toBeTruthy()
     expect(screen.getByText(/already trusted with a different key type \(ssh-rsa\)/)).toBeTruthy()
+    expect(screen.getByText('ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub')).toBeTruthy()
     fireEvent.click(screen.getByText('Trust and connect'))
     expect(api.hostKeys.respond).toHaveBeenCalledWith('req-1', 'trust')
     expect(screen.queryByRole('dialog')).toBeNull()
@@ -105,6 +106,15 @@ describe('HostKeyPrompt', () => {
     expect(screen.queryByRole('dialog')).toBeNull()
     act(() => useAppStore.setState({ isLocked: false }))
     expect(screen.getByRole('dialog', { name: 'Trust example.com?' })).toBeTruthy()
+  })
+
+  it.each([
+    ['ecdsa-sha2-nistp256', '/etc/ssh/ssh_host_ecdsa_key.pub'],
+    ['ssh-rsa', '/etc/ssh/ssh_host_rsa_key.pub'],
+  ])('points %s users at the matching host key file', (keyType, file) => {
+    const { prompt } = setup()
+    prompt(newPrompt({ keyType }))
+    expect(screen.getByText(`ssh-keygen -lf ${file}`)).toBeTruthy()
   })
 
   it('drops a prompt main has timed out', () => {

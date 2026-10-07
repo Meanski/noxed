@@ -9,6 +9,13 @@ type Decision = Parameters<Window['api']['hostKeys']['respond']>[1]
 const withoutRequest = (requestId: string) => (queue: HostKeyPromptRequest[]) =>
   queue.filter((p) => p.requestId !== requestId)
 
+// Where sshd keeps the public host key for each algorithm family.
+function hostKeyFile(keyType: string): string {
+  if (keyType.includes('ed25519')) return '/etc/ssh/ssh_host_ed25519_key.pub'
+  if (keyType.startsWith('ecdsa')) return '/etc/ssh/ssh_host_ecdsa_key.pub'
+  return '/etc/ssh/ssh_host_rsa_key.pub'
+}
+
 function hostLabel(p: HostKeyPromptRequest): string {
   return p.port === 22 ? p.host : `${p.host}:${p.port}`
 }
@@ -120,8 +127,10 @@ export default function HostKeyPrompt() {
       }
     >
       <p>
-        noxed hasn&apos;t connected to this host before. Check the fingerprint against the one your server
-        administrator gave you (or <code className="font-['JetBrains_Mono']">ssh-keygen -lf</code> on the server) before trusting it.
+        noxed hasn&apos;t seen this {current.keyType} key for this host before. Check the fingerprint against the
+        one your server administrator gave you, or run{' '}
+        <code className="font-['JetBrains_Mono'] break-all">ssh-keygen -lf {hostKeyFile(current.keyType)}</code>{' '}
+        on the server, before trusting it.
       </p>
       <Fingerprint label={`${current.keyType} fingerprint`} value={current.fingerprint} />
       {current.otherKeyTypes.length > 0 && (

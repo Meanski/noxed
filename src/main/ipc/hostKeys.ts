@@ -68,6 +68,8 @@ interface InflightCheck {
   prompting: boolean
   /** Withdraws the open prompt (rejecting it); set while one is shown. */
   cancelPrompt?: () => void
+  /** Every connection waiting on this check has gone away. */
+  abandoned: boolean
 }
 
 const pending = new Map<string, PendingPrompt>()
@@ -117,7 +119,50 @@ function promptTarget(): Electron.WebContents | null {
   return win && !win.isDestroyed() ? win.webContents : null
 }
 
-function askUser(prompt: Omit<HostKeyPrompt, 'requestId'>, onOpen?: (cancel: () => void) => void): Promise<HostKeyDecision> {
+interface AskHooks {
+  /** Called once the prompt is on screen, with a way to withdraw it. */
+  onOpen?: (cancel: () => void) => void
+  /** Checked before a queued prompt is shown; true skips it as rejected. */
+  cancelled?: () => boolean
+}
+
+interface QueuedAsk {
+  prompt: Omit<HostKeyPrompt, 'requestId'>
+  hooks: AskHooks
+  resolve: (decision: HostKeyDecision) => void
+}
+
+// The renderer shows one prompt at a time, so main presents them one at a time
+// too: each prompt's timeout only starts when it's actually on screen (the
+// runner can hit dozens of new hosts at once).
+const askQueue: QueuedAsk[] = []
+let presenting = false
+
+function askUser(prompt: Omit<HostKeyPrompt, 'requestId'>, hooks: AskHooks = {}): Promise<HostKeyDecision> {
+  return new Promise((resolve) => {
+    askQueue.push({ prompt, hooks, resolve })
+    presentNext()
+  })
+}
+
+function presentNext(): void {
+  if (presenting) return
+  const next = askQueue.shift()
+  if (!next) return
+  if (next.hooks.cancelled?.()) {
+    next.resolve('reject')
+    presentNext()
+    return
+  }
+  presenting = true
+  present(next.prompt, next.hooks.onOpen).then((decision) => {
+    presenting = false
+    next.resolve(decision)
+    presentNext()
+  })
+}
+
+function present(prompt: Omit<HostKeyPrompt, 'requestId'>, onOpen?: (cancel: () => void) => void): Promise<HostKeyDecision> {
   const target = promptTarget()
   if (!target) return Promise.resolve('reject')
   const requestId = randomUUID()
@@ -150,7 +195,10 @@ async function askWhileWatched(check: InflightCheck, prompt: Omit<HostKeyPrompt,
   check.prompting = true
   check.watchers.forEach((w) => w.onPromptStart())
   try {
-    return await askUser(prompt, (cancel) => { check.cancelPrompt = cancel })
+    return await askUser(prompt, {
+      onOpen: (cancel) => { check.cancelPrompt = cancel },
+      cancelled: () => check.abandoned,
+    })
   } finally {
     check.prompting = false
     check.cancelPrompt = undefined
@@ -204,7 +252,7 @@ export function verifyHostKey(host: string, port: number, blob: Buffer, watcher?
     }
     return existing.result
   }
-  const check: InflightCheck = { result: Promise.resolve(false), watchers: new Set(watcher ? [watcher] : []), prompting: false }
+  const check: InflightCheck = { result: Promise.resolve(false), watchers: new Set(watcher ? [watcher] : []), prompting: false, abandoned: false }
   check.result = decide(check, host, port, blob)
     .catch((err) => {
       console.error(`[hostkeys] verification failed for ${host}:${port}: ${toMessage(err)}`)
@@ -223,7 +271,10 @@ export function verifyHostKey(host: string, port: number, blob: Buffer, watcher?
 function abandonWatcher(watcher: PromptWatcher): void {
   for (const check of inflight.values()) {
     if (!check.watchers.delete(watcher)) continue
-    if (check.watchers.size === 0) check.cancelPrompt?.()
+    if (check.watchers.size === 0) {
+      check.abandoned = true
+      check.cancelPrompt?.()
+    }
   }
 }
 

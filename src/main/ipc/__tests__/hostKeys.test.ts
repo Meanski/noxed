@@ -206,6 +206,37 @@ describe('verifyHostKey', () => {
     expect(webContents.listenerCount('destroyed')).toBe(0)
   })
 
+  it('shows prompts one at a time, each with its own full timeout', async () => {
+    vi.useFakeTimers()
+    const first = verifyHostKey('a.example.com', 22, KEY1)
+    const second = verifyHostKey('b.example.com', 22, KEY2)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(sent.filter(([ch]) => ch === 'hostkeys:prompt')).toHaveLength(1)
+    // The first prompt times out; only then does the second appear, fresh.
+    await vi.advanceTimersByTimeAsync(120_000)
+    expect(await first).toBe(false)
+    expect(sent.filter(([ch]) => ch === 'hostkeys:prompt')).toHaveLength(2)
+    expect((lastPrompt() as unknown as { host: string }).host).toBe('b.example.com')
+    await vi.advanceTimersByTimeAsync(119_000)
+    await respond('once')
+    expect(await second).toBe(true)
+  })
+
+  it('skips a queued prompt whose connections all went away', async () => {
+    const first = verifyHostKey('a.example.com', 22, KEY1)
+    await Promise.resolve()
+    const client = Object.assign(new EventEmitter(), { destroy: vi.fn() })
+    client.on('error', () => {})
+    const verify = vi.fn()
+    ;(verifiedHandshake(client as never, 'b.example.com', 22).hostVerifier as (k: Buffer, v: (ok: boolean) => void) => void)(KEY2, verify)
+    await Promise.resolve()
+    client.emit('close')
+    await respond('reject')
+    await first
+    await vi.waitFor(() => expect(verify).toHaveBeenCalledWith(false))
+    expect(sent.filter(([ch]) => ch === 'hostkeys:prompt')).toHaveLength(1)
+  })
+
   it('rejects immediately when there is no window to ask', async () => {
     windows = []
     expect(await verifyHostKey('example.com', 22, KEY1)).toBe(false)

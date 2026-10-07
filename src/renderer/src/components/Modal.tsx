@@ -1,5 +1,5 @@
 import { useId, useLayoutEffect, useRef, type ReactNode } from 'react'
-import { ACCENT, DANGER } from '../lib/colors'
+import { ACCENT } from '../lib/colors'
 
 interface ModalProps {
   title: string
@@ -54,7 +54,7 @@ export default function Modal({ title, onClose, children, footer, tone = 'defaul
         <h2
           id={titleId}
           className="font-['Plus_Jakarta_Sans'] font-bold text-[15px]"
-          style={{ color: tone === 'danger' ? DANGER : 'var(--nox-text)' }}
+          style={{ color: tone === 'danger' ? 'var(--nox-danger-text)' : 'var(--nox-text)' }}
         >
           {title}
         </h2>
@@ -83,7 +83,7 @@ interface ModalButtonProps {
 const BUTTON_STYLES: Record<NonNullable<ModalButtonProps['variant']>, React.CSSProperties> = {
   primary: { background: ACCENT, color: '#fff' },
   secondary: { background: 'transparent', color: 'var(--nox-text)', border: '1px solid var(--nox-border)' },
-  danger: { background: DANGER, color: '#fff' },
+  danger: { background: 'var(--nox-danger-bg)', color: '#fff' },
 }
 
 export function ModalButton({ children, onClick, variant = 'secondary', initialFocus, disabled }: Readonly<ModalButtonProps>) {
