@@ -17,7 +17,13 @@ interface DbConnection {
   query: (sql: string, params?: QueryParam[]) => Promise<QueryResult>
   close: () => Promise<void>
   getTables: () => Promise<string[]>
-  getTableInfo: (table: string) => Promise<{ columns: { name: string; type: string; nullable: boolean }[] }>
+  getTableInfo: (table: string) => Promise<TableInfo>
+}
+
+interface TableInfo {
+  columns: { name: string; type: string; nullable: boolean }[]
+  /** Primary-key columns in key order; empty when the table has none. */
+  primaryKey: string[]
 }
 
 interface DbEntry { conn: DbConnection; senderId: number }
@@ -153,7 +159,17 @@ async function connectPostgres(config: DbConnectConfig): Promise<DbConnection> {
     },
     async getTableInfo(table: string) {
       const result = await pool.query(
-        `SELECT column_name, data_type, is_nullable FROM information_schema.columns WHERE table_name = $1 ORDER BY ordinal_position`,
+        `SELECT column_name, data_type, is_nullable FROM information_schema.columns
+         WHERE table_schema = 'public' AND table_name = $1 ORDER BY ordinal_position`,
+        [table]
+      )
+      // quote_ident keeps mixed-case names intact; to_regclass returns NULL
+      // (no rows) instead of erroring for a missing table.
+      const pk = await pool.query(
+        `SELECT a.attname FROM pg_index i
+         JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey)
+         WHERE i.indrelid = to_regclass('public.' || quote_ident($1)) AND i.indisprimary
+         ORDER BY array_position(i.indkey, a.attnum)`,
         [table]
       )
       return {
@@ -162,6 +178,7 @@ async function connectPostgres(config: DbConnectConfig): Promise<DbConnection> {
           type: r.data_type,
           nullable: r.is_nullable === 'YES',
         })),
+        primaryKey: pk.rows.map((r: { attname: string }) => r.attname),
       }
     },
   }
@@ -196,10 +213,13 @@ async function connectMysql(config: DbConnectConfig): Promise<DbConnection> {
       const [rows, fields] = await pool.query(sql, params)
       const resultRows = Array.isArray(rows) ? rows as unknown[] : []
       const resultFields = Array.isArray(fields) ? fields : []
+      // Writes return a ResultSetHeader instead of rows; report how many rows
+      // they touched, as pg does, so callers can verify an edit hit one row.
+      const affected = Array.isArray(rows) ? resultRows.length : (rows as { affectedRows?: number }).affectedRows ?? 0
       return {
         columns: resultFields.map((f: { name: string }) => f.name),
         rows: resultRows,
-        rowCount: resultRows.length,
+        rowCount: affected,
         duration: Date.now() - start,
       }
     },
@@ -212,12 +232,16 @@ async function connectMysql(config: DbConnectConfig): Promise<DbConnection> {
     },
     async getTableInfo(table: string) {
       const [rows] = await pool.query('DESCRIBE ??', [table])
+      const [keys] = await pool.query("SHOW KEYS FROM ?? WHERE Key_name = 'PRIMARY'", [table])
       return {
         columns: (rows as { Field: string; Type: string; Null: string }[]).map(r => ({
           name: r.Field,
           type: r.Type,
           nullable: r.Null === 'YES',
         })),
+        primaryKey: (keys as { Column_name: string; Seq_in_index: number }[])
+          .sort((a, b) => a.Seq_in_index - b.Seq_in_index)
+          .map(k => k.Column_name),
       }
     },
   }

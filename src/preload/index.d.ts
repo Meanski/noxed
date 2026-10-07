@@ -185,7 +185,7 @@ declare global {
         disconnect: (id: string) => Promise<void>
         query: (id: string, sql: string, params?: (string | number | boolean | null)[]) => Promise<{ columns: string[]; rows: any[]; rowCount: number; duration: number }>
         tables: (id: string) => Promise<string[]>
-        tableInfo: (id: string, table: string) => Promise<{ columns: { name: string; type: string; nullable: boolean }[] }>
+        tableInfo: (id: string, table: string) => Promise<{ columns: { name: string; type: string; nullable: boolean }[]; primaryKey: string[] }>
       }
       redis: {
         connect: (config: any) => Promise<string>
