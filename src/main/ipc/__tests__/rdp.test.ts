@@ -187,7 +187,7 @@ describe('frame stream parsing', () => {
     const { proc, id, event } = connect()
     proc.stdout.emit('data', frame(2, 2, 0xab, { x: 4, y: 6, descW: 8, descH: 8 }))
     expect(event.sender.send).toHaveBeenCalledTimes(1)
-    const [channel, sentId, descW, descH, x, y, w, h, pixels] = event.sender.send.mock.calls[0]
+    const [channel, sentId, { descW, descH, x, y, w, h, pixels }] = event.sender.send.mock.calls[0]
     expect(channel).toBe('rdp:frame')
     expect(sentId).toBe(id)
     expect([descW, descH]).toEqual([8, 8])
@@ -205,15 +205,15 @@ describe('frame stream parsing', () => {
     expect(event.sender.send).not.toHaveBeenCalled()
     proc.stdout.emit('data', full.subarray(20))
     expect(event.sender.send).toHaveBeenCalledTimes(1)
-    expect(event.sender.send.mock.calls[0][6]).toBe(3) // rect width
+    expect(event.sender.send.mock.calls[0][2].w).toBe(3) // rect width
   })
 
   it('drains multiple frames from a single chunk', () => {
     const { proc, event } = connect()
     proc.stdout.emit('data', Buffer.concat([frame(1, 1, 0x01), frame(2, 1, 0x02)]))
     expect(event.sender.send).toHaveBeenCalledTimes(2)
-    expect(event.sender.send.mock.calls[0][6]).toBe(1) // rect width
-    expect(event.sender.send.mock.calls[1][6]).toBe(2)
+    expect(event.sender.send.mock.calls[0][2].w).toBe(1) // rect width
+    expect(event.sender.send.mock.calls[1][2].w).toBe(2)
   })
 
   it('resyncs past stray bytes before a frame', () => {
@@ -251,7 +251,7 @@ describe('frame stream parsing', () => {
     bad.writeUInt32LE(15, 28) // dataLen — should be 16
     proc.stdout.emit('data', Buffer.concat([bad, frame(1, 1)]))
     expect(event.sender.send).toHaveBeenCalledTimes(1)
-    expect(event.sender.send.mock.calls[0][6]).toBe(1) // rect width
+    expect(event.sender.send.mock.calls[0][2].w).toBe(1) // rect width
   })
 
   it('does not send frames to a destroyed sender', () => {

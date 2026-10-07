@@ -43,6 +43,10 @@ if(DEFINED VCPKG_INSTALLED_DIR AND DEFINED VCPKG_TARGET_TRIPLET)
 endif()
 
 if(WIN32)
+  # A full <windows.h> drags in shellapi.h, whose NIIF_* macros collide with the
+  # TS_RAIL_NIIF enum in freerdp/rail.h (FreeRDP >= 3.2x) — "syntax error:
+  # 'constant'". FreeRDP's own Windows build defines this too.
+  target_compile_definitions(rdp-sidecar PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
   # Sockets + crypto/security backends FreeRDP/WinPR pull in on Windows.
   target_link_libraries(rdp-sidecar PRIVATE ws2_32 crypt32 secur32 winmm bcrypt)
 endif()

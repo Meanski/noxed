@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useLayoutEffect, useRef } from 'react'
 import {
   Settings2, Shield, Terminal, Info, ShieldCheck, Trash2,
   AlertTriangle, Minus, Plus, ChevronRight, Eye, EyeOff,
@@ -1038,7 +1038,9 @@ function VerifyPinInput({ loading, error, onSubmit }: Readonly<{
     }
   }
 
-  useEffect(() => {
+  // Layout effect: the listener must be re-bound in the same commit that
+  // renders new state, or keys typed right after go to a stale handler.
+  useLayoutEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (loading) return
       if (/^\d$/.test(e.key)) pressKey(e.key)
@@ -1143,7 +1145,9 @@ function SetPinInput({ phase, enterDigits, confirmDigits, loading, error, onEnte
     }
   }
 
-  useEffect(() => {
+  // Layout effect: the listener must be re-bound in the same commit that
+  // renders new state, or keys typed right after go to a stale handler.
+  useLayoutEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (loading) return
       if (/^\d$/.test(e.key)) pressKey(e.key)

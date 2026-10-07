@@ -307,14 +307,8 @@ contextBridge.exposeInMainWorld('api', {
       const handler = (
         _e: any,
         id: string,
-        descW: number,
-        descH: number,
-        x: number,
-        y: number,
-        w: number,
-        h: number,
-        pixels: Uint8Array,
-      ) => cb(id, { descW, descH, x, y, w, h, pixels })
+        frame: { descW: number; descH: number; x: number; y: number; w: number; h: number; pixels: Uint8Array },
+      ) => cb(id, frame)
       ipcRenderer.on('rdp:frame', handler)
       return () => ipcRenderer.off('rdp:frame', handler)
     },

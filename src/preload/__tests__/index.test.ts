@@ -332,13 +332,10 @@ describe('rdp', () => {
 
   it('subscriptions forward events and unsubscribe', () => {
     const pixels = new Uint8Array([1, 2, 3])
-    // onFrame packs the positional dirty-rect args into a frame object.
-    expectSubscription(
-      api.rdp.onFrame,
-      'rdp:frame',
-      ['rdp-1', 800, 600, 10, 20, 30, 40, pixels],
-      ['rdp-1', { descW: 800, descH: 600, x: 10, y: 20, w: 30, h: 40, pixels }],
-    )
+    expectSubscription(api.rdp.onFrame, 'rdp:frame', [
+      'rdp-1',
+      { descW: 800, descH: 600, x: 10, y: 20, w: 30, h: 40, pixels },
+    ])
     expectSubscription(api.rdp.onClose, 'rdp:closed', ['rdp-1', 'lost'])
   })
 })
