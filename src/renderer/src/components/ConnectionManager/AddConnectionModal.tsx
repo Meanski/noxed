@@ -1,14 +1,14 @@
 import { useState, useEffect } from 'react'
 import {
   X, Terminal, FolderOpen, Database, Boxes, Check, ArrowRight,
-  ArrowLeft, Key, Lock, Eye, EyeOff, Wifi, Layers, Monitor,
-  FileCode2, RefreshCw, ChevronRight, Fingerprint,
+  ArrowLeft, Wifi, Layers, Monitor, FileCode2, RefreshCw, ChevronRight,
 } from 'lucide-react'
 import { useAppStore } from '../../store'
 import { ipcErrorMessage } from '../../lib/format'
 import { readPrivateKey } from '../../lib/sshCredentials'
 import { rdpSupported } from '../../lib/platform'
-import { ACCENT } from '../../lib/colors'
+import SshFields, { PasswordInput } from './SshFields'
+import { FormField, FormInput, FormSelect, storedPasswordPlaceholder } from './FormControls'
 
 interface K8sContextEntry {
   name: string
@@ -601,118 +601,6 @@ function saveButtonLabel(saving: boolean, editing: boolean): string {
   return editing ? 'Save Changes' : 'Save Connection'
 }
 
-function storedPasswordPlaceholder(isEditing: boolean, hasExistingPassword: boolean, fallback: string): string {
-  return isEditing && hasExistingPassword ? '••••••••  (leave blank to keep)' : fallback
-}
-
-function PasswordInput({ form, set, placeholder }: Readonly<{ form: any; set: (f: string, v: any) => void; placeholder: string }>) {
-  return (
-    <div className="relative">
-      <FormInput
-        type={form.showPassword ? 'text' : 'password'}
-        placeholder={placeholder}
-        value={form.password}
-        onChange={e => set('password', e.target.value)}
-      />
-      <button
-        type="button"
-        onClick={() => set('showPassword', !form.showPassword)}
-        className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded transition-colors"
-        style={{ color: 'var(--nox-text-3)' }}
-        onMouseEnter={e => { e.currentTarget.style.color = 'var(--nox-text-2)' }}
-        onMouseLeave={e => { e.currentTarget.style.color = 'var(--nox-text-3)' }}
-      >
-        {form.showPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-      </button>
-    </div>
-  )
-}
-
-function AuthButton({ form, set, value, icon: Icon, label }: Readonly<{
-  form: { authType: string }
-  set: (f: string, v: string) => void
-  value: 'password' | 'key' | 'agent'
-  icon: typeof Key
-  label: string
-}>) {
-  const active = form.authType === value
-  return (
-    <button
-      type="button"
-      aria-pressed={active}
-      onClick={() => set('authType', value)}
-      className="flex items-center gap-1.5 px-3 py-1.5 rounded-md font-['Inter'] text-[12px] font-medium transition-colors"
-      style={active ? { background: ACCENT, color: '#fff' } : { border: '1px solid var(--nox-border)', color: 'var(--nox-text-2)' }}
-    >
-      <Icon className="w-3.5 h-3.5" /> {label}
-    </button>
-  )
-}
-
-function SshFields({ form, set, isEditing, hasExistingPassword, jumpHostCandidates }: Readonly<{
-  form: any
-  set: (f: string, v: any) => void
-  isEditing: boolean
-  hasExistingPassword: boolean
-  jumpHostCandidates: { id: string; label?: string; host: string }[]
-}>) {
-  return (
-    <>
-      <FormField label="Username">
-        <FormInput
-          placeholder="root"
-          value={form.username}
-          onChange={e => set('username', e.target.value)}
-        />
-      </FormField>
-
-      <div>
-        <label className="font-['Plus_Jakarta_Sans'] text-[10px] uppercase tracking-wider font-semibold block mb-2" style={{ color: 'var(--nox-text-3)' }}>
-          Authentication Method
-        </label>
-        <div className="flex items-center gap-2">
-          <AuthButton form={form} set={set} value="key" icon={Key} label="Private Key" />
-          <AuthButton form={form} set={set} value="password" icon={Lock} label="Password" />
-          <AuthButton form={form} set={set} value="agent" icon={Fingerprint} label="SSH Agent" />
-        </div>
-      </div>
-
-      {form.authType === 'password' && (
-        <FormField label="Password">
-          <PasswordInput form={form} set={set} placeholder={storedPasswordPlaceholder(isEditing, hasExistingPassword, 'Enter password')} />
-        </FormField>
-      )}
-
-      {form.authType === 'agent' && (
-        <p className="font-['Inter'] text-[11px]" style={{ color: 'var(--nox-text-2)' }}>
-          Uses your SSH agent, then any passphrase-free id_rsa, id_ecdsa or id_ed25519 key in ~/.ssh.
-        </p>
-      )}
-
-      {form.authType === 'key' && (
-        <FormField label="Private Key Path">
-          <FormInput
-            placeholder="~/.ssh/id_ed25519"
-            value={form.keyPath}
-            onChange={e => set('keyPath', e.target.value)}
-          />
-        </FormField>
-      )}
-
-      {jumpHostCandidates.length > 0 && (
-        <FormField label="Connect via (jump host)">
-          <FormSelect value={form.jumpHostId} onChange={e => set('jumpHostId', e.target.value)}>
-            <option value="">None — connect directly</option>
-            {jumpHostCandidates.map(s => (
-              <option key={s.id} value={s.id}>{s.label || s.host}</option>
-            ))}
-          </FormSelect>
-        </FormField>
-      )}
-    </>
-  )
-}
-
 function DatabaseFields({ form, set, isEditing, hasExistingPassword }: Readonly<{
   form: any
   set: (f: string, v: any) => void
@@ -1218,44 +1106,3 @@ function MiniToggleRow({ on, onToggle, label, description }: Readonly<{
   )
 }
 
-function FormField({ label, children }: Readonly<{ label: string; children: React.ReactNode }>) {
-  return (
-    <div>
-      <label className="font-['Plus_Jakarta_Sans'] text-[10px] uppercase tracking-wider font-semibold block mb-1.5" style={{ color: 'var(--nox-text-3)' }}>
-        {label}
-      </label>
-      {children}
-    </div>
-  )
-}
-
-function FormInput({ className = '', ...props }: React.InputHTMLAttributes<HTMLInputElement> & { className?: string }) {
-  return (
-    <input
-      {...props}
-      className={`w-full rounded-md px-3 py-2 font-['Inter'] text-[12.5px] focus:outline-none focus:ring-1 focus:ring-[#3B5CCC] ${className}`}
-      style={{
-        background: 'var(--nox-bg)',
-        border: '1px solid var(--nox-border)',
-        color: 'var(--nox-text)',
-        ...(props as any).style,
-      }}
-    />
-  )
-}
-
-function FormSelect({ children, ...props }: React.SelectHTMLAttributes<HTMLSelectElement> & { children: React.ReactNode }) {
-  return (
-    <select
-      {...props}
-      className="w-full rounded-md px-3 py-2 font-['Inter'] text-[12.5px] focus:outline-none focus:ring-1 focus:ring-[#3B5CCC]"
-      style={{
-        background: 'var(--nox-bg)',
-        border: '1px solid var(--nox-border)',
-        color: 'var(--nox-text)',
-      }}
-    >
-      {children}
-    </select>
-  )
-}

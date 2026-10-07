@@ -7,11 +7,11 @@ export interface QuickConnectTarget {
 
 const DEFAULT_SSH_PORT = 22
 // OpenSSH options that consume the next argument, so it isn't read as the host.
-const FLAGS_WITH_VALUE = new Set(['-b', '-c', '-D', '-E', '-e', '-F', '-I', '-i', '-J', '-L', '-m', '-O', '-o', '-Q', '-R', '-S', '-W', '-w'])
+const FLAGS_WITH_VALUE = new Set(['-B', '-b', '-c', '-D', '-E', '-e', '-F', '-I', '-i', '-J', '-L', '-l', '-m', '-O', '-o', '-P', '-p', '-Q', '-R', '-S', '-W', '-w'])
 const HOST_CHARS = /^[A-Za-z0-9._:-]+$/
 
 function toPort(raw: string | undefined): number | null {
-  if (raw === undefined || raw === '') return DEFAULT_SSH_PORT
+  if (raw === undefined) return DEFAULT_SSH_PORT
   if (!/^\d{1,5}$/.test(raw)) return null
   const port = Number(raw)
   return port >= 1 && port <= 65535 ? port : null
@@ -25,7 +25,8 @@ function splitHostPort(hostPart: string): { host: string; port: string | undefin
     if (close === -1) return null
     const rest = hostPart.slice(close + 1)
     if (rest !== '' && !rest.startsWith(':')) return null
-    return { host: hostPart.slice(1, close), port: rest ? rest.slice(1) : undefined }
+    // `[v6]:` names no port, which is an error rather than the default.
+    return { host: hostPart.slice(1, close), port: rest === '' ? undefined : rest.slice(1) }
   }
   const firstColon = hostPart.indexOf(':')
   if (firstColon !== -1 && firstColon === hostPart.lastIndexOf(':')) {
@@ -41,7 +42,7 @@ function parseUrl(input: string): QuickConnectTarget | null {
     // drop (a remote command path, an embedded password, query or fragment).
     if (url.password || (url.pathname !== '' && url.pathname !== '/') || url.search || url.hash) return null
     const host = url.hostname.replace(/^\[(.*)\]$/, '$1')
-    const port = toPort(url.port)
+    const port = toPort(url.port || undefined)
     if (!host || port === null) return null
     return { username: decodeURIComponent(url.username), host, port }
   } catch {
@@ -66,10 +67,18 @@ export function parseQuickConnectTarget(input: string): QuickConnectTarget | nul
   const positional: string[] = []
   for (let i = 0; i < tokens.length; i++) {
     const token = tokens[i]
-    if (token === '-p') flagPort = tokens[++i]
-    else if (token === '-l') flagUser = tokens[++i]
-    else if (FLAGS_WITH_VALUE.has(token)) i++
-    else if (!token.startsWith('-')) positional.push(token)
+    if (!token.startsWith('-')) {
+      positional.push(token)
+      continue
+    }
+    const flag = token.slice(0, 2)
+    // OpenSSH takes values both apart (`-p 2222`) and attached (`-p2222`).
+    const attached = token.length > 2 ? token.slice(2) : undefined
+    if (!FLAGS_WITH_VALUE.has(flag)) continue
+    const value = attached ?? tokens[++i]
+    if (value === undefined) return null
+    if (flag === '-p') flagPort = value
+    else if (flag === '-l') flagUser = value
   }
   // A second positional would be a remote command (or a typo) that quick
   // connect can't honour, so refuse rather than silently drop it.

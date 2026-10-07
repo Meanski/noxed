@@ -17,6 +17,10 @@ describe('parseQuickConnectTarget', () => {
     ['first.last@corp@bastion', { username: 'first.last@corp', host: 'bastion', port: 22 }],
     ['ssh -i ~/.ssh/work -J jump deploy@host', { username: 'deploy', host: 'host', port: 22 }],
     ['ssh -l admin box.local', { username: 'admin', host: 'box.local', port: 22 }],
+    ['ssh -p2222 deploy@host', { username: 'deploy', host: 'host', port: 2222 }],
+    ['ssh -ladmin box', { username: 'admin', host: 'box', port: 22 }],
+    ['ssh -B en0 -P work -v deploy@host', { username: 'deploy', host: 'host', port: 22 }],
+    ['ssh -i~/.ssh/work deploy@host', { username: 'deploy', host: 'host', port: 22 }],
   ])('parses %s', (input, expected) => {
     expect(parseQuickConnectTarget(input)).toEqual(expected)
   })
@@ -34,6 +38,10 @@ describe('parseQuickConnectTarget', () => {
     ['user@[::1'],
     ['user@[::1]x'],
     ['ssh://user@:22'],
+    ['host:'],
+    ['user@[::1]:'],
+    ['ssh host -p'],
+    ['ssh -i'],
     ['ssh://user@host/uptime'],
     ['ssh://user:pw@host'],
     ['ssh://user@host?x=1'],
