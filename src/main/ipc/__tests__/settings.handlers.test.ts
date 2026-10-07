@@ -77,6 +77,14 @@ describe('settings:set', () => {
     expect(settings['snippets:session-1']).toEqual([{ name: 'restart' }])
   })
 
+  it('validates sidebarWidth before storing it', () => {
+    expect((invoke('settings:set', 'sidebarWidth', 300) as AppSettings).sidebarWidth).toBe(300)
+    for (const bad of [179, 481, 250.5, Number.NaN, '300', null]) {
+      expect(() => invoke('settings:set', 'sidebarWidth', bad)).toThrow('Invalid value for setting: sidebarWidth')
+    }
+    expect(getStoredSettings().sidebarWidth).toBe(300)
+  })
+
   it('rejects unknown keys', () => {
     expect(() => invoke('settings:set', 'evilKey', true)).toThrow('Unknown setting: evilKey')
     expect((invoke('settings:get') as AppSettings)).not.toHaveProperty('evilKey')

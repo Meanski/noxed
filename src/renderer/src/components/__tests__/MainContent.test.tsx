@@ -117,7 +117,8 @@ describe('MainContent terminal panes', () => {
 
   it('resizes split columns and rows with the drag handles', () => {
     const parent = makeTab({ view: 'terminal' })
-    const panes = [1, 2, 3].map(() => makeTab({ view: 'terminal', paneOf: parent.id }))
+    // Parent + two children = the three-pane layout.
+    const panes = [1, 2].map(() => makeTab({ view: 'terminal', paneOf: parent.id }))
     seedStore({ tabs: [parent, ...panes], activeTabId: parent.id })
     render(<MainContent />)
     const grid = screen.getByTestId(`terminal-${parent.id}`).parentElement!.parentElement as HTMLElement
@@ -133,6 +134,18 @@ describe('MainContent terminal panes', () => {
     // Clamped so no pane collapses.
     fireEvent.change(screen.getByLabelText('Resize terminal rows'), { target: { value: '99' } })
     expect(grid.style.gridTemplateRows).toBe('85fr 15fr')
+    // With three panes the bottom one spans both columns, so the column
+    // handle stops at the row divider.
+    expect(columns.style.height).toBe('85%')
+  })
+
+  it('runs the column handle full height for four panes', () => {
+    const parent = makeTab({ view: 'terminal' })
+    const panes = [1, 2, 3].map(() => makeTab({ view: 'terminal', paneOf: parent.id }))
+    seedStore({ tabs: [parent, ...panes], activeTabId: parent.id })
+    render(<MainContent />)
+    const columns = screen.getByLabelText('Resize terminal columns').parentElement as HTMLElement
+    expect(columns.style.height).toBe('100%')
   })
 
   it('shows only a column handle for two panes', () => {
