@@ -6,6 +6,7 @@ import {
   RefreshCw, CheckCircle2, RotateCw,
 } from 'lucide-react'
 import { useAppStore } from '../../store'
+import { ipcErrorMessage } from '../../lib/format'
 
 type SettingsTab = 'general' | 'security' | 'terminal' | 'about'
 
@@ -182,9 +183,18 @@ function useSettings() {
     // Apply locally first so quick repeat clicks (font size +/-) build on the
     // new value instead of the one from before the IPC round-trip.
     setSettings(prev => ({ ...prev, [key]: value }))
-    const updated = await window.api.settings.set(key, value)
-    setSettings(updated)
-    window.dispatchEvent(new CustomEvent('noxed:settings-changed'))
+    try {
+      const updated = await window.api.settings.set(key, value)
+      setSettings(updated)
+      window.dispatchEvent(new CustomEvent('noxed:settings-changed'))
+    } catch (err) {
+      useAppStore.getState().addNotification({ type: 'error', message: ipcErrorMessage(err, `Could not save ${key}`) })
+      // Re-read what was actually persisted; it also keeps any newer update
+      // that did save, rather than reverting to a stale snapshot.
+      window.api.settings.get().then(setSettings).catch(() => {
+        // The save failure is already reported; a failed re-read changes nothing.
+      })
+    }
   }
   return { settings, loaded, update }
 }

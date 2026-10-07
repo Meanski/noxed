@@ -132,6 +132,23 @@ describe('Settings — Terminal', () => {
   })
 })
 
+describe('Settings — failed saves', () => {
+  beforeEach(() => seedStore({ notifications: [], updateStatus: null }))
+
+  it('reports the failure and shows the persisted value again', async () => {
+    const api = setup()
+    fireEvent.click(screen.getByRole('button', { name: 'Terminal' }))
+    await screen.findByText('Font Size')
+    api.settings.set.mockRejectedValueOnce(new Error('disk is read-only'))
+    const [, plus] = within(rowFor('Font Size')).getAllByRole('button')
+    fireEvent.click(plus)
+    await waitFor(() =>
+      expect(useAppStore.getState().notifications.some((n) => n.message === 'disk is read-only')).toBe(true),
+    )
+    expect(await screen.findByText('14px')).toBeTruthy()
+  })
+})
+
 describe('Settings — About', () => {
   beforeEach(() => seedStore({ notifications: [], updateStatus: null }))
 
