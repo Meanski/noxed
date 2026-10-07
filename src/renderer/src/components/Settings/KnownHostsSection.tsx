@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Trash2 } from 'lucide-react'
 import Card from './Card'
 import { useAppStore } from '../../store'
-import { ipcErrorMessage, relativeTime } from '../../lib/format'
+import { hostWithPort, ipcErrorMessage, relativeTime } from '../../lib/format'
 
 type TrustedHostKey = Awaited<ReturnType<Window['api']['hostKeys']['list']>>[number]
 
@@ -49,7 +49,7 @@ export default function KnownHostsSection() {
             >
               <div className="min-w-0 flex-1">
                 <div className="font-['Inter'] text-[12.5px] font-medium truncate" style={{ color: 'var(--nox-text)' }}>
-                  {h.port === 22 ? h.host : `${h.host}:${h.port}`}
+                  {hostWithPort(h.host, h.port)}
                   <span className="ml-2 font-normal text-[11px]" style={{ color: 'var(--nox-text-3)' }}>
                     {h.keyType} · added {relativeTime(h.addedAt)}
                   </span>
@@ -61,7 +61,7 @@ export default function KnownHostsSection() {
               <button
                 type="button"
                 onClick={() => remove(h)}
-                aria-label={`Remove ${h.keyType} host key for ${h.port === 22 ? h.host : `${h.host}:${h.port}`}`}
+                aria-label={`Remove ${h.keyType} host key for ${hostWithPort(h.host, h.port)}`}
                 className="p-1.5 rounded hover:bg-[var(--nox-hover)]"
                 style={{ color: 'var(--nox-text-2)' }}
               >

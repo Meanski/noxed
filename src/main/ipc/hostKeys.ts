@@ -406,7 +406,7 @@ export function registerHostKeyHandlers(): void {
     }
     const entry = pending.get(rawRequestId)
     // Only the window that was asked may answer; anything else is ignored.
-    if (!entry || entry.webContentsId !== event.sender.id) return
+    if (entry?.webContentsId !== event.sender.id) return
     // Trusting a key is a privileged action, so it waits behind the lock
     // screen; the prompt stays pending until the app is unlocked.
     if (rawDecision !== 'reject' && !isUnlocked()) throw new AuthError('Unlock noxed to trust a host key')

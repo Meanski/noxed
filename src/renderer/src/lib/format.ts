@@ -36,6 +36,11 @@ export function joinPath(base: string, name: string): string {
   return base === '/' ? `/${name}` : `${base}/${name}`
 }
 
+/** `host`, or `host:port` when the port isn't the protocol default. */
+export function hostWithPort(host: string, port: number, defaultPort = 22): string {
+  return port === defaultPort ? host : `${host}:${port}`
+}
+
 export function relativeTime(when: number | Date): string {
   const ts = typeof when === 'number' ? when : when.getTime()
   const s = Math.floor((Date.now() - ts) / 1000)

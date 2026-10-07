@@ -8,6 +8,7 @@ import {
   SSH_CONNECT_DEFAULTS,
   sshConnectOptions,
   connectSessionClient,
+  answerPromptsWith,
   openJumpSocket,
   ManagedSshConnection,
 } from './sshClients'
@@ -264,10 +265,7 @@ export function registerSshHandlers(): void {
           fn()
         }
 
-        client.on('keyboard-interactive', (_name, _instructions, _instructionsLang, prompts, finish) => {
-          if (!config.password) { finish([]); return }
-          finish(prompts.map(() => config.password ?? ''))
-        })
+        client.on('keyboard-interactive', answerPromptsWith(config.password))
 
         client.on('ready', () => openShell(client, streamId, event.sender, upstream, settle, resolve, reject))
 
