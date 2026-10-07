@@ -236,6 +236,18 @@ describe('RdpView', () => {
       expect(api.rdp.sendInput.mock.calls.map((c: unknown[]) => c[1])).toEqual(['ku 29 0'])
     })
 
+    it('keeps capture out of the tab order and offers a keyboard entry point', async () => {
+      const { api, pane } = await connected()
+      expect(pane.tabIndex).toBe(-1)
+      const control = screen.getByRole('button', { name: /Control remote desktop/ })
+      fireEvent.click(control)
+      expect(document.activeElement).toBe(pane)
+      // Ctrl+Alt+Home hands focus back without sending anything to the remote.
+      fireEvent.keyDown(pane, { code: 'Home', ctrlKey: true, altKey: true })
+      expect(document.activeElement).toBe(control)
+      expect(api.rdp.sendInput).not.toHaveBeenCalled()
+    })
+
     it('focuses keyboard capture and sends button down/up on click', async () => {
       const { api, canvas, pane } = await connected()
       fireEvent.pointerDown(canvas, { button: 0, clientX: 5, clientY: 6 })

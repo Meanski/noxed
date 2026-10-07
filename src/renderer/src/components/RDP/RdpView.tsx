@@ -27,6 +27,7 @@ export default function RdpView({ tab }: Readonly<{ tab: Tab }>) {
   // Keystrokes are captured by a visually hidden textarea (the same trick
   // xterm.js uses) so the focus target is a real interactive element.
   const keyInputRef = useRef<HTMLTextAreaElement>(null)
+  const controlButtonRef = useRef<HTMLButtonElement>(null)
   // Current live session id, mirrored from the connect effect so the DOM event
   // handlers (outside the effect) can address the sidecar.
   const rdpIdRef = useRef<string | null>(null)
@@ -40,6 +41,7 @@ export default function RdpView({ tab }: Readonly<{ tab: Tab }>) {
   const sessions = useAppStore((s) => s.sessions)
   const [status, setStatus] = useState<Status>('connecting')
   const [message, setMessage] = useState<string>('')
+  const [capturing, setCapturing] = useState(false)
 
   useEffect(() => {
     const session = sessions.find((s) => s.id === tab.sessionId)
@@ -214,7 +216,15 @@ export default function RdpView({ tab }: Readonly<{ tab: Tab }>) {
     }
   }
 
-  const onKeyDown = (e: React.KeyboardEvent): void => {
+  const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>): void => {
+    // Ctrl+Alt+Home hands the keyboard back to noxed (the same chord Microsoft's
+    // Remote Desktop client uses), since Tab and Esc belong to the remote.
+    if (e.ctrlKey && e.altKey && e.code === 'Home') {
+      e.preventDefault()
+      e.currentTarget.blur()
+      controlButtonRef.current?.focus()
+      return
+    }
     // Let Cmd-shortcuts stay local (Cmd+Q/W/Tab, etc.) rather than swallowing
     // them into the remote — Ctrl-based combos still reach Windows normally.
     if (e.metaKey) return
@@ -238,19 +248,35 @@ export default function RdpView({ tab }: Readonly<{ tab: Tab }>) {
   const releaseHeldKeys = (): void => {
     for (const sc of heldKeys.current.values()) send(`ku ${sc.code} ${sc.extended ? 1 : 0}`)
     heldKeys.current.clear()
+    setCapturing(false)
   }
 
   return (
     <div
       ref={containerRef}
       className="relative flex flex-col h-full w-full items-center justify-center overflow-hidden"
-      style={{ background: '#000' }}
+      style={{ background: '#000', boxShadow: capturing ? 'inset 0 0 0 2px var(--nox-active-t)' : undefined }}
     >
+      {/* Skip-link style entry point for keyboard users; the capture textarea
+          itself stays out of the tab order so Tab can't trap focus in it. */}
+      {status === 'connected' && (
+        <button
+          ref={controlButtonRef}
+          type="button"
+          onClick={() => keyInputRef.current?.focus()}
+          className="absolute left-2 top-2 z-10 px-3 py-1.5 rounded-md text-[12px] opacity-0 focus:opacity-100 pointer-events-none focus:pointer-events-auto"
+          style={{ background: 'var(--nox-shell)', color: 'var(--nox-text)', border: '1px solid var(--nox-border)' }}
+        >
+          Control remote desktop · Ctrl+Alt+Home releases
+        </button>
+      )}
       <textarea
         ref={keyInputRef}
+        tabIndex={-1}
         aria-label="Remote desktop keyboard input"
         onKeyDown={onKeyDown}
         onKeyUp={onKeyUp}
+        onFocus={() => setCapturing(true)}
         onBlur={releaseHeldKeys}
         autoComplete="off"
         spellCheck={false}
