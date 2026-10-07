@@ -29,7 +29,7 @@ function safeJson(value: unknown): string {
   }
 }
 
-const BOOLEAN_TYPE = /^(bool|boolean|bit|tinyint\(1\))$/i
+const BOOLEAN_TYPE = /^(bool|boolean|tinyint\(1\))$/i
 // Integers that fit a JS number, and floats. bigint and numeric/decimal stay
 // text so no precision is lost; the database parses them.
 const NUMBER_TYPE = /^(smallint|int|integer|int2|int4|mediumint|tinyint|real|float|float4|float8|double|double precision)$/i

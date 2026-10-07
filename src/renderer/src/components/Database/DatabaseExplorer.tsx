@@ -65,6 +65,7 @@ export default function DatabaseExplorer({ tab }: Readonly<{ tab: Tab }>) {
   const [detailOpen, setDetailOpen] = useState(false)
   const [resultSort, setResultSort] = useState<ResultSort>(null)
   const [browsingTable, setBrowsingTable] = useState<string | null>(null)
+  const queryRunRef = useRef(0)
   const [explainTree, setExplainTree] = useState<ExplainNode | null>(null)
   const [explainRunning, setExplainRunning] = useState(false)
   const [expandedJson, setExpandedJson] = useState<Set<string>>(new Set())
@@ -86,7 +87,7 @@ export default function DatabaseExplorer({ tab }: Readonly<{ tab: Tab }>) {
     clientId, dbType: sqlDialect, table: browsingTable,
     primaryKey: browsingTable ? primaryKeys[browsingTable] : undefined,
     results, setResults, notify: showToast,
-    reload: () => { if (browsingTable) runQuery(selectRows(browsingTable, sqlDialect, BROWSE_LIMIT), false) },
+    reload: () => { if (browsingTable) runQuery(selectRows(browsingTable, sqlDialect, BROWSE_LIMIT), false, browsingTable) },
   })
 
   const connect = useCallback(async () => {
@@ -134,14 +135,22 @@ export default function DatabaseExplorer({ tab }: Readonly<{ tab: Tab }>) {
     catch (err: any) { showToast(err?.message) }
   }
 
-  async function runQuery(query?: string, addToHistory = true) {
+  // `table` is the table these results browse (row edits target it); null
+  // for free-form SQL, which is never editable. Only the latest run's
+  // response is shown, so a slow earlier query can't pair its rows with
+  // another table.
+  async function runQuery(query?: string, addToHistory = true, table: string | null = null) {
     const q = (query || sql).trim(); if (!clientId || !q) return
+    const run = ++queryRunRef.current
+    setBrowsingTable(table)
     setRunning(true); setQueryError(null); setResults(null); setSelectedRow(null); editing.cancelEdit(); setResultSort(null); setActivePanel('results')
     try {
-      const result = await window.api.database.query(clientId, q); setResults(result)
+      const result = await window.api.database.query(clientId, q)
+      if (run !== queryRunRef.current) return
+      setResults(result)
       if (addToHistory) setHistory(prev => [{ sql: q, ts: Date.now(), duration: result.duration, rows: result.rowCount }, ...prev.slice(0, 99)])
-    } catch (err: any) { setQueryError(err?.message ?? 'Query failed') }
-    finally { setRunning(false) }
+    } catch (err: any) { if (run === queryRunRef.current) setQueryError(err?.message ?? 'Query failed') }
+    finally { if (run === queryRunRef.current) setRunning(false) }
   }
 
   async function runExplain() {
@@ -162,9 +171,9 @@ export default function DatabaseExplorer({ tab }: Readonly<{ tab: Tab }>) {
 
   function selectTable(table: string) {
     if (activeTable === table) { setActiveTable(null); return }
-    setActiveTable(table); loadColumns(table); setBrowsingTable(table)
+    setActiveTable(table); loadColumns(table)
     const q = selectRows(table, sqlDialect, BROWSE_LIMIT)
-    setSql(q); runQuery(q)
+    setSql(q); runQuery(q, true, table)
   }
 
   function saveCurrentQuery() {

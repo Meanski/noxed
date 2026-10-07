@@ -513,6 +513,30 @@ describe('DatabaseExplorer — row editing', () => {
     expect(api.database.query.mock.calls).toHaveLength(callsBefore)
   })
 
+  it('never edits free-form query results, even right after browsing a table', async () => {
+    const { api } = await browseUsers()
+    await runSql(api, 'SELECT * FROM users WHERE id > 0')
+    await screen.findByText('alice')
+    fireEvent.doubleClick(screen.getByText('alice'))
+    expect(screen.queryByDisplayValue('alice')).toBeNull()
+    expect(api.database.query).not.toHaveBeenCalledWith('db-1', expect.stringMatching(/^UPDATE/), expect.anything())
+  })
+
+  it('shows only the latest table when an earlier query answers late', async () => {
+    let finishUsers: (r: unknown) => void = () => undefined
+    const orders = { columns: ['id', 'total'], rows: [{ id: 9, total: 'ninety-nine' }], rowCount: 1, duration: 1 }
+    await renderConnected({}, {
+      query: vi.fn().mockImplementation((_id: string, q: string) =>
+        q.includes('"users"') ? new Promise((r) => { finishUsers = r }) : Promise.resolve(orders)),
+    })
+    fireEvent.click(screen.getByText('users'))
+    fireEvent.click(screen.getByText('orders'))
+    await screen.findByText('ninety-nine')
+    await act(async () => { finishUsers(usersResult) })
+    expect(screen.getByText('ninety-nine')).toBeTruthy()
+    expect(screen.queryByText('alice')).toBeNull()
+  })
+
   it('keeps tables without a primary key read-only', async () => {
     await browseUsers({ tableInfo: vi.fn().mockResolvedValue({ ...tableInfoResult, primaryKey: [] }) })
     fireEvent.doubleClick(screen.getByText('alice'))

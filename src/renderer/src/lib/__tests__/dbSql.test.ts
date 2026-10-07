@@ -75,6 +75,8 @@ describe('typed values from text', () => {
     expect(coerceForColumn('true', 'boolean')).toBe(true)
     expect(coerceForColumn('0', 'tinyint(1)')).toBe(false)
     expect(coerceForColumn('maybe', 'bool')).toBe('maybe')
+    // PostgreSQL's bit is a bit string, not a boolean.
+    expect(coerceForColumn('1', 'bit')).toBe('1')
     expect(coerceForColumn('42', 'integer')).toBe(42)
     expect(coerceForColumn('3.5', 'double precision')).toBe(3.5)
     expect(coerceForColumn('12abc', 'int')).toBe('12abc')
