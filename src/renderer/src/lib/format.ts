@@ -36,9 +36,10 @@ export function joinPath(base: string, name: string): string {
   return base === '/' ? `/${name}` : `${base}/${name}`
 }
 
-/** `host`, or `host:port` when the port isn't the protocol default. */
+/** `host`, or `host:port` when the port isn't the protocol default (`[v6]:port` for IPv6). */
 export function hostWithPort(host: string, port: number, defaultPort = 22): string {
-  return port === defaultPort ? host : `${host}:${port}`
+  if (port === defaultPort) return host
+  return host.includes(':') ? `[${host}]:${port}` : `${host}:${port}`
 }
 
 export function relativeTime(when: number | Date): string {
