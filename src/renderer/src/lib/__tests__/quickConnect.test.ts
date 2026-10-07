@@ -34,6 +34,10 @@ describe('parseQuickConnectTarget', () => {
     ['user@[::1'],
     ['user@[::1]x'],
     ['ssh://user@:22'],
+    ['ssh://user@host/uptime'],
+    ['ssh://user:pw@host'],
+    ['ssh://user@host?x=1'],
+    ['ssh://user@host#frag'],
   ])('rejects %j', (input) => {
     expect(parseQuickConnectTarget(input)).toBeNull()
   })

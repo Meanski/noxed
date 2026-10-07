@@ -155,6 +155,20 @@ describe('connectRawClient', () => {
     expect(client.connectConfig.algorithms).toBeTruthy()
   })
 
+  it('falls back to the agent and default keys only when given no secret', async () => {
+    const saved = process.env.SSH_AUTH_SOCK
+    process.env.SSH_AUTH_SOCK = '/tmp/agent.sock'
+    try {
+      const bare = await connectRawClient({ host: 'h', port: 22, username: 'u' }) as unknown as FakeSshClient
+      expect(bare.connectConfig.authHandler).toEqual(expect.arrayContaining([{ type: 'agent', username: 'u', agent: '/tmp/agent.sock' }]))
+      const withPassword = await connectRawClient({ host: 'h', port: 22, username: 'u', password: 'pw' }) as unknown as FakeSshClient
+      expect(withPassword.connectConfig.authHandler).toBeUndefined()
+    } finally {
+      if (saved === undefined) delete process.env.SSH_AUTH_SOCK
+      else process.env.SSH_AUTH_SOCK = saved
+    }
+  })
+
   it('rejects with a ConnectionError when the connection fails', async () => {
     fakeSsh.connectImpl = (client) => {
       queueMicrotask(() => (client as FakeSshClient).emit('error', new Error('ECONNREFUSED')))
@@ -237,6 +251,12 @@ describe('credentialsForSession', () => {
   it('rejects when no password is stored for the session', async () => {
     vi.mocked(getCredential).mockResolvedValue(null)
     await expect(credentialsForSession(session())).rejects.toThrow('No password stored for Prod Web')
+  })
+
+  it('returns nothing for agent sessions, without touching the keychain', async () => {
+    vi.mocked(getCredential).mockClear()
+    await expect(credentialsForSession(session({ authType: 'agent' }))).resolves.toEqual({})
+    expect(getCredential).not.toHaveBeenCalled()
   })
 
   it('returns the stored password', async () => {

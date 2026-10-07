@@ -37,6 +37,9 @@ function splitHostPort(hostPart: string): { host: string; port: string | undefin
 function parseUrl(input: string): QuickConnectTarget | null {
   try {
     const url = new URL(input)
+    // Quick connect opens a shell, nothing more: refuse what it would have to
+    // drop (a remote command path, an embedded password, query or fragment).
+    if (url.password || (url.pathname !== '' && url.pathname !== '/') || url.search || url.hash) return null
     const host = url.hostname.replace(/^\[(.*)\]$/, '$1')
     const port = toPort(url.port)
     if (!host || port === null) return null

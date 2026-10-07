@@ -67,7 +67,7 @@ function sanitizeConnection(raw: unknown): ImportedSession | null {
     host,
     port,
     username: typeof r.username === 'string' ? r.username : '',
-    authType: r.authType === 'key' ? 'key' : 'password',
+    authType: r.authType === 'key' || r.authType === 'agent' ? r.authType : 'password',
     type,
   }
 

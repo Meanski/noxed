@@ -32,6 +32,8 @@ export async function resolveSshCredentials(session: Session, { requirePassword 
     return { privateKey }
   }
 
+  // Main tries the SSH agent, then default keys, when given nothing.
+  if (session.authType === 'agent') return {}
   if (session.adhoc) return { password: adhocPasswords.get(session.id) }
 
   const creds = await window.api.sessions.getCredentials(session.id).catch((err: unknown) => {

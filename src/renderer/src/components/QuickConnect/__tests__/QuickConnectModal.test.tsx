@@ -24,7 +24,7 @@ describe('QuickConnectModal', () => {
     connect()
     const { adhocSessions, tabs } = useAppStore.getState()
     expect(adhocSessions).toEqual([
-      expect.objectContaining({ host: 'web.example.com', port: 2222, username: 'deploy', authType: 'password', label: 'deploy@web.example.com:2222', adhoc: true }),
+      expect.objectContaining({ host: 'web.example.com', port: 2222, username: 'deploy', authType: 'agent', label: 'deploy@web.example.com:2222', adhoc: true }),
     ])
     expect(tabs[0].sessionId).toBe(adhocSessions[0].id)
     expect(api.sessions.create).not.toHaveBeenCalled()
@@ -49,6 +49,24 @@ describe('QuickConnectModal', () => {
     const session = useAppStore.getState().adhocSessions[0]
     expect(session).not.toHaveProperty('password')
     expect(await resolveSshCredentials(session)).toEqual({ password: 's3cret' })
+  })
+
+  it('needs a password before connecting with password auth', () => {
+    setup('root@box')
+    fireEvent.click(screen.getByLabelText('Password'))
+    const button = screen.getByText('Connect') as HTMLButtonElement
+    expect(button.disabled).toBe(true)
+    fireEvent.change(screen.getAllByLabelText('Password')[1], { target: { value: 'pw' } })
+    expect(button.disabled).toBe(false)
+  })
+
+  it('saves agent authentication as such', async () => {
+    const { api, onClose } = setup('root@box')
+    api.sessions.create.mockResolvedValueOnce(makeSession({ id: 'saved-2', authType: 'agent' }))
+    fireEvent.click(screen.getByLabelText('Save to connections'))
+    fireEvent.click(screen.getByText('Connect'))
+    await waitFor(() => expect(onClose).toHaveBeenCalled())
+    expect(api.sessions.create).toHaveBeenCalledWith(expect.objectContaining({ authType: 'agent', password: undefined }))
   })
 
   it('uses a key file when chosen', () => {

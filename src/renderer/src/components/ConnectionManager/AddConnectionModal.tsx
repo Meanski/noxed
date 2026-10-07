@@ -2,11 +2,12 @@ import { useState, useEffect } from 'react'
 import {
   X, Terminal, FolderOpen, Database, Boxes, Check, ArrowRight,
   ArrowLeft, Key, Lock, Eye, EyeOff, Wifi, Layers, Monitor,
-  FileCode2, RefreshCw, ChevronRight,
+  FileCode2, RefreshCw, ChevronRight, Fingerprint,
 } from 'lucide-react'
 import { useAppStore } from '../../store'
 import { ipcErrorMessage } from '../../lib/format'
 import { rdpSupported } from '../../lib/platform'
+import { ACCENT } from '../../lib/colors'
 
 interface K8sContextEntry {
   name: string
@@ -57,7 +58,7 @@ export default function AddConnectionModal({ onClose }: Props) {
     host: '',
     port: '22',
     username: '',
-    authType: 'password' as 'password' | 'key',
+    authType: 'password' as 'password' | 'key' | 'agent',
     password: '',
     keyPath: '',
     jumpHostId: '',
@@ -627,6 +628,27 @@ function PasswordInput({ form, set, placeholder }: Readonly<{ form: any; set: (f
   )
 }
 
+function AuthButton({ form, set, value, icon: Icon, label }: Readonly<{
+  form: { authType: string }
+  set: (f: string, v: string) => void
+  value: 'password' | 'key' | 'agent'
+  icon: typeof Key
+  label: string
+}>) {
+  const active = form.authType === value
+  return (
+    <button
+      type="button"
+      aria-pressed={active}
+      onClick={() => set('authType', value)}
+      className="flex items-center gap-1.5 px-3 py-1.5 rounded-md font-['Inter'] text-[12px] font-medium transition-colors"
+      style={active ? { background: ACCENT, color: '#fff' } : { border: '1px solid var(--nox-border)', color: 'var(--nox-text-2)' }}
+    >
+      <Icon className="w-3.5 h-3.5" /> {label}
+    </button>
+  )
+}
+
 function SshFields({ form, set, isEditing, hasExistingPassword, jumpHostCandidates }: Readonly<{
   form: any
   set: (f: string, v: any) => void
@@ -649,26 +671,9 @@ function SshFields({ form, set, isEditing, hasExistingPassword, jumpHostCandidat
           Authentication Method
         </label>
         <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => set('authType', 'key')}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md font-['Inter'] text-[12px] font-medium transition-colors"
-            style={form.authType === 'key'
-              ? { background: '#3B5CCC', color: '#fff' }
-              : { border: '1px solid var(--nox-border)', color: 'var(--nox-text-2)' }}
-          >
-            <Key className="w-3.5 h-3.5" /> Private Key
-          </button>
-          <button
-            type="button"
-            onClick={() => set('authType', 'password')}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md font-['Inter'] text-[12px] font-medium transition-colors"
-            style={form.authType === 'password'
-              ? { background: '#3B5CCC', color: '#fff' }
-              : { border: '1px solid var(--nox-border)', color: 'var(--nox-text-2)' }}
-          >
-            <Lock className="w-3.5 h-3.5" /> Password
-          </button>
+          <AuthButton form={form} set={set} value="key" icon={Key} label="Private Key" />
+          <AuthButton form={form} set={set} value="password" icon={Lock} label="Password" />
+          <AuthButton form={form} set={set} value="agent" icon={Fingerprint} label="SSH Agent" />
         </div>
       </div>
 
@@ -676,6 +681,12 @@ function SshFields({ form, set, isEditing, hasExistingPassword, jumpHostCandidat
         <FormField label="Password">
           <PasswordInput form={form} set={set} placeholder={storedPasswordPlaceholder(isEditing, hasExistingPassword, 'Enter password')} />
         </FormField>
+      )}
+
+      {form.authType === 'agent' && (
+        <p className="font-['Inter'] text-[11px]" style={{ color: 'var(--nox-text-2)' }}>
+          Uses your SSH agent, then unencrypted keys in ~/.ssh — the same as running ssh.
+        </p>
       )}
 
       {form.authType === 'key' && (

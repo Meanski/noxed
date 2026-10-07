@@ -18,7 +18,7 @@ export interface Connection {
   createdAt: number
   // SSH / SFTP auth
   username?: string
-  authType?: 'password' | 'key'
+  authType?: 'password' | 'key' | 'agent'
   password?: string
   keyPath?: string
   // Database specific
@@ -40,7 +40,7 @@ export interface Session {
   host: string
   port: number
   username: string
-  authType: 'password' | 'key'
+  authType: 'password' | 'key' | 'agent'
   password?: string
   keyPath?: string
   group?: string

@@ -95,6 +95,10 @@ describe('parseSessionsExport', () => {
     expect(result[0].authType).toBe('password')
   })
 
+  it('keeps agent authentication', () => {
+    expect(parseSessionsExport(wrap([{ host: 'a.example.com', authType: 'agent' }]))[0].authType).toBe('agent')
+  })
+
   it('filters non-string tags', () => {
     const result = parseSessionsExport(wrap([{ host: 'a.example.com', tags: ['ok', 42, null] }]))
     expect(result[0].tags).toEqual(['ok'])

@@ -52,7 +52,8 @@ export default function QuickConnectModal({ initialTarget, onClose }: Readonly<Q
   const parsed = parseQuickConnectTarget(target)
   const needsUsername = parsed !== null && parsed.username === ''
   const user = needsUsername ? username.trim() : (parsed?.username ?? '')
-  const canConnect = parsed !== null && user !== '' && !busy && (auth !== 'key' || keyPath.trim() !== '')
+  const credentialsComplete = (auth !== 'key' || keyPath.trim() !== '') && (auth !== 'password' || password !== '')
+  const canConnect = parsed !== null && user !== '' && !busy && credentialsComplete
 
   const connect = async () => {
     if (!parsed || !canConnect) return
@@ -62,7 +63,7 @@ export default function QuickConnectModal({ initialTarget, onClose }: Readonly<Q
       host: parsed.host,
       port: parsed.port,
       username: user,
-      authType: auth === 'key' ? 'key' : 'password',
+      authType: auth,
       keyPath: auth === 'key' ? keyPath.trim() : undefined,
       type: 'ssh',
     } as const
@@ -83,7 +84,7 @@ export default function QuickConnectModal({ initialTarget, onClose }: Readonly<Q
     }
 
     const session: Session = { ...base, id: `adhoc-${crypto.randomUUID()}`, createdAt: Date.now() }
-    if (auth === 'password' && password) setAdhocPassword(session.id, password)
+    if (auth === 'password') setAdhocPassword(session.id, password)
     state.openAdhocSession(session)
     onClose()
   }

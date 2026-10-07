@@ -127,6 +127,7 @@ export function connectRawClient(target: SshTarget): Promise<Client> {
       sock: target.sock,
       agent: process.env.SSH_AUTH_SOCK,
       tryKeyboard: true,
+      authHandler: target.password || target.privateKey ? undefined : defaultAuthMethods(target.username),
       ...sshConnectOptions(),
       ...verifiedHandshake(client, target.host, target.port),
       algorithms: { ...SSH_ALGORITHMS },
@@ -191,6 +192,8 @@ export async function credentialsForSession(session: Session): Promise<{ passwor
     if (!check.ok) throw new ValidationError(check.reason)
     return { privateKey: readFileSync(check.resolved, 'utf-8') }
   }
+  // No stored secret: connectRawClient falls back to the agent and default keys.
+  if (session.authType === 'agent') return {}
 
   if (!isUnlocked()) throw new AuthError('App is locked — unlock noxed to access credentials')
   const password = await getCredential(session.id, 'password')

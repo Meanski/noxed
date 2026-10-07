@@ -29,6 +29,12 @@ describe('resolveSshCredentials', () => {
     expect(api.sessions.getCredentials).not.toHaveBeenCalled()
   })
 
+  it('hands agent sessions nothing, so main uses the agent and default keys', async () => {
+    const api = installWindowApi()
+    expect(await resolveSshCredentials(makeSession({ authType: 'agent' }), { requirePassword: true })).toEqual({})
+    expect(api.sessions.getCredentials).not.toHaveBeenCalled()
+  })
+
   it('reads saved passwords from the keychain', async () => {
     installWindowApi()
     expect(await resolveSshCredentials(makeSession())).toEqual({ password: 'pw' })
