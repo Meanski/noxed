@@ -264,6 +264,11 @@ export function registerSshHandlers(): void {
           settled = true
           fn()
         }
+        const fail = (err: Error) => {
+          if (settled) return
+          settled = true
+          reject(err)
+        }
 
         client.on('keyboard-interactive', answerPromptsWith(config.password))
 
@@ -272,7 +277,7 @@ export function registerSshHandlers(): void {
         client.on('error', (err) => {
           if (!settled) {
             upstream?.dispose()
-            settle(() => reject(new ConnectionError(describeSshError(err))))
+            fail(new ConnectionError(describeSshError(err)))
             return
           }
           // Already-connected clients can also emit 'error' — surface as close.
