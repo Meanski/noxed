@@ -8,6 +8,7 @@ import {
   SSH_CONNECT_DEFAULTS,
   sshConnectOptions,
   connectSessionClient,
+  answerPromptsWith,
   defaultAuthMethods,
   openJumpSocket,
   ManagedSshConnection,
@@ -264,18 +265,20 @@ export function registerSshHandlers(): void {
           settled = true
           fn()
         }
+        const fail = (err: Error) => {
+          if (settled) return
+          settled = true
+          reject(err)
+        }
 
-        client.on('keyboard-interactive', (_name, _instructions, _instructionsLang, prompts, finish) => {
-          if (!config.password) { finish([]); return }
-          finish(prompts.map(() => config.password ?? ''))
-        })
+        client.on('keyboard-interactive', answerPromptsWith(config.password))
 
         client.on('ready', () => openShell(client, streamId, event.sender, upstream, settle, resolve, reject))
 
         client.on('error', (err) => {
           if (!settled) {
             upstream?.dispose()
-            settle(() => reject(new ConnectionError(describeSshError(err))))
+            fail(new ConnectionError(describeSshError(err)))
             return
           }
           // Already-connected clients can also emit 'error' — surface as close.
