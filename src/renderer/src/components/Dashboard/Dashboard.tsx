@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from 'react'
 import {
-  Server, ChevronRight, Plus, GripVertical,
+  Server, ChevronRight, GripVertical, Search,
   LayoutGrid, Grid2x2, List,
 } from 'lucide-react'
 import { useAppStore, Session } from '../../store'
@@ -8,6 +8,11 @@ import { groupColor, metricColor } from '../../lib/colors'
 import { rdpSupported } from '../../lib/platform'
 import { CompactServerCard, HealthCard, ServerListRow } from './ServerViews'
 import { ServerContextMenu } from '../ServerContextMenu'
+import ImportSshConfigModal from '../ConnectionManager/ImportSshConfigModal'
+import EmptyDashboard from './EmptyDashboard'
+import SessionsLoadState from './SessionsLoadState'
+import QuickActions from './QuickActions'
+import RecentConnections from './RecentConnections'
 
 type DashboardView = 'grid' | 'compact' | 'list'
 
@@ -19,6 +24,7 @@ const VIEW_OPTIONS: { id: DashboardView; label: string; Icon: typeof LayoutGrid 
 
 export default function Dashboard() {
   const sessions = useAppStore(s => s.sessions)
+  const sessionsLoaded = useAppStore(s => s.sessionsLoaded)
   const tabs = useAppStore(s => s.tabs)
   const openTab = useAppStore(s => s.openTab)
   const openDockerTab = useAppStore(s => s.openDockerTab)
@@ -31,6 +37,9 @@ export default function Dashboard() {
   const projectGroupOrder = useAppStore(s => s.projectGroupOrder)
   const setProjectGroupOrder = useAppStore(s => s.setProjectGroupOrder)
   const groupColors = useAppStore(s => s.groupColors)
+
+  const [filter, setFilter] = useState('')
+  const [importOpen, setImportOpen] = useState(false)
 
   // Right-click context menu, mirroring the sidebar's server actions.
   const [ctxMenu, setCtxMenu] = useState<{ session: Session; x: number; y: number } | null>(null)
@@ -100,7 +109,10 @@ export default function Dashboard() {
   // The Dashboard lists every connection type. SSH/untyped hosts show live
   // CPU/RAM from polling; other types (RDP, DB, Redis, K8s, SFTP) render as
   // launch cards without metrics.
-  const dashboardSessions = sessions
+  const q = filter.trim().toLowerCase()
+  const dashboardSessions = q
+    ? sessions.filter(s => [s.label, s.host, s.username, s.group, ...(s.tags ?? [])].some(v => v?.toLowerCase().includes(q)))
+    : sessions
   const connectedTabIds = new Set(tabs.filter(t => t.status === 'connected').map(t => t.sessionId))
   const connectedCount = dashboardSessions.filter(s => connectedTabIds.has(s.id)).length
   // Server health is derived from established tabs/metrics so saved hosts are
@@ -202,7 +214,19 @@ export default function Dashboard() {
   }
 
 
-  if (sessions.length === 0) return <EmptyDashboard onAdd={() => setShowAddConnection(true)} />
+  const importModal = importOpen && <ImportSshConfigModal onClose={() => setImportOpen(false)} />
+
+  // Until saved connections load, an empty list says nothing: not a first
+  // run, and not "nothing matches".
+  if (!sessionsLoaded) return <SessionsLoadState />
+  if (sessions.length === 0) {
+    return (
+      <>
+        <EmptyDashboard onImportSshConfig={() => setImportOpen(true)} />
+        {importModal}
+      </>
+    )
+  }
 
   return (
     <div className="h-full w-full min-w-0 overflow-y-auto" style={{ background: 'var(--nox-bg)' }}>
@@ -218,6 +242,18 @@ export default function Dashboard() {
             </p>
           </div>
           <div className="flex items-center gap-2">
+            <label className="relative">
+              <span className="sr-only">Filter connections</span>
+              <Search className="w-3.5 h-3.5 absolute left-2 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: 'var(--nox-text-3)' }} />
+              <input
+                type="search"
+                value={filter}
+                onChange={e => setFilter(e.target.value)}
+                placeholder="Filter connections"
+                className="pl-7 pr-2 py-1 w-48 rounded-md font-['Inter'] text-[12px] outline-none"
+                style={{ background: 'var(--nox-shell)', border: '1px solid var(--nox-border)', color: 'var(--nox-text)' }}
+              />
+            </label>
             {/* View density switcher */}
             <div className="flex rounded-md p-0.5" style={{ background: 'var(--nox-shell)', border: '1px solid var(--nox-border)' }}>
               {VIEW_OPTIONS.map(({ id, label, Icon }) => (
@@ -235,21 +271,27 @@ export default function Dashboard() {
                 </button>
               ))}
             </div>
-
           </div>
+        </div>
+
+        <div className="space-y-5 mb-7">
+          <QuickActions variant="bar" onImportSshConfig={() => setImportOpen(true)} />
+          {!q && <RecentConnections />}
         </div>
 
         {dashboardSessions.length === 0 ? (
           <div className="rounded-xl p-8 text-center" style={{ background: 'var(--nox-shell)', border: '1px solid var(--nox-border)' }}>
             <Server className="w-7 h-7 mx-auto mb-3" style={{ color: 'var(--nox-text-3)' }} />
             <p className="font-['Inter'] text-[13px] mb-3" style={{ color: 'var(--nox-text-2)' }}>
-              Add a connection to get started
+              No connections match &ldquo;{filter.trim()}&rdquo;
             </p>
             <button
-              onClick={() => setShowAddConnection(true)}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md font-['Inter'] text-[12px] text-[#3B5CCC] border border-[#3B5CCC]/30 hover:bg-[#EBF0FF] transition-colors"
+              type="button"
+              onClick={() => setFilter('')}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md font-['Inter'] text-[12px] transition-colors hover:bg-[var(--nox-hover)]"
+              style={{ color: 'var(--nox-text)', border: '1px solid var(--nox-border)' }}
             >
-              <Plus className="w-3.5 h-3.5" /> Add connection
+              Clear filter
             </button>
           </div>
         ) : (
@@ -419,48 +461,7 @@ export default function Dashboard() {
           onClose={() => setCtxMenu(null)}
         />
       )}
-    </div>
-  )
-}
-
-/* ── Empty state ─────────────────────────────────────────────────────────── */
-function EmptyDashboard({ onAdd }: Readonly<{ onAdd: () => void }>) {
-  return (
-    <div className="h-full w-full flex items-center justify-center" style={{ background: 'var(--nox-bg)' }}>
-      <div className="text-center max-w-sm">
-        <div className="mx-auto mb-6 w-24 h-24 flex items-center justify-center">
-          <svg width="96" height="96" viewBox="0 0 96 96" fill="none" style={{ color: 'var(--nox-border)' }}>
-            <rect x="12" y="20" width="72" height="56" rx="4" stroke="currentColor" strokeWidth="2"/>
-            <rect x="18" y="26" width="16" height="10" rx="2" stroke="currentColor" strokeWidth="1.5"/>
-            <rect x="38" y="26" width="16" height="10" rx="2" stroke="currentColor" strokeWidth="1.5"/>
-            <rect x="58" y="26" width="20" height="10" rx="2" stroke="currentColor" strokeWidth="1.5"/>
-            <rect x="18" y="40" width="16" height="10" rx="2" stroke="currentColor" strokeWidth="1.5"/>
-            <rect x="38" y="40" width="16" height="10" rx="2" stroke="currentColor" strokeWidth="1.5"/>
-            <rect x="58" y="40" width="20" height="10" rx="2" stroke="currentColor" strokeWidth="1.5"/>
-            <rect x="18" y="54" width="16" height="10" rx="2" stroke="currentColor" strokeWidth="1.5"/>
-            <rect x="38" y="54" width="40" height="10" rx="2" stroke="currentColor" strokeWidth="1.5"/>
-            <circle cx="82" cy="22" r="6" stroke="#3B5CCC" strokeWidth="2" fill="none"/>
-            <line x1="79" y1="22" x2="85" y2="22" stroke="#3B5CCC" strokeWidth="2" strokeLinecap="round"/>
-            <line x1="82" y1="19" x2="82" y2="25" stroke="#3B5CCC" strokeWidth="2" strokeLinecap="round"/>
-          </svg>
-        </div>
-        <h2 className="font-['Plus_Jakarta_Sans'] font-semibold text-[18px] mb-2" style={{ color: 'var(--nox-text)' }}>
-          No connections yet
-        </h2>
-        <p className="font-['Inter'] text-[13px] mb-6 leading-relaxed" style={{ color: 'var(--nox-text-2)' }}>
-          Add your first connection to start monitoring servers, managing Kubernetes clusters, and querying databases.
-        </p>
-        <button
-          onClick={onAdd}
-          className="inline-flex items-center gap-2 text-white rounded-md px-5 py-2.5 font-['Inter'] text-[13px] font-medium transition-colors"
-          style={{ background: '#3B5CCC' }}
-          onMouseEnter={e => { e.currentTarget.style.background = '#2A4299' }}
-          onMouseLeave={e => { e.currentTarget.style.background = '#3B5CCC' }}
-        >
-          <Plus className="w-4 h-4" />
-          Add Connection
-        </button>
-      </div>
+      {importModal}
     </div>
   )
 }

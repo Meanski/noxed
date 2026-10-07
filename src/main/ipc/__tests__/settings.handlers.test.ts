@@ -85,6 +85,15 @@ describe('settings:set', () => {
     expect(getStoredSettings().sidebarWidth).toBe(300)
   })
 
+  it('validates recentConnections before storing it', () => {
+    const ok = [{ id: 's1', at: 1 }]
+    expect((invoke('settings:set', 'recentConnections', ok) as AppSettings).recentConnections).toEqual(ok)
+    const tooMany = Array.from({ length: 21 }, (_, i) => ({ id: `s${i}`, at: i }))
+    for (const bad of ['nope', [{ id: 1, at: 1 }], [{ id: 'x'.repeat(129), at: 1 }], [{ id: 's', at: Number.NaN }], tooMany]) {
+      expect(() => invoke('settings:set', 'recentConnections', bad)).toThrow('Invalid value for setting: recentConnections')
+    }
+  })
+
   it('rejects unknown keys', () => {
     expect(() => invoke('settings:set', 'evilKey', true)).toThrow('Unknown setting: evilKey')
     expect((invoke('settings:get') as AppSettings)).not.toHaveProperty('evilKey')

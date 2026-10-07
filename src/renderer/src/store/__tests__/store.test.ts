@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { useAppStore, selectSession } from '../index'
 import { resolveSshCredentials, setAdhocPassword } from '../../lib/sshCredentials'
 import { groupColor, connectionColor, dbTypeLabel } from '../../lib/colors'
@@ -507,5 +507,57 @@ describe('quick-connect sessions', () => {
     useAppStore.getState().closeTab(parent.id)
     expect(useAppStore.getState().adhocSessions).toEqual([])
     expect(await resolveSshCredentials(makeSession({ id: 'adhoc-1', adhoc: true }))).toEqual({ password: undefined })
+  })
+})
+
+describe('recent connections', () => {
+  beforeEach(() => {
+    useAppStore.setState({ sessions: [], adhocSessions: [], tabs: [], activeTabId: null, recentConnections: [] })
+  })
+
+  it('records saved connections as they open, newest first, including refocusing', () => {
+    const a = makeSession({ id: 'a' })
+    const b = makeSession({ id: 'b' })
+    useAppStore.getState().openTab(a)
+    useAppStore.getState().openTab(b)
+    useAppStore.getState().openTab(a)
+    expect(useAppStore.getState().recentConnections.map((r) => r.id)).toEqual(['a', 'b'])
+  })
+
+  it('never records quick-connect sessions', () => {
+    useAppStore.getState().openAdhocSession(makeSession({ id: 'adhoc-x' }))
+    expect(useAppStore.getState().recentConnections).toEqual([])
+  })
+})
+
+describe('recent connections across openers', () => {
+  it('records Redis and RDP opens too, but never quick-connect sessions', () => {
+    useAppStore.setState({ tabs: [], recentConnections: [] })
+    const base = { host: 'h', port: 1, username: '', authType: 'password' as const, createdAt: 0, label: '' }
+    useAppStore.getState().openRedisTab({ ...base, id: 'r1', type: 'redis' })
+    useAppStore.getState().openRdpTab({ ...base, id: 'd1', type: 'rdp' })
+    useAppStore.getState().openRdpTab({ ...base, id: 'd1', type: 'rdp' })
+    useAppStore.getState().openTab({ ...base, id: 'q1', adhoc: true })
+    expect(useAppStore.getState().recentConnections.map((r) => r.id)).toEqual(['d1', 'r1'])
+  })
+
+  it('marks saved connections loaded once they arrive', () => {
+    useAppStore.setState({ sessionsLoaded: false })
+    useAppStore.getState().setSessions([])
+    expect(useAppStore.getState().sessionsLoaded).toBe(true)
+  })
+})
+
+describe('loadSessions', () => {
+  it('loads saved connections, or records why it could not', async () => {
+    const list = vi.fn().mockRejectedValueOnce(new Error('store unreadable')).mockResolvedValueOnce([makeSession({ id: 'x' })])
+    vi.stubGlobal('window', { api: { sessions: { list } } })
+    useAppStore.setState({ sessions: [], sessionsLoaded: false, sessionsLoadError: null })
+    await useAppStore.getState().loadSessions()
+    expect(useAppStore.getState()).toMatchObject({ sessionsLoaded: false, sessionsLoadError: 'store unreadable' })
+    await useAppStore.getState().loadSessions()
+    expect(useAppStore.getState()).toMatchObject({ sessionsLoaded: true, sessionsLoadError: null })
+    expect(useAppStore.getState().sessions.map((s) => s.id)).toEqual(['x'])
+    vi.unstubAllGlobals()
   })
 })

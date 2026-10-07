@@ -6,6 +6,7 @@ export interface AppSettings {
   dateFormat: string
   sidebarDefault: 'expanded' | 'collapsed'
   sidebarWidth: number
+  recentConnections: Array<{ id: string; at: number }>
   confirmClose: boolean
   dashboardView: 'grid' | 'compact' | 'list'
   connAlerts: boolean
@@ -31,6 +32,7 @@ const DEFAULTS: Omit<AppSettings, `snippets:${string}`> = {
   dateFormat: 'YYYY-MM-DD HH:mm',
   sidebarDefault: 'expanded',
   sidebarWidth: 220,
+  recentConnections: [],
   confirmClose: true,
   dashboardView: 'compact',
   connAlerts: true,
@@ -53,10 +55,16 @@ const DEFAULTS: Omit<AppSettings, `snippets:${string}`> = {
 
 const KNOWN_KEYS = new Set(Object.keys(DEFAULTS))
 
+const MAX_RECENT_CONNECTIONS = 20
+
 // Value checks for settings whose type or range matters to the app. The
 // renderer clamps too, but settings:set is reachable from untrusted code.
 const VALUE_VALIDATORS: Partial<Record<keyof AppSettings, (value: unknown) => boolean>> = {
   sidebarWidth: (v) => typeof v === 'number' && Number.isInteger(v) && v >= 180 && v <= 480,
+  recentConnections: (v) =>
+    Array.isArray(v) &&
+    v.length <= MAX_RECENT_CONNECTIONS &&
+    v.every((r) => typeof r?.id === 'string' && r.id.length <= 128 && typeof r.at === 'number' && Number.isFinite(r.at)),
 }
 
 function isValidKey(key: string): boolean {

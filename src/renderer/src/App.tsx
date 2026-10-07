@@ -12,11 +12,11 @@ import UnlockScreen from './components/UnlockScreen'
 import SidebarResizeHandle, { clampSidebarWidth } from './components/Sidebar/SidebarResizeHandle'
 import HostKeyPrompt from './components/HostKeys/HostKeyPrompt'
 import QuickConnectModal from './components/QuickConnect/QuickConnectModal'
+import { useRecentsSync } from './lib/useRecentsSync'
 
 export const SIDEBAR_W = 220
 
 export default function App() {
-  const setSessions = useAppStore(s => s.setSessions)
   const tabs = useAppStore(s => s.tabs)
   const activeTabId = useAppStore(s => s.activeTabId)
   const setActiveTab = useAppStore(s => s.setActiveTab)
@@ -29,6 +29,7 @@ export default function App() {
   const openDashboardTab = useAppStore(s => s.openDashboardTab)
   const isLocked = useAppStore(s => s.isLocked)
   const quickConnectTarget = useAppStore(s => s.quickConnectTarget)
+  useRecentsSync()
 
   const sidebarExpanded = useAppStore(s => s.sidebarExpanded)
   const setLocked = useAppStore(s => s.setLocked)
@@ -36,7 +37,7 @@ export default function App() {
 
   // Load sessions on startup (no credentials — those stay in keychain)
   useEffect(() => {
-    window.api.sessions.list().then(setSessions)
+    useAppStore.getState().loadSessions()
     window.api.settings.get().then((cfg: any) => {
       if (cfg.sidebarDefault === 'collapsed') setSidebarExpanded(false)
       if (typeof cfg.sidebarWidth === 'number') useAppStore.getState().setSidebarWidth(clampSidebarWidth(cfg.sidebarWidth))

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent, within } from '@testing-library/react'
 import Dashboard from '../Dashboard'
 import { installWindowApi, seedStore, makeSession, makeTab } from '../../../__tests__/harness'
 import { useAppStore } from '../../../store'
@@ -11,15 +11,82 @@ describe('Dashboard', () => {
     seedStore({
       sessions: [], tabs: [], activeTabId: null, notifications: [],
       serverMetrics: {}, projectGroupOrder: [], groupColors: {},
-      showAddConnection: false,
+      showAddConnection: false, recentConnections: [], quickConnectTarget: null,
     })
   })
 
-  it('shows the empty state and opens the add-connection modal', () => {
+  it('waits for saved connections to load before calling it a first run', () => {
+    useAppStore.setState({ sessions: [], sessionsLoaded: false, sessionsLoadError: null })
     render(<Dashboard />)
-    expect(screen.getByText('No connections yet')).toBeTruthy()
-    fireEvent.click(screen.getByText('Add Connection'))
+    expect(screen.queryByText('Welcome to noxed')).toBeNull()
+    expect(screen.queryByText(/No connections match/)).toBeNull()
+    expect(screen.getByLabelText('Loading connections')).toBeTruthy()
+  })
+
+  it('explains a failed load and retries it', async () => {
+    const api = installWindowApi()
+    api.sessions.list.mockResolvedValueOnce([])
+    useAppStore.setState({ sessions: [], sessionsLoaded: false, sessionsLoadError: 'Could not load your saved connections' })
+    render(<Dashboard />)
+    expect(screen.getByRole('alert').textContent).toBe('Could not load your saved connections')
+    fireEvent.click(screen.getByText('Retry'))
+    expect(await screen.findByText('Welcome to noxed')).toBeTruthy()
+  })
+
+  it('welcomes first-run users with ways to start', async () => {
+    useAppStore.setState({ sessions: [], sessionsLoaded: true })
+    render(<Dashboard />)
+    expect(screen.getByText('Welcome to noxed')).toBeTruthy()
+    fireEvent.click(screen.getByText('New connection'))
     expect(useAppStore.getState().showAddConnection).toBe(true)
+    fireEvent.click(screen.getByText('Quick connect'))
+    expect(useAppStore.getState().quickConnectTarget).toBe('')
+    fireEvent.click(screen.getByText('Local terminal'))
+    expect(useAppStore.getState().tabs.some((t) => t.view === 'local-term')).toBe(true)
+    fireEvent.click(screen.getByText('Import ~/.ssh/config'))
+    expect(await screen.findByText('Import from SSH config')).toBeTruthy()
+    // Tunnels and Run command stay out of the first-run grid.
+    expect(screen.queryByText('Tunnels')).toBeNull()
+  })
+
+  it('offers quick actions, including tunnels and the runner, above saved connections', () => {
+    seedStore({ sessions: [makeSession({ id: 's1', label: 'Web' })] })
+    render(<Dashboard />)
+    fireEvent.click(screen.getByText('Tunnels'))
+    expect(useAppStore.getState().tabs.some((t) => t.view === 'tunnels')).toBe(true)
+    fireEvent.click(screen.getByText('Run command'))
+    expect(useAppStore.getState().tabs.some((t) => t.view === 'runner')).toBe(true)
+  })
+
+  it('filters connections by name, host, user, group or tag', () => {
+    seedStore({
+      sessions: [
+        makeSession({ id: 'a', label: 'Web One', host: 'web1.example.com', group: 'Prod' }),
+        makeSession({ id: 'b', label: 'Database', host: 'db.internal', tags: ['postgres'] }),
+      ],
+    })
+    render(<Dashboard />)
+    const filter = screen.getByPlaceholderText('Filter connections')
+    fireEvent.change(filter, { target: { value: 'POSTGRES' } })
+    expect(screen.getByText('Database')).toBeTruthy()
+    expect(screen.queryByText('Web One')).toBeNull()
+    fireEvent.change(filter, { target: { value: 'nothing-here' } })
+    expect(screen.getByText(/No connections match/)).toBeTruthy()
+    fireEvent.click(screen.getByText('Clear filter'))
+    expect(screen.getByText('Web One')).toBeTruthy()
+  })
+
+  it('lists recent connections that still exist and reopens them', () => {
+    const web = makeSession({ id: 'web', label: 'Web' })
+    seedStore({
+      sessions: [web],
+      recentConnections: [{ id: 'deleted', at: Date.now() }, { id: 'web', at: Date.now() - 120_000 }],
+    })
+    render(<Dashboard />)
+    const recent = screen.getByRole('region', { name: 'Recent connections' })
+    expect(within(recent).getByText('2m ago')).toBeTruthy()
+    fireEvent.click(within(recent).getByText('Web'))
+    expect(useAppStore.getState().tabs.some((t) => t.sessionId === 'web')).toBe(true)
   })
 
   it('sorts unsaved groups alphabetically with Ungrouped last', () => {

@@ -1,5 +1,7 @@
 import { create } from 'zustand'
 import { clearAdhocPassword } from '../lib/sshCredentials'
+import { withRecent, type RecentConnection } from '../lib/recents'
+import { ipcErrorMessage } from '../lib/format'
 
 // ── Connection types ──────────────────────────────────────────────────────────
 
@@ -146,6 +148,8 @@ interface AppState {
   // Prefilled target for the quick-connect dialog; null when it's closed
   quickConnectTarget: string | null
   adhocSessions: Session[]
+  // Saved connections the user opened most recently, newest first
+  recentConnections: RecentConnection[]
   showAddConnection: boolean
   editingConnectionId: string | null
   notifications: AppNotification[]
@@ -165,6 +169,12 @@ interface AppState {
   // Latest auto-updater status (null until the first check reports in)
   updateStatus: UpdaterStatus | null
 
+  /** True once saved connections have loaded; until then an empty list means "not known yet". */
+  sessionsLoaded: boolean
+  /** Why loading saved connections failed, until a retry succeeds. */
+  sessionsLoadError: string | null
+  /** Loads saved connections from main (no credentials; those stay in the keychain). */
+  loadSessions: () => Promise<void>
   setSessions: (sessions: Session[]) => void
   addSession: (session: Session) => void
   updateSession: (id: string, data: Partial<Session>) => void
@@ -192,6 +202,7 @@ interface AppState {
   setShowCommandPalette: (show: boolean) => void
   setQuickConnectTarget: (target: string | null) => void
   openAdhocSession: (session: Session) => void
+  setRecentConnections: (list: RecentConnection[]) => void
   setShowAddConnection: (show: boolean) => void
   setEditingConnectionId: (id: string | null) => void
   openRedisTab: (session: Session) => void
@@ -222,6 +233,12 @@ function persistSetting(key: string, value: unknown): void {
   ;(window as any).api?.settings?.set(key, value)
 }
 
+// Every way of opening a saved connection counts as a recent one; quick-connect
+// sessions vanish with their tabs, so they never do.
+function recentsAfterOpening(s: AppState, session: Session): RecentConnection[] {
+  return session.adhoc ? s.recentConnections : withRecent(s.recentConnections, session.id, Date.now())
+}
+
 type SetState = (fn: (s: AppState) => Partial<AppState>) => void
 
 const TYPE_TO_VIEW: Record<string, TabView> = {
@@ -247,12 +264,15 @@ function openSingletonTab(set: SetState, view: TabView, label: string): void {
 
 export const useAppStore = create<AppState>((set) => ({
   sessions: [],
+  sessionsLoaded: false,
+  sessionsLoadError: null,
   tabs: [],
   activeTabId: null,
   showAddSession: false,
   showCommandPalette: false,
   quickConnectTarget: null,
   adhocSessions: [],
+  recentConnections: [],
   showAddConnection: false,
   editingConnectionId: null,
   notifications: [],
@@ -270,7 +290,16 @@ export const useAppStore = create<AppState>((set) => ({
   pendingConnectionGroup: null,
   updateStatus: null,
 
-  setSessions: (sessions) => set({ sessions }),
+  loadSessions: async () => {
+    set({ sessionsLoadError: null })
+    try {
+      const sessions = await window.api.sessions.list()
+      set({ sessions, sessionsLoaded: true })
+    } catch (err) {
+      set({ sessionsLoadError: ipcErrorMessage(err, 'Could not load your saved connections') })
+    }
+  },
+  setSessions: (sessions) => set({ sessions, sessionsLoaded: true, sessionsLoadError: null }),
   addSession: (session) => set((s) => ({ sessions: [...s.sessions, session] })),
   updateSession: (id, data) =>
     set((s) => ({ sessions: s.sessions.map((sess) => (sess.id === id ? { ...sess, ...data } : sess)) })),
@@ -278,8 +307,10 @@ export const useAppStore = create<AppState>((set) => ({
 
   openTab: (session) =>
     set((s) => {
+      // Quick-connect sessions vanish with their tabs, so they never become recents.
+      const recentConnections = recentsAfterOpening(s, session)
       const existing = s.tabs.find((t) => t.sessionId === session.id && t.status !== 'error' && !t.paneOf)
-      if (existing) return { activeTabId: existing.id, focusedPaneId: null }
+      if (existing) return { activeTabId: existing.id, focusedPaneId: null, recentConnections }
       const view = viewForSessionType(session.type)
       const isK8s = view === 'k8s'
       const isRdp = view === 'rdp'
@@ -293,7 +324,7 @@ export const useAppStore = create<AppState>((set) => ({
         k8sContext: isK8s ? session.contextName : undefined,
         kubeconfigPath: isK8s ? session.kubeconfigPath : undefined,
       }
-      return { tabs: [...s.tabs, tab], activeTabId: tab.id, focusedPaneId: null }
+      return { tabs: [...s.tabs, tab], activeTabId: tab.id, focusedPaneId: null, recentConnections }
     }),
 
   openEditorTab: ({ path, source, session, streamId }) =>
@@ -369,8 +400,9 @@ export const useAppStore = create<AppState>((set) => ({
 
   openRdpTab: (session) =>
     set((s) => {
+      const recentConnections = recentsAfterOpening(s, session)
       const existing = s.tabs.find((t) => t.sessionId === session.id && t.view === 'rdp')
-      if (existing) return { activeTabId: existing.id, focusedPaneId: null }
+      if (existing) return { activeTabId: existing.id, focusedPaneId: null, recentConnections }
       const tab: Tab = {
         id: `tab-${++tabCounter}`,
         sessionId: session.id,
@@ -379,7 +411,7 @@ export const useAppStore = create<AppState>((set) => ({
         status: 'connected',
         filesOpen: false,
       }
-      return { tabs: [...s.tabs, tab], activeTabId: tab.id, focusedPaneId: null }
+      return { tabs: [...s.tabs, tab], activeTabId: tab.id, focusedPaneId: null, recentConnections }
     }),
 
   closeTab: (tabId) =>
@@ -452,6 +484,7 @@ export const useAppStore = create<AppState>((set) => ({
   setShowAddSession: (show) => set({ showAddSession: show }),
   setShowCommandPalette: (show) => set({ showCommandPalette: show }),
   setQuickConnectTarget: (target) => set({ quickConnectTarget: target }),
+  setRecentConnections: (list) => set({ recentConnections: list }),
   openAdhocSession: (session) => {
     const adhoc = { ...session, adhoc: true }
     set((s) => ({ adhocSessions: [...s.adhocSessions.filter((x) => x.id !== adhoc.id), adhoc], quickConnectTarget: null }))
@@ -461,8 +494,9 @@ export const useAppStore = create<AppState>((set) => ({
   setEditingConnectionId: (id) => set({ editingConnectionId: id }),
   openRedisTab: (session) =>
     set((s) => {
+      const recentConnections = recentsAfterOpening(s, session)
       const existing = s.tabs.find((t) => t.sessionId === session.id && t.view === 'redis')
-      if (existing) return { activeTabId: existing.id, focusedPaneId: null }
+      if (existing) return { activeTabId: existing.id, focusedPaneId: null, recentConnections }
       const tab: Tab = {
         id: `tab-${++tabCounter}`,
         sessionId: session.id,
@@ -471,7 +505,7 @@ export const useAppStore = create<AppState>((set) => ({
         status: 'idle',
         filesOpen: false,
       }
-      return { tabs: [...s.tabs, tab], activeTabId: tab.id, focusedPaneId: null }
+      return { tabs: [...s.tabs, tab], activeTabId: tab.id, focusedPaneId: null, recentConnections }
     }),
   // Locking closes dialogs that can hold typed credentials or act on
   // connections; quick connect's would even sit above the lock screen (native
