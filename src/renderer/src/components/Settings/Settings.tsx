@@ -533,7 +533,7 @@ function TerminalSettings() {
             <Toggle on={copyOnSelect} onChange={v => update('copyOnSelect', v)} />
           </Row>
           <Divider />
-          <Row label="Confirm Multi-line Paste" description="Ask before pasting text that would run several commands. Skipped when the shell uses bracketed paste">
+          <Row label="Confirm Multi-line Paste" description="Ask before pasting text with line breaks, which the shell would run straight away. Skipped when the shell uses bracketed paste">
             <Toggle on={confirmMultilinePaste} onChange={v => update('confirmMultilinePaste', v)} />
           </Row>
           <Divider />

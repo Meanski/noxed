@@ -63,6 +63,7 @@ const MAX_RECENT_CONNECTIONS = 20
 // renderer clamps too, but settings:set is reachable from untrusted code.
 const VALUE_VALIDATORS: Partial<Record<keyof AppSettings, (value: unknown) => boolean>> = {
   sidebarWidth: (v) => typeof v === 'number' && Number.isInteger(v) && v >= 180 && v <= 480,
+  confirmMultilinePaste: (v) => typeof v === 'boolean',
   recentConnections: (v) =>
     Array.isArray(v) &&
     v.length <= MAX_RECENT_CONNECTIONS &&

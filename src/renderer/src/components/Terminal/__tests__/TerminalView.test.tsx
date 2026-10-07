@@ -1,10 +1,12 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeAll, beforeEach, vi } from 'vitest'
-import { render, screen, act, waitFor } from '@testing-library/react'
+import { render, screen, act, waitFor, fireEvent } from '@testing-library/react'
 import { installWindowApi, seedStore, makeSession, makeTab, WindowApiMock } from '../../../__tests__/harness'
 import { useAppStore, Session, Tab } from '../../../store'
 
 // xterm needs a real canvas/renderer — replace it with a minimal stand-in.
+const created = vi.hoisted(() => ({ terminals: [] as Array<{ element: HTMLElement; paste: ReturnType<typeof vi.fn> }> }))
+
 vi.mock('@xterm/xterm', () => {
   const disposable = () => ({ dispose: vi.fn() })
   class Terminal {
@@ -30,6 +32,7 @@ vi.mock('@xterm/xterm', () => {
     onBell = vi.fn(disposable)
     onData = vi.fn(disposable)
     onResize = vi.fn(disposable)
+    constructor() { created.terminals.push(this) }
   }
   return { Terminal }
 })
@@ -169,5 +172,18 @@ describe('TerminalView', () => {
       await new Promise(resolve => setTimeout(resolve, 1150))
     })
     expect(screen.getByText(/Retry in [34]s/)).toBeTruthy()
+  })
+
+  it('asks before pasting multiple lines into the SSH shell', async () => {
+    const tab = setup({ authType: 'password' }, { sessions: { getCredentials: vi.fn().mockResolvedValue({ password: 'pw' }) } })
+    render(<TerminalView tab={tab} />)
+    await waitFor(() => expect(storeTab().status).toBe('connected'))
+    const term = created.terminals.at(-1)!
+    const event = new Event('paste', { bubbles: true, cancelable: true })
+    Object.defineProperty(event, 'clipboardData', { value: { getData: () => 'cd /srv\nmake deploy' } })
+    act(() => { term.element.dispatchEvent(event) })
+    expect(screen.getByRole('dialog', { name: 'Paste 2 lines?' })).toBeTruthy()
+    fireEvent.click(screen.getByText('Paste'))
+    expect(term.paste).toHaveBeenCalledWith('cd /srv\nmake deploy')
   })
 })
