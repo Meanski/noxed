@@ -275,7 +275,9 @@ export default function SftpBrowser({ tab }: Readonly<{ tab: Tab }>) {
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.key === ' ' && e.target === document.body) { e.preventDefault(); triggerQuickLook() }
-      if (e.key === 'Escape' && quickLook) setQuickLook(null)
+      // Unconditional: this handler can briefly hold a stale `quickLook` right
+      // after the overlay opens, and clearing an already-null value is a no-op.
+      if (e.key === 'Escape') setQuickLook(null)
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
