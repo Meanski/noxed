@@ -315,6 +315,18 @@ describe('DatabaseExplorer — results grid', () => {
     expect(orderOf(container, 'alice', 'bob')).toBe(true)
   })
 
+  it('keeps the selection on the same row when the grid is re-sorted', async () => {
+    const { api } = await renderConnected({}, { query: vi.fn().mockResolvedValue(sortResult) })
+    await runSql(api, 'SELECT * FROM t')
+    fireEvent.click((await screen.findByText('bob')).closest('tr')!)
+    fireEvent.click(screen.getByTitle('Row detail'))
+    expect(screen.getByText('Row 1')).toBeTruthy()
+    fireEvent.click(screen.getAllByText('name')[0])
+    // bob is now second; the detail panel still shows bob, numbered by position.
+    const detail = screen.getByText('Row 2').parentElement!.parentElement as HTMLElement
+    expect(within(detail).getByText('bob')).toBeTruthy()
+  })
+
   it('selects rows via click and Enter/Space keydown and shows the detail panel', async () => {
     const { api } = await renderConnected()
     await runSql(api, 'SELECT * FROM users')
@@ -737,6 +749,24 @@ describe('DatabaseExplorer — watch mode', () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(6000) })
     expect(api.database.query.mock.calls).toHaveLength(callsAfterStop)
     expect((screen.getByText('bob').closest('td') as HTMLElement).style.background).not.toContain('245')
+  })
+
+  it('stops watching when another query runs, so stale results never replace the grid', async () => {
+    const orders = { columns: ['id', 'total'], rows: [{ id: 9, total: 'ninety-nine' }], rowCount: 1, duration: 1 }
+    const query = vi.fn().mockImplementation((_id: string, q: string) => Promise.resolve(q.includes('orders') ? orders : usersResult))
+    const { api } = await renderConnected({}, { query })
+    await runSql(api, 'SELECT * FROM users')
+    await screen.findByText('alice')
+    vi.useFakeTimers()
+    fireEvent.click(screen.getByText('Watch'))
+    fireEvent.click(screen.getByText('orders'))
+    await act(async () => { await vi.advanceTimersByTimeAsync(0) })
+    expect(screen.getByText('ninety-nine')).toBeTruthy()
+    expect(screen.getByText('Watch')).toBeTruthy()
+    const calls = api.database.query.mock.calls.length
+    await act(async () => { await vi.advanceTimersByTimeAsync(10_000) })
+    expect(api.database.query.mock.calls).toHaveLength(calls)
+    expect(screen.queryByText('alice')).toBeNull()
   })
 
   it('keeps polling silently through query errors and clears timers on unmount', async () => {

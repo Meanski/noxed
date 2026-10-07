@@ -61,7 +61,9 @@ export default function DatabaseExplorer({ tab }: Readonly<{ tab: Tab }>) {
   const [activePanel, setActivePanel] = useState<ActivePanel>('results')
   const [toast, setToast] = useState<string | null>(null)
   const [editorHeight, setEditorHeight] = useState(120)
-  const [selectedRow, setSelectedRow] = useState<number | null>(null)
+  // The selected row itself, not its position, so re-sorting can't move the
+  // selection (or a delete) onto a different row.
+  const [selectedRow, setSelectedRow] = useState<Record<string, unknown> | null>(null)
   const [detailOpen, setDetailOpen] = useState(false)
   const [resultSort, setResultSort] = useState<ResultSort>(null)
   const [browsingTable, setBrowsingTable] = useState<string | null>(null)
@@ -142,6 +144,8 @@ export default function DatabaseExplorer({ tab }: Readonly<{ tab: Tab }>) {
   async function runQuery(query?: string, addToHistory = true, table: string | null = null) {
     const q = (query || sql).trim(); if (!clientId || !q) return
     const run = ++queryRunRef.current
+    // A watch keeps re-running its own query; a new run replaces it.
+    if (watchTimerRef.current) stopWatch()
     setBrowsingTable(table)
     setRunning(true); setQueryError(null); setResults(null); setSelectedRow(null); editing.cancelEdit(); setResultSort(null); setActivePanel('results')
     try {
@@ -232,8 +236,11 @@ export default function DatabaseExplorer({ tab }: Readonly<{ tab: Tab }>) {
     if (!clientRef.current) return
     const q = sql.trim()
     if (!q) { stopWatch(); return }
+    const run = queryRunRef.current
     try {
       const result = await window.api.database.query(clientRef.current, q)
+      // A query run since this tick started owns the grid now.
+      if (run !== queryRunRef.current) return
       const diff = computeRowDiff(prevResultsRef.current, result)
       if (diff.size > 0) {
         setChangedCells(diff)
@@ -269,7 +276,8 @@ export default function DatabaseExplorer({ tab }: Readonly<{ tab: Tab }>) {
 
   const filteredTables = filterTables(tables, tableFilter)
   const dbType = DB_TYPE_LABELS[session?.dbType ?? ''] ?? 'PostgreSQL'
-  const detailRow = getDetailRow(sortedRows, selectedRow)
+  const selectedIndex = selectedRow ? sortedRows.indexOf(selectedRow) : -1
+  const detailRow = selectedIndex === -1 ? null : selectedRow
 
   if (connecting) return <div className="flex items-center justify-center h-full" style={{ background: 'var(--nox-bg)' }}><div className="text-center"><Loader2 className="w-5 h-5 animate-spin mx-auto mb-3" style={{ color: '#3B5CCC' }} /><p className="text-[11px]" style={{ color: 'var(--nox-text-2)' }}>Connecting to {session?.databaseName || session?.host}</p></div></div>
   if (error && !clientId) return <div className="flex items-center justify-center h-full" style={{ background: 'var(--nox-bg)' }}><div className="text-center max-w-md px-6"><AlertTriangle className="w-6 h-6 mx-auto mb-3" style={{ color: '#EF4444' }} /><p className="text-[10px] mb-4 font-mono" style={{ color: 'var(--nox-text-3)' }}>{error}</p><button onClick={connect} className="px-4 py-1.5 rounded text-[11px] text-white" style={{ background: '#3B5CCC' }}>Retry</button></div></div>
@@ -341,7 +349,7 @@ export default function DatabaseExplorer({ tab }: Readonly<{ tab: Tab }>) {
               {results && (
                 <ResultsGrid
                   results={results} sortedRows={sortedRows} resultSort={resultSort} onToggleSort={toggleResultSort}
-                  selectedRow={selectedRow} onSelectRow={setSelectedRow}
+                  selectedRow={selectedIndex === -1 ? null : selectedIndex} onSelectRow={(i) => setSelectedRow(i === null ? null : sortedRows[i] ?? null)}
                   editingCell={editing.editingCell} editValue={editing.editValue} setEditValue={editing.setEditValue} editInputRef={editing.editInputRef}
                   commitEdit={editing.commitEdit} cancelEdit={editing.cancelEdit} startCellEdit={editing.startCellEdit}
                   changedCells={changedCells} expandedJson={expandedJson} onToggleJson={toggleJsonExpand}
@@ -355,7 +363,7 @@ export default function DatabaseExplorer({ tab }: Readonly<{ tab: Tab }>) {
 
             {/* Row detail panel */}
             {detailOpen && detailRow && results && (
-              <RowDetailPanel columns={results.columns} row={detailRow} rowNumber={selectedRow! + 1} onClose={() => setDetailOpen(false)} />
+              <RowDetailPanel columns={results.columns} row={detailRow} rowNumber={selectedIndex + 1} onClose={() => setDetailOpen(false)} />
             )}
           </>}
 
@@ -518,10 +526,6 @@ function SavedPanel({ savedQueries, onPick }: Readonly<{ savedQueries: SavedQuer
 function filterTables(tables: string[], filter: string): string[] {
   if (!filter) return tables
   return tables.filter(t => t.toLowerCase().includes(filter.toLowerCase()))
-}
-
-function getDetailRow(rows: Array<Record<string, unknown>>, selectedRow: number | null): Record<string, unknown> | null {
-  return selectedRow === null ? null : rows[selectedRow] ?? null
 }
 
 function PanelTab({ active, onClick, badge, children }: Readonly<{ active: boolean; onClick: () => void; badge?: number; children: React.ReactNode }>) {
