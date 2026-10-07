@@ -15,7 +15,14 @@ describe('Dashboard', () => {
     })
   })
 
+  it('waits for saved connections to load before calling it a first run', () => {
+    useAppStore.setState({ sessions: [], sessionsLoaded: false })
+    render(<Dashboard />)
+    expect(screen.queryByText('Welcome to noxed')).toBeNull()
+  })
+
   it('welcomes first-run users with ways to start', async () => {
+    useAppStore.setState({ sessions: [], sessionsLoaded: true })
     render(<Dashboard />)
     expect(screen.getByText('Welcome to noxed')).toBeTruthy()
     fireEvent.click(screen.getByText('New connection'))

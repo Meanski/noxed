@@ -59,6 +59,17 @@ describe('useRecentsSync', () => {
     expect(api.settings.set).toHaveBeenCalledWith('recentConnections', [expect.objectContaining({ id: 'a' })])
   })
 
+  it('saves a pending change when the window is closed', async () => {
+    const api = installWindowApi()
+    renderHook(() => useRecentsSync())
+    await act(async () => {})
+    await act(async () => { vi.advanceTimersByTime(1000) })
+    api.settings.set.mockClear()
+    act(() => { useAppStore.getState().openTab(makeSession({ id: 'w' })) })
+    window.dispatchEvent(new Event('pagehide'))
+    expect(api.settings.set).toHaveBeenCalledWith('recentConnections', [expect.objectContaining({ id: 'w' })])
+  })
+
   it('reports a failed save', async () => {
     const api = installWindowApi()
     api.settings.set.mockRejectedValue(new Error('disk full'))

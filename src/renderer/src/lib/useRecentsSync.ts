@@ -39,13 +39,19 @@ export function useRecentsSync(): void {
       timer = setTimeout(save, PERSIST_DELAY_MS)
     })
 
+    // Don't lose the last change to the batching delay. Closing the window
+    // tears the page down without unmounting React, so flush on pagehide too.
+    const flush = () => {
+      if (!timer) return
+      clearTimeout(timer)
+      save()
+    }
+    window.addEventListener('pagehide', flush)
+
     return () => {
       unsubscribe()
-      // Don't lose the last change to the batching delay.
-      if (timer) {
-        clearTimeout(timer)
-        save()
-      }
+      window.removeEventListener('pagehide', flush)
+      flush()
     }
   }, [])
 }

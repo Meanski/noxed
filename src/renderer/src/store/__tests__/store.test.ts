@@ -529,3 +529,21 @@ describe('recent connections', () => {
     expect(useAppStore.getState().recentConnections).toEqual([])
   })
 })
+
+describe('recent connections across openers', () => {
+  it('records Redis and RDP opens too, but never quick-connect sessions', () => {
+    useAppStore.setState({ tabs: [], recentConnections: [] })
+    const base = { host: 'h', port: 1, username: '', authType: 'password' as const, createdAt: 0, label: '' }
+    useAppStore.getState().openRedisTab({ ...base, id: 'r1', type: 'redis' })
+    useAppStore.getState().openRdpTab({ ...base, id: 'd1', type: 'rdp' })
+    useAppStore.getState().openRdpTab({ ...base, id: 'd1', type: 'rdp' })
+    useAppStore.getState().openTab({ ...base, id: 'q1', adhoc: true })
+    expect(useAppStore.getState().recentConnections.map((r) => r.id)).toEqual(['d1', 'r1'])
+  })
+
+  it('marks saved connections loaded once they arrive', () => {
+    useAppStore.setState({ sessionsLoaded: false })
+    useAppStore.getState().setSessions([])
+    expect(useAppStore.getState().sessionsLoaded).toBe(true)
+  })
+})

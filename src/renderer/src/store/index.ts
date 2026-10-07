@@ -168,6 +168,8 @@ interface AppState {
   // Latest auto-updater status (null until the first check reports in)
   updateStatus: UpdaterStatus | null
 
+  /** True once saved connections have loaded; until then an empty list means "not known yet". */
+  sessionsLoaded: boolean
   setSessions: (sessions: Session[]) => void
   addSession: (session: Session) => void
   updateSession: (id: string, data: Partial<Session>) => void
@@ -226,6 +228,12 @@ function persistSetting(key: string, value: unknown): void {
   ;(window as any).api?.settings?.set(key, value)
 }
 
+// Every way of opening a saved connection counts as a recent one; quick-connect
+// sessions vanish with their tabs, so they never do.
+function recentsAfterOpening(s: AppState, session: Session): RecentConnection[] {
+  return session.adhoc ? s.recentConnections : withRecent(s.recentConnections, session.id, Date.now())
+}
+
 type SetState = (fn: (s: AppState) => Partial<AppState>) => void
 
 const TYPE_TO_VIEW: Record<string, TabView> = {
@@ -251,6 +259,7 @@ function openSingletonTab(set: SetState, view: TabView, label: string): void {
 
 export const useAppStore = create<AppState>((set) => ({
   sessions: [],
+  sessionsLoaded: false,
   tabs: [],
   activeTabId: null,
   showAddSession: false,
@@ -275,7 +284,7 @@ export const useAppStore = create<AppState>((set) => ({
   pendingConnectionGroup: null,
   updateStatus: null,
 
-  setSessions: (sessions) => set({ sessions }),
+  setSessions: (sessions) => set({ sessions, sessionsLoaded: true }),
   addSession: (session) => set((s) => ({ sessions: [...s.sessions, session] })),
   updateSession: (id, data) =>
     set((s) => ({ sessions: s.sessions.map((sess) => (sess.id === id ? { ...sess, ...data } : sess)) })),
@@ -284,7 +293,7 @@ export const useAppStore = create<AppState>((set) => ({
   openTab: (session) =>
     set((s) => {
       // Quick-connect sessions vanish with their tabs, so they never become recents.
-      const recentConnections = session.adhoc ? s.recentConnections : withRecent(s.recentConnections, session.id, Date.now())
+      const recentConnections = recentsAfterOpening(s, session)
       const existing = s.tabs.find((t) => t.sessionId === session.id && t.status !== 'error' && !t.paneOf)
       if (existing) return { activeTabId: existing.id, focusedPaneId: null, recentConnections }
       const view = viewForSessionType(session.type)
@@ -376,8 +385,9 @@ export const useAppStore = create<AppState>((set) => ({
 
   openRdpTab: (session) =>
     set((s) => {
+      const recentConnections = recentsAfterOpening(s, session)
       const existing = s.tabs.find((t) => t.sessionId === session.id && t.view === 'rdp')
-      if (existing) return { activeTabId: existing.id, focusedPaneId: null }
+      if (existing) return { activeTabId: existing.id, focusedPaneId: null, recentConnections }
       const tab: Tab = {
         id: `tab-${++tabCounter}`,
         sessionId: session.id,
@@ -386,7 +396,7 @@ export const useAppStore = create<AppState>((set) => ({
         status: 'connected',
         filesOpen: false,
       }
-      return { tabs: [...s.tabs, tab], activeTabId: tab.id, focusedPaneId: null }
+      return { tabs: [...s.tabs, tab], activeTabId: tab.id, focusedPaneId: null, recentConnections }
     }),
 
   closeTab: (tabId) =>
@@ -469,8 +479,9 @@ export const useAppStore = create<AppState>((set) => ({
   setEditingConnectionId: (id) => set({ editingConnectionId: id }),
   openRedisTab: (session) =>
     set((s) => {
+      const recentConnections = recentsAfterOpening(s, session)
       const existing = s.tabs.find((t) => t.sessionId === session.id && t.view === 'redis')
-      if (existing) return { activeTabId: existing.id, focusedPaneId: null }
+      if (existing) return { activeTabId: existing.id, focusedPaneId: null, recentConnections }
       const tab: Tab = {
         id: `tab-${++tabCounter}`,
         sessionId: session.id,
@@ -479,7 +490,7 @@ export const useAppStore = create<AppState>((set) => ({
         status: 'idle',
         filesOpen: false,
       }
-      return { tabs: [...s.tabs, tab], activeTabId: tab.id, focusedPaneId: null }
+      return { tabs: [...s.tabs, tab], activeTabId: tab.id, focusedPaneId: null, recentConnections }
     }),
   // Locking closes dialogs that can hold typed credentials or act on
   // connections; quick connect's would even sit above the lock screen (native

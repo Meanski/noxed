@@ -19,4 +19,8 @@ describe('sanitizeRecents', () => {
       { id: 'c', at: 3 },
     ])
   })
+
+  it('keeps one entry per connection when loading saved recents', () => {
+    expect(sanitizeRecents([{ id: 'a', at: 3 }, { id: 'b', at: 2 }, { id: 'a', at: 1 }])).toEqual([{ id: 'a', at: 3 }, { id: 'b', at: 2 }])
+  })
 })

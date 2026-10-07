@@ -10,10 +10,12 @@ export function withRecent(list: readonly RecentConnection[], id: string, now: n
   return [{ id, at: now }, ...list.filter((r) => r.id !== id)].slice(0, MAX_RECENTS)
 }
 
-/** Keeps only well-formed entries from persisted settings. */
+/** Keeps only well-formed entries from persisted settings, one per connection (the first, newest). */
 export function sanitizeRecents(raw: unknown): RecentConnection[] {
   if (!Array.isArray(raw)) return []
+  const seen = new Set<string>()
   return raw
     .filter((r): r is RecentConnection => typeof r?.id === 'string' && typeof r?.at === 'number' && Number.isFinite(r.at))
+    .filter((r) => !seen.has(r.id) && seen.add(r.id))
     .slice(0, MAX_RECENTS)
 }

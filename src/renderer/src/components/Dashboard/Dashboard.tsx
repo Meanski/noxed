@@ -23,6 +23,7 @@ const VIEW_OPTIONS: { id: DashboardView; label: string; Icon: typeof LayoutGrid 
 
 export default function Dashboard() {
   const sessions = useAppStore(s => s.sessions)
+  const sessionsLoaded = useAppStore(s => s.sessionsLoaded)
   const tabs = useAppStore(s => s.tabs)
   const openTab = useAppStore(s => s.openTab)
   const openDockerTab = useAppStore(s => s.openDockerTab)
@@ -214,7 +215,8 @@ export default function Dashboard() {
 
   const importModal = importOpen && <ImportSshConfigModal onClose={() => setImportOpen(false)} />
 
-  if (sessions.length === 0) {
+  // Only a confirmed-empty list means first run; before loading it's unknown.
+  if (sessionsLoaded && sessions.length === 0) {
     return (
       <>
         <EmptyDashboard onImportSshConfig={() => setImportOpen(true)} />
