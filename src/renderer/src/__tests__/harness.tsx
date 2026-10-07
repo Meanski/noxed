@@ -172,6 +172,7 @@ export function buildWindowApi() {
     rdp: {
       connect: vi.fn().mockResolvedValue('rdp-1'),
       disconnect: vi.fn().mockResolvedValue(undefined),
+      sendInput: vi.fn(),
       onFrame: vi.fn().mockImplementation(unsub),
       onClose: vi.fn().mockImplementation(unsub),
     },
