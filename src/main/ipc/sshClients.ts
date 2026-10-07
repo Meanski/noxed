@@ -5,7 +5,7 @@ import { getCredential, isUnlocked } from './keychain'
 import { isAllowedKeyPath } from './security'
 import { getStoredSettings } from './settings'
 import { AuthError, ConnectionError, NotFoundError, ValidationError, toMessage } from './errors'
-import { describeSshError, hostVerifierFor } from './hostKeys'
+import { describeSshError, SSH_HANDSHAKE_TIMEOUT_MS, verifiedHandshake } from './hostKeys'
 
 const SSH_ALGORITHMS: Algorithms = {
   kex: [
@@ -56,7 +56,7 @@ const SSH_ALGORITHMS: Algorithms = {
 }
 
 export const SSH_CONNECT_DEFAULTS = {
-  readyTimeout: 30_000,
+  readyTimeout: SSH_HANDSHAKE_TIMEOUT_MS,
   keepaliveInterval: 30_000,
   keepaliveCountMax: 4,
   algorithms: SSH_ALGORITHMS,
@@ -125,8 +125,8 @@ export function connectRawClient(target: SshTarget): Promise<Client> {
       sock: target.sock,
       agent: process.env.SSH_AUTH_SOCK,
       tryKeyboard: true,
-      hostVerifier: hostVerifierFor(target.host, target.port),
       ...sshConnectOptions(),
+      ...verifiedHandshake(client, target.host, target.port),
       algorithms: { ...SSH_ALGORITHMS },
     }
     client.connect(config)

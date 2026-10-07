@@ -3,7 +3,7 @@ import { Client, ClientChannel } from 'ssh2'
 import { randomUUID } from 'node:crypto'
 import { ConnectionError, OwnershipError, ValidationError, toMessage } from './errors'
 import { validateHost, validatePort } from './security'
-import { describeSshError, hostVerifierFor } from './hostKeys'
+import { describeSshError, verifiedHandshake } from './hostKeys'
 import {
   SSH_CONNECT_DEFAULTS,
   sshConnectOptions,
@@ -294,8 +294,8 @@ export function registerSshHandlers(): void {
           sock,
           agent: process.env.SSH_AUTH_SOCK,
           tryKeyboard: true,
-          hostVerifier: hostVerifierFor(config.host, config.port),
           ...sshConnectOptions(),
+          ...verifiedHandshake(client, config.host, config.port),
           algorithms: { ...SSH_CONNECT_DEFAULTS.algorithms },
         })
       })

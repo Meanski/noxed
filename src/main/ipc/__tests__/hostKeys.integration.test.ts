@@ -10,7 +10,8 @@ import { Client, Server, utils } from 'ssh2'
 const { answers, handlers, webContents, fakeHome } = vi.hoisted(() => {
   const answers: string[] = []
   const handlers = new Map<string, (...args: unknown[]) => unknown>()
-  const webContents = {
+  const { EventEmitter } = require('node:events') as typeof import('node:events')
+  const webContents = Object.assign(new EventEmitter(), {
     id: 1,
     isDestroyed: () => false,
     send: (channel: string, payload: { requestId: string }) => {
@@ -18,7 +19,7 @@ const { answers, handlers, webContents, fakeHome } = vi.hoisted(() => {
       const decision = answers.shift() ?? 'reject'
       queueMicrotask(() => handlers.get('hostkeys:respond')!({ sender: { id: 1 } }, payload.requestId, decision))
     },
-  }
+  })
   const { mkdtempSync } = require('node:fs') as typeof import('node:fs')
   const { tmpdir } = require('node:os') as typeof import('node:os')
   const { join } = require('node:path') as typeof import('node:path')
@@ -39,7 +40,7 @@ vi.mock('electron-store', () => ({
 // Keep the real ~/.ssh/known_hosts out of the test.
 vi.mock('node:os', async (orig) => ({ ...(await orig<typeof import('node:os')>()), homedir: () => fakeHome }))
 
-import { describeSshError, hostVerifierFor, listTrustedHostKeys, registerHostKeyHandlers } from '../hostKeys'
+import { describeSshError, listTrustedHostKeys, registerHostKeyHandlers, verifiedHandshake } from '../hostKeys'
 
 function startServer(hostKey: string): Promise<{ server: Server; port: number }> {
   const server = new Server({ hostKeys: [hostKey] }, (client) => {
@@ -57,7 +58,7 @@ function connect(port: number): Promise<'ready' | string> {
     const client = new Client()
     client.on('ready', () => { client.end(); resolve('ready') })
     client.on('error', (err) => resolve(describeSshError(err)))
-    client.connect({ host: '127.0.0.1', port, username: 'u', password: 'p', hostVerifier: hostVerifierFor('127.0.0.1', port) })
+    client.connect({ host: '127.0.0.1', port, username: 'u', password: 'p', ...verifiedHandshake(client, '127.0.0.1', port) })
   })
 }
 

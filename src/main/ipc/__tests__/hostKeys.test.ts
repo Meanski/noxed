@@ -2,11 +2,12 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
 const handlers = new Map<string, (...args: unknown[]) => unknown>()
 const sent: Array<[string, unknown]> = []
-const webContents = {
+const { EventEmitter } = await import('node:events')
+const webContents = Object.assign(new EventEmitter(), {
   id: 7,
   isDestroyed: () => false,
   send: (channel: string, payload: unknown) => sent.push([channel, payload]),
-}
+})
 let windows: Array<{ isDestroyed: () => boolean; webContents: typeof webContents }> = []
 
 vi.mock('electron', () => ({
@@ -39,9 +40,10 @@ vi.mock('node:fs', () => ({
 
 import {
   describeSshError,
-  hostVerifierFor,
   listTrustedHostKeys,
   registerHostKeyHandlers,
+  SSH_HANDSHAKE_TIMEOUT_MS,
+  verifiedHandshake,
   verifyHostKey,
 } from '../hostKeys'
 
@@ -169,6 +171,27 @@ describe('verifyHostKey', () => {
     expect(sent.filter(([ch]) => ch === 'hostkeys:prompt')).toHaveLength(1)
   })
 
+  it('does not let a replaced key stay valid through known_hosts', async () => {
+    // OpenSSH knows KEY1; the user replaces it with KEY2 in noxed.
+    knownHostsFile = `example.com ssh-ed25519 ${KEY1.toString('base64')}\n`
+    const replace = verifyHostKey('example.com', 22, KEY2)
+    await respond('trust')
+    expect(await replace).toBe(true)
+    // The old key must now be treated as changed, not silently accepted.
+    const old = verifyHostKey('example.com', 22, KEY1)
+    await respond('reject')
+    expect(await old).toBe(false)
+    expect(lastPrompt().status).toBe('changed')
+  })
+
+  it('rejects when the asked window is closed', async () => {
+    const result = verifyHostKey('example.com', 22, KEY1)
+    await Promise.resolve()
+    webContents.emit('destroyed')
+    expect(await result).toBe(false)
+    expect(webContents.listenerCount('destroyed')).toBe(0)
+  })
+
   it('rejects immediately when there is no window to ask', async () => {
     windows = []
     expect(await verifyHostKey('example.com', 22, KEY1)).toBe(false)
@@ -240,12 +263,76 @@ describe('hostkeys:remove', () => {
   })
 })
 
-describe('hostVerifierFor', () => {
-  it('feeds the verdict to the ssh2 verify callback', async () => {
+describe('verifiedHandshake', () => {
+  function fakeClient() {
+    return Object.assign(new EventEmitter(), { destroy: vi.fn() })
+  }
+
+  it('disables ssh2 readyTimeout and feeds the verdict to verify', async () => {
     knownHostsFile = `example.com ssh-ed25519 ${KEY1.toString('base64')}\n`
+    const client = fakeClient()
+    const opts = verifiedHandshake(client as never, 'example.com', 22)
+    expect(opts.readyTimeout).toBe(0)
     const verify = vi.fn()
-    hostVerifierFor('example.com', 22)(KEY1, verify)
+    ;(opts.hostVerifier as (k: Buffer, v: (ok: boolean) => void) => void)(KEY1, verify)
     await vi.waitFor(() => expect(verify).toHaveBeenCalledWith(true))
+    client.emit('ready')
+  })
+
+  it('times out a stalled handshake', async () => {
+    vi.useFakeTimers()
+    const client = fakeClient()
+    const errors: Error[] = []
+    client.on('error', (e: Error) => errors.push(e))
+    verifiedHandshake(client as never, 'example.com', 22)
+    await vi.advanceTimersByTimeAsync(SSH_HANDSHAKE_TIMEOUT_MS)
+    expect(errors[0].message).toBe('Timed out while waiting for handshake')
+    expect(client.destroy).toHaveBeenCalled()
+  })
+
+  it('pauses the handshake timeout while the user reads a prompt', async () => {
+    vi.useFakeTimers()
+    const client = fakeClient()
+    const errors: Error[] = []
+    client.on('error', (e: Error) => errors.push(e))
+    const opts = verifiedHandshake(client as never, 'example.com', 22)
+    const verify = vi.fn()
+    ;(opts.hostVerifier as (k: Buffer, v: (ok: boolean) => void) => void)(KEY1, verify)
+    await vi.advanceTimersByTimeAsync(SSH_HANDSHAKE_TIMEOUT_MS * 3)
+    expect(errors).toHaveLength(0)
+
+    await respond('once')
+    await vi.advanceTimersByTimeAsync(0)
+    expect(verify).toHaveBeenCalledWith(true)
+    // Answered: the handshake clock runs again.
+    await vi.advanceTimersByTimeAsync(SSH_HANDSHAKE_TIMEOUT_MS)
+    expect(errors).toHaveLength(1)
+  })
+
+  it('pauses a second connection that joins an open prompt', async () => {
+    vi.useFakeTimers()
+    const first = verifyHostKey('example.com', 22, KEY1)
+    await Promise.resolve()
+    const client = fakeClient()
+    const errors: Error[] = []
+    client.on('error', (e: Error) => errors.push(e))
+    const opts = verifiedHandshake(client as never, 'example.com', 22)
+    ;(opts.hostVerifier as (k: Buffer, v: (ok: boolean) => void) => void)(KEY1, vi.fn())
+    await vi.advanceTimersByTimeAsync(SSH_HANDSHAKE_TIMEOUT_MS * 2)
+    expect(errors).toHaveLength(0)
+    await respond('reject')
+    expect(await first).toBe(false)
+  })
+
+  it('stops timing once the connection is ready', async () => {
+    vi.useFakeTimers()
+    const client = fakeClient()
+    const errors: Error[] = []
+    client.on('error', (e: Error) => errors.push(e))
+    verifiedHandshake(client as never, 'example.com', 22)
+    client.emit('ready')
+    await vi.advanceTimersByTimeAsync(SSH_HANDSHAKE_TIMEOUT_MS * 2)
+    expect(errors).toHaveLength(0)
   })
 })
 

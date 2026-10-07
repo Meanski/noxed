@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto'
 import { readFileSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import type { HostVerifier } from 'ssh2'
+import type { Client, ConnectConfig } from 'ssh2'
 import { ValidationError, toMessage } from './errors'
 import {
   fingerprintOf,
@@ -43,19 +43,32 @@ const store = new Store<{ hosts: StoredHostKey[] }>({
 
 // An unanswered prompt rejects the connection rather than hanging it forever.
 const PROMPT_TIMEOUT_MS = 120_000
+/** How long an SSH handshake may take, not counting time spent in a host-key prompt. */
+export const SSH_HANDSHAKE_TIMEOUT_MS = 30_000
 const MAX_KNOWN_HOSTS_BYTES = 4 * 1024 * 1024
 const DECISIONS = new Set<HostKeyDecision>(['trust', 'once', 'reject'])
 
 interface PendingPrompt {
   webContentsId: number
-  resolve: (decision: HostKeyDecision) => void
-  timer: NodeJS.Timeout
+  settle: (decision: HostKeyDecision) => void
+}
+
+/** Told when verification starts and stops waiting on the user. */
+interface PromptWatcher {
+  onPromptStart: () => void
+  onPromptEnd: () => void
+}
+
+interface InflightCheck {
+  result: Promise<boolean>
+  watchers: Set<PromptWatcher>
+  prompting: boolean
 }
 
 const pending = new Map<string, PendingPrompt>()
 // Several connections to the same unknown host (restored split panes, the
 // multi-host runner) share one prompt instead of stacking duplicates.
-const inflight = new Map<string, Promise<boolean>>()
+const inflight = new Map<string, InflightCheck>()
 
 export function listTrustedHostKeys(): StoredHostKey[] {
   return store.get('hosts')
@@ -96,23 +109,44 @@ function askUser(prompt: Omit<HostKeyPrompt, 'requestId'>): Promise<HostKeyDecis
   if (!target) return Promise.resolve('reject')
   const requestId = randomUUID()
   return new Promise((resolve) => {
-    const timer = setTimeout(() => {
+    // Every exit path (answer, timeout, window closed) goes through settle so
+    // the timer and the destroyed listener are always released.
+    const settle = (decision: HostKeyDecision) => {
       pending.delete(requestId)
+      clearTimeout(timer)
+      target.removeListener('destroyed', onDestroyed)
+      resolve(decision)
+    }
+    const onDestroyed = () => settle('reject')
+    const timer = setTimeout(() => {
       if (!target.isDestroyed()) target.send('hostkeys:dismiss', requestId)
-      resolve('reject')
+      settle('reject')
     }, PROMPT_TIMEOUT_MS)
-    pending.set(requestId, { webContentsId: target.id, resolve, timer })
+    target.once('destroyed', onDestroyed)
+    pending.set(requestId, { webContentsId: target.id, settle })
     target.send('hostkeys:prompt', { ...prompt, requestId })
   })
 }
 
-async function askAndRemember(prompt: Omit<HostKeyPrompt, 'requestId'>, key: string): Promise<boolean> {
-  const decision = await askUser(prompt)
+// Pauses every waiting connection's handshake timer while the user decides.
+async function askWhileWatched(check: InflightCheck, prompt: Omit<HostKeyPrompt, 'requestId'>): Promise<HostKeyDecision> {
+  check.prompting = true
+  check.watchers.forEach((w) => w.onPromptStart())
+  try {
+    return await askUser(prompt)
+  } finally {
+    check.prompting = false
+    check.watchers.forEach((w) => w.onPromptEnd())
+  }
+}
+
+async function askAndRemember(check: InflightCheck, prompt: Omit<HostKeyPrompt, 'requestId'>, key: string): Promise<boolean> {
+  const decision = await askWhileWatched(check, prompt)
   if (decision === 'trust') saveTrustedHostKey(prompt.host, prompt.port, prompt.keyType, key, prompt.fingerprint)
   return decision !== 'reject'
 }
 
-async function decide(host: string, port: number, blob: Buffer): Promise<boolean> {
+async function decide(check: InflightCheck, host: string, port: number, blob: Buffer): Promise<boolean> {
   const keyType = keyTypeOf(blob)
   const key = blob.toString('base64')
   const fingerprint = fingerprintOf(blob)
@@ -122,41 +156,83 @@ async function decide(host: string, port: number, blob: Buffer): Promise<boolean
   // if noxed trusted it earlier.
   const openssh = matchKnownHosts(readOpenSshKnownHosts(), host, port, keyType, key)
   if (openssh.verdict === 'revoked') {
-    await askUser({ ...prompt, status: 'revoked' })
+    await askWhileWatched(check, { ...prompt, status: 'revoked' })
     return false
   }
 
   const trusted = listTrustedHostKeys()
   const ours = matchTrustedKeys(trusted, host, port, keyType, key)
-  if (ours === 'match' || openssh.verdict === 'match') return true
+  if (ours === 'match') return true
+  // A key noxed holds for this type wins over OpenSSH's file, so "Replace key"
+  // really retires the old key instead of leaving it valid via known_hosts.
+  if (ours !== 'mismatch' && openssh.verdict === 'match') return true
 
   const forHost = trusted.filter((e) => e.host.toLowerCase() === host.toLowerCase() && e.port === port)
   if (ours === 'mismatch' || openssh.verdict === 'mismatch') {
     const previous = [...forHost.filter((e) => e.keyType === keyType).map((e) => e.key), ...openssh.sameTypeKeys]
-    return askAndRemember({ ...prompt, status: 'changed', knownFingerprints: [...new Set(previous.map(fingerprintOfB64))] }, key)
+    return askAndRemember(check, { ...prompt, status: 'changed', knownFingerprints: [...new Set(previous.map(fingerprintOfB64))] }, key)
   }
-  return askAndRemember({ ...prompt, status: 'new', otherKeyTypes: [...new Set(forHost.map((e) => e.keyType))] }, key)
+  return askAndRemember(check, { ...prompt, status: 'new', otherKeyTypes: [...new Set(forHost.map((e) => e.keyType))] }, key)
 }
 
 /** Resolves true when the presented host key is trusted (or the user accepts it). */
-export function verifyHostKey(host: string, port: number, blob: Buffer): Promise<boolean> {
+export function verifyHostKey(host: string, port: number, blob: Buffer, watcher?: PromptWatcher): Promise<boolean> {
   const dedupeKey = `${host.toLowerCase()}|${port}|${blob.toString('base64')}`
   const existing = inflight.get(dedupeKey)
-  if (existing !== undefined) return existing
-  const result = decide(host, port, blob)
+  if (existing !== undefined) {
+    if (watcher) {
+      existing.watchers.add(watcher)
+      if (existing.prompting) watcher.onPromptStart()
+    }
+    return existing.result
+  }
+  const check: InflightCheck = { result: Promise.resolve(false), watchers: new Set(watcher ? [watcher] : []), prompting: false }
+  check.result = decide(check, host, port, blob)
     .catch((err) => {
       console.error(`[hostkeys] verification failed for ${host}:${port}: ${toMessage(err)}`)
       return false
     })
     .finally(() => inflight.delete(dedupeKey))
-  inflight.set(dedupeKey, result)
-  return result
+  inflight.set(dedupeKey, check)
+  return check.result
 }
 
-/** ssh2 `hostVerifier` for a connection to host:port. */
-export function hostVerifierFor(host: string, port: number): HostVerifier {
-  return (key, verify) => {
-    verifyHostKey(host, port, key).then(verify)
+/**
+ * Connect options that verify the host key and enforce the handshake timeout
+ * ourselves. ssh2's own readyTimeout can't be paused, so it would kill the
+ * connection while the user is still reading a fingerprint; this timer stops
+ * while a prompt is open and restarts once it's answered.
+ */
+export function verifiedHandshake(client: Client, host: string, port: number): Pick<ConnectConfig, 'readyTimeout' | 'hostVerifier'> {
+  let timer: NodeJS.Timeout | undefined
+  let finished = false
+  const disarm = () => {
+    clearTimeout(timer)
+    timer = undefined
+  }
+  const arm = () => {
+    disarm()
+    if (finished) return
+    timer = setTimeout(() => {
+      client.emit('error', Object.assign(new Error('Timed out while waiting for handshake'), { level: 'client-timeout' }))
+      client.destroy()
+    }, SSH_HANDSHAKE_TIMEOUT_MS)
+  }
+  const finish = () => {
+    finished = true
+    disarm()
+  }
+  client.once('ready', finish)
+  client.once('error', finish)
+  client.once('close', finish)
+  arm()
+
+  const watcher: PromptWatcher = { onPromptStart: disarm, onPromptEnd: arm }
+  return {
+    readyTimeout: 0,
+    hostVerifier: (key: Buffer, verify: (valid: boolean) => void) => {
+      verifyHostKey(host, port, key, watcher).then(verify)
+    },
   }
 }
 
@@ -190,8 +266,6 @@ export function registerHostKeyHandlers(): void {
     const entry = pending.get(rawRequestId)
     // Only the window that was asked may answer; anything else is ignored.
     if (!entry || entry.webContentsId !== event.sender.id) return
-    pending.delete(rawRequestId)
-    clearTimeout(entry.timer)
-    entry.resolve(rawDecision as HostKeyDecision)
+    entry.settle(rawDecision as HostKeyDecision)
   })
 }

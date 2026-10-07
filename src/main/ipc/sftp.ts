@@ -5,7 +5,7 @@ import { ConnectionError, NotFoundError, OwnershipError, ValidationError, toMess
 import { getOwnedSshClient, SSH_CONNECT_DEFAULTS, sshConnectOptions } from './ssh'
 import { isInsideHome, isLikelyTextFile, validateHost, validatePort } from './security'
 import { connectSessionClient, openJumpSocket, ManagedSshConnection } from './sshClients'
-import { describeSshError, hostVerifierFor } from './hostKeys'
+import { describeSshError, verifiedHandshake } from './hostKeys'
 
 interface SftpClient {
   client: Client
@@ -179,8 +179,8 @@ async function openSftp(event: IpcMainInvokeEvent, config: SftpConnectConfig): P
       sock,
       agent: process.env.SSH_AUTH_SOCK,
       tryKeyboard: true,
-      hostVerifier: hostVerifierFor(config.host, config.port),
       ...sshConnectOptions(),
+      ...verifiedHandshake(client, config.host, config.port),
       algorithms: { ...SSH_CONNECT_DEFAULTS.algorithms },
     })
   })
