@@ -12,6 +12,7 @@ import UnlockScreen from './components/UnlockScreen'
 import SidebarResizeHandle, { clampSidebarWidth } from './components/Sidebar/SidebarResizeHandle'
 import HostKeyPrompt from './components/HostKeys/HostKeyPrompt'
 import QuickConnectModal from './components/QuickConnect/QuickConnectModal'
+import { useRecentsSync } from './lib/useRecentsSync'
 
 export const SIDEBAR_W = 220
 
@@ -29,6 +30,7 @@ export default function App() {
   const openDashboardTab = useAppStore(s => s.openDashboardTab)
   const isLocked = useAppStore(s => s.isLocked)
   const quickConnectTarget = useAppStore(s => s.quickConnectTarget)
+  useRecentsSync()
 
   const sidebarExpanded = useAppStore(s => s.sidebarExpanded)
   const setLocked = useAppStore(s => s.setLocked)

@@ -509,3 +509,23 @@ describe('quick-connect sessions', () => {
     expect(await resolveSshCredentials(makeSession({ id: 'adhoc-1', adhoc: true }))).toEqual({ password: undefined })
   })
 })
+
+describe('recent connections', () => {
+  beforeEach(() => {
+    useAppStore.setState({ sessions: [], adhocSessions: [], tabs: [], activeTabId: null, recentConnections: [] })
+  })
+
+  it('records saved connections as they open, newest first, including refocusing', () => {
+    const a = makeSession({ id: 'a' })
+    const b = makeSession({ id: 'b' })
+    useAppStore.getState().openTab(a)
+    useAppStore.getState().openTab(b)
+    useAppStore.getState().openTab(a)
+    expect(useAppStore.getState().recentConnections.map((r) => r.id)).toEqual(['a', 'b'])
+  })
+
+  it('never records quick-connect sessions', () => {
+    useAppStore.getState().openAdhocSession(makeSession({ id: 'adhoc-x' }))
+    expect(useAppStore.getState().recentConnections).toEqual([])
+  })
+})

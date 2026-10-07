@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { clearAdhocPassword } from '../lib/sshCredentials'
+import { withRecent, type RecentConnection } from '../lib/recents'
 
 // ── Connection types ──────────────────────────────────────────────────────────
 
@@ -146,6 +147,8 @@ interface AppState {
   // Prefilled target for the quick-connect dialog; null when it's closed
   quickConnectTarget: string | null
   adhocSessions: Session[]
+  // Saved connections the user opened most recently, newest first
+  recentConnections: RecentConnection[]
   showAddConnection: boolean
   editingConnectionId: string | null
   notifications: AppNotification[]
@@ -192,6 +195,7 @@ interface AppState {
   setShowCommandPalette: (show: boolean) => void
   setQuickConnectTarget: (target: string | null) => void
   openAdhocSession: (session: Session) => void
+  setRecentConnections: (list: RecentConnection[]) => void
   setShowAddConnection: (show: boolean) => void
   setEditingConnectionId: (id: string | null) => void
   openRedisTab: (session: Session) => void
@@ -253,6 +257,7 @@ export const useAppStore = create<AppState>((set) => ({
   showCommandPalette: false,
   quickConnectTarget: null,
   adhocSessions: [],
+  recentConnections: [],
   showAddConnection: false,
   editingConnectionId: null,
   notifications: [],
@@ -278,8 +283,10 @@ export const useAppStore = create<AppState>((set) => ({
 
   openTab: (session) =>
     set((s) => {
+      // Quick-connect sessions vanish with their tabs, so they never become recents.
+      const recentConnections = session.adhoc ? s.recentConnections : withRecent(s.recentConnections, session.id, Date.now())
       const existing = s.tabs.find((t) => t.sessionId === session.id && t.status !== 'error' && !t.paneOf)
-      if (existing) return { activeTabId: existing.id, focusedPaneId: null }
+      if (existing) return { activeTabId: existing.id, focusedPaneId: null, recentConnections }
       const view = viewForSessionType(session.type)
       const isK8s = view === 'k8s'
       const isRdp = view === 'rdp'
@@ -293,7 +300,7 @@ export const useAppStore = create<AppState>((set) => ({
         k8sContext: isK8s ? session.contextName : undefined,
         kubeconfigPath: isK8s ? session.kubeconfigPath : undefined,
       }
-      return { tabs: [...s.tabs, tab], activeTabId: tab.id, focusedPaneId: null }
+      return { tabs: [...s.tabs, tab], activeTabId: tab.id, focusedPaneId: null, recentConnections }
     }),
 
   openEditorTab: ({ path, source, session, streamId }) =>
@@ -452,6 +459,7 @@ export const useAppStore = create<AppState>((set) => ({
   setShowAddSession: (show) => set({ showAddSession: show }),
   setShowCommandPalette: (show) => set({ showCommandPalette: show }),
   setQuickConnectTarget: (target) => set({ quickConnectTarget: target }),
+  setRecentConnections: (list) => set({ recentConnections: list }),
   openAdhocSession: (session) => {
     const adhoc = { ...session, adhoc: true }
     set((s) => ({ adhocSessions: [...s.adhocSessions.filter((x) => x.id !== adhoc.id), adhoc], quickConnectTarget: null }))
