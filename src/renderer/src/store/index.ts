@@ -70,6 +70,9 @@ export interface Session {
   jumpHostId?: string
   // Forward the local SSH agent to this host (opt-in)
   agentForward?: boolean
+  // MongoDB: auth database, and mongodb+srv:// (DNS seed list) hosts
+  authSource?: string
+  mongoSrv?: boolean
   // Set by main process — indicates a credential exists in the OS keychain
   hasPassword?: boolean
   // Quick-connect session: lives only while its tabs are open, never saved
@@ -80,7 +83,7 @@ export interface Session {
 
 export type TabView =
   | 'terminal' | 'sftp' | 'k8s' | 'database' | 'redis' | 'editor' | 'docker' | 'local-term'
-  | 'dashboard' | 'connections' | 'settings' | 'tunnels' | 'runner' | 'rdp'
+  | 'dashboard' | 'connections' | 'settings' | 'tunnels' | 'runner' | 'rdp' | 'mongo'
 export type ConnectionStatus = 'idle' | 'connecting' | 'connected' | 'error'
 
 export interface EditorFile {
@@ -315,7 +318,8 @@ export const useAppStore = create<AppState>((set) => ({
       const recentConnections = recentsAfterOpening(s, session)
       const existing = s.tabs.find((t) => t.sessionId === session.id && t.status !== 'error' && !t.paneOf)
       if (existing) return { activeTabId: existing.id, focusedPaneId: null, recentConnections }
-      const view = viewForSessionType(session.type)
+      // MongoDB has its own explorer; other databases share the SQL one.
+      const view = session.type === 'database' && session.dbType === 'mongodb' ? 'mongo' : viewForSessionType(session.type)
       const isK8s = view === 'k8s'
       const isRdp = view === 'rdp'
       const tab: Tab = {

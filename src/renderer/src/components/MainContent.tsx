@@ -13,6 +13,7 @@ import TunnelsView from './Tunnels/TunnelsView'
 import DockerDashboard from './Docker/DockerDashboard'
 import RunnerView from './Runner/RunnerView'
 import LocalTerminalView from './Terminal/LocalTerminalView'
+import MongoExplorer from './Mongo/MongoExplorer'
 import RdpView from './RDP/RdpView'
 import SplitHandle from './SplitHandle'
 
@@ -84,6 +85,7 @@ function viewContent(tab: Tab): React.ReactNode {
     case 'docker': return <DockerDashboard tab={tab} />
     case 'runner': return <RunnerView />
     case 'local-term': return <LocalTerminalView tab={tab} />
+    case 'mongo': return <MongoExplorer tab={tab} />
     case 'rdp': return <RdpView tab={tab} />
     default: return null
   }

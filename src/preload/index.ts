@@ -231,6 +231,20 @@ contextBridge.exposeInMainWorld('api', {
     },
   },
 
+  mongo: {
+    connect: (config: { host: string; port: number; username?: string; password?: string; authSource?: string; srv?: boolean; tls?: boolean }) =>
+      ipcRenderer.invoke('mongo:connect', config),
+    databases: (id: string) => ipcRenderer.invoke('mongo:databases', id),
+    collections: (id: string, db: string) => ipcRenderer.invoke('mongo:collections', id, db),
+    find: (id: string, db: string, collection: string, options: { filter?: string; sort?: string; limit?: number; skip?: number }) =>
+      ipcRenderer.invoke('mongo:find', id, db, collection, options),
+    insert: (id: string, db: string, collection: string, doc: string) => ipcRenderer.invoke('mongo:insert', id, db, collection, doc),
+    replace: (id: string, db: string, collection: string, docId: string, doc: string) =>
+      ipcRenderer.invoke('mongo:replace', id, db, collection, docId, doc),
+    delete: (id: string, db: string, collection: string, docId: string) => ipcRenderer.invoke('mongo:delete', id, db, collection, docId),
+    disconnect: (id: string) => ipcRenderer.invoke('mongo:disconnect', id),
+  },
+
   // Claude Code (MCP) access: settings and per-request approvals
   mcp: {
     status: () => ipcRenderer.invoke('mcp:status'),

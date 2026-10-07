@@ -38,12 +38,15 @@ function applyOptionalFields(session: ImportedSession, r: Record<string, unknown
   session.dbType = readString(r.dbType)
   session.databaseName = readString(r.databaseName)
   session.sslMode = readString(r.sslMode)
+  session.filePath = readString(r.filePath)
+  session.authSource = readString(r.authSource)
   session.kubeconfigPath = readString(r.kubeconfigPath)
   if (Array.isArray(r.tags)) session.tags = r.tags.filter((t): t is string => typeof t === 'string')
   if (typeof r.isFavorite === 'boolean') session.isFavorite = r.isFavorite
   if (typeof r.pollingEnabled === 'boolean') session.pollingEnabled = r.pollingEnabled
   if (typeof r.connectOnStart === 'boolean') session.connectOnStart = r.connectOnStart
   if (typeof r.agentForward === 'boolean') session.agentForward = r.agentForward
+  if (typeof r.mongoSrv === 'boolean') session.mongoSrv = r.mongoSrv
   if (typeof r.pollingIntervalSeconds === 'number' && Number.isFinite(r.pollingIntervalSeconds)) {
     session.pollingIntervalSeconds = r.pollingIntervalSeconds
   }

@@ -78,6 +78,18 @@ declare global {
         onData: (cb: (id: string, data: string) => void) => () => void
         onExit: (cb: (id: string, exitCode: number) => void) => () => void
       }
+      mongo: {
+        connect: (config: { host: string; port: number; username?: string; password?: string; authSource?: string; srv?: boolean; tls?: boolean }) => Promise<string>
+        databases: (id: string) => Promise<Array<{ name: string; sizeOnDisk: number }>>
+        collections: (id: string, db: string) => Promise<string[]>
+        /** Documents come back as relaxed Extended JSON strings. */
+        find: (id: string, db: string, collection: string, options: { filter?: string; sort?: string; limit?: number; skip?: number }) => Promise<{ documents: string[]; total: number }>
+        insert: (id: string, db: string, collection: string, doc: string) => Promise<string>
+        /** `docId` is Extended JSON of `{ "_id": … }`. */
+        replace: (id: string, db: string, collection: string, docId: string, doc: string) => Promise<void>
+        delete: (id: string, db: string, collection: string, docId: string) => Promise<void>
+        disconnect: (id: string) => Promise<void>
+      }
       mcp: {
         status: () => Promise<McpStatus>
         setEnabled: (enabled: boolean) => Promise<McpStatus>

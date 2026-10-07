@@ -331,6 +331,24 @@ describe('AddConnectionModal — more database engines', () => {
     expect(port.value).toBe('14330')
   })
 
+  it('sets up MongoDB with an optional login, SRV and TLS, and tests it', async () => {
+    renderModal()
+    goToConfig('Database')
+    fireEvent.change(screen.getByDisplayValue('PostgreSQL'), { target: { value: 'mongodb' } })
+    expect((screen.getByPlaceholderText('22') as HTMLInputElement).value).toBe('27017')
+    fireEvent.change(screen.getByPlaceholderText('192.168.1.30'), { target: { value: 'cluster0.example.net' } })
+    fireEvent.click(screen.getByLabelText(/DNS seed list/))
+    fireEvent.change(screen.getByPlaceholderText('admin'), { target: { value: 'admin' } })
+    fireEvent.change(screen.getByDisplayValue('Off'), { target: { value: 'require' } })
+    fireEvent.click(screen.getByText('Test Connection'))
+    await waitFor(() => expect(api.mongo.disconnect).toHaveBeenCalledWith('mongo-1'))
+    expect(api.mongo.connect).toHaveBeenCalledWith({ host: 'cluster0.example.net', port: 27017, username: undefined, password: undefined, authSource: 'admin', srv: true, tls: true })
+    fireEvent.click(saveButton())
+    await waitFor(() => expect(api.sessions.create).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'database', dbType: 'mongodb', host: 'cluster0.example.net', authSource: 'admin', mongoSrv: true, sslMode: 'require',
+    })))
+  })
+
   it('connects to a SQLite file: no host, port or credentials', async () => {
     api.database.pickSqliteFile.mockResolvedValue('/Users/me/data/app.sqlite')
     renderModal()

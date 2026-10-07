@@ -77,6 +77,8 @@ export default function AddConnectionModal({ onClose }: Props) {
     databaseName: '',
     sslMode: 'disable',
     redisDb: '0',
+    authSource: '',
+    mongoSrv: false,
     showPassword: false,
   })
 
@@ -107,6 +109,8 @@ export default function AddConnectionModal({ onClose }: Props) {
         databaseName: editingSession.databaseName ?? '',
         sslMode: editingSession.sslMode ?? 'disable',
         redisDb: String(editingSession.redisDb ?? 0),
+        authSource: editingSession.authSource ?? '',
+        mongoSrv: editingSession.mongoSrv ?? false,
       }))
       if (type === 'kubernetes') {
         loadDefaultK8sContexts().then(() => {
@@ -208,6 +212,17 @@ export default function AddConnectionModal({ onClose }: Props) {
   }
 
   const isSqlite = selectedType === 'database' && form.dbType === 'sqlite'
+  const isMongo = selectedType === 'database' && form.dbType === 'mongodb'
+
+  const mongoTarget = (host: string, port: number, password: string | undefined) => ({
+    host,
+    port,
+    username: form.username.trim() || undefined,
+    password,
+    authSource: form.authSource.trim() || undefined,
+    srv: form.mongoSrv,
+    tls: form.sslMode !== 'disable',
+  })
 
   const parsedPort = (): number => {
     const raw = form.port.trim()
@@ -226,6 +241,8 @@ export default function AddConnectionModal({ onClose }: Props) {
         return null
       case 'database':
         if (form.dbType === 'sqlite') return form.filePath.trim() ? null : 'Choose a database file'
+        // MongoDB may have no login, and picks a database after connecting.
+        if (form.dbType === 'mongodb') return null
         if (!form.username.trim()) return 'Username is required'
         if (!form.databaseName.trim()) return 'Database name is required'
         return null
@@ -309,6 +326,9 @@ export default function AddConnectionModal({ onClose }: Props) {
       } else if (selectedType === 'redis') {
         const id = await window.api.redis.connect({ host, port, password, db: Number.parseInt(form.redisDb) })
         await window.api.redis.disconnect(id)
+      } else if (selectedType === 'database' && form.dbType === 'mongodb') {
+        const id = await window.api.mongo.connect(mongoTarget(host, port, password))
+        await window.api.mongo.disconnect(id)
       } else if (selectedType === 'database') {
         const id = await window.api.database.connect(isSqlite ? { dbType: 'sqlite', filePath: form.filePath.trim() } : {
           dbType: form.dbType,
@@ -371,6 +391,8 @@ export default function AddConnectionModal({ onClose }: Props) {
       dbType: selectedType === 'database' ? form.dbType : undefined,
       databaseName: selectedType === 'database' ? form.databaseName : undefined,
       sslMode: selectedType === 'database' ? form.sslMode : undefined,
+      authSource: isMongo && form.authSource.trim() ? form.authSource.trim() : undefined,
+      mongoSrv: isMongo ? form.mongoSrv : undefined,
       redisDb: selectedType === 'redis' ? Number.parseInt(form.redisDb) : undefined,
     }
   }

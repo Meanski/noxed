@@ -561,3 +561,11 @@ describe('loadSessions', () => {
     vi.unstubAllGlobals()
   })
 })
+
+describe('MongoDB tabs', () => {
+  it('opens MongoDB connections in the MongoDB explorer', () => {
+    useAppStore.setState({ tabs: [], activeTabId: null })
+    useAppStore.getState().openTab({ id: 'mg', label: 'Mongo', host: 'h', port: 27017, username: '', authType: 'password', createdAt: 0, type: 'database', dbType: 'mongodb' })
+    expect(useAppStore.getState().tabs.at(-1)?.view).toBe('mongo')
+  })
+})

@@ -156,6 +156,7 @@ const VIEW_ICONS: Partial<Record<Tab['view'], { Icon: typeof Terminal; activeCol
   editor: { Icon: FileCode, activeColor: '#F59E0B' },
   docker: { Icon: Boxes, activeColor: '#2496ED' },
   'local-term': { Icon: Terminal, activeColor: '#10B981' },
+  mongo: { Icon: Database, activeColor: '#10B981' },
   tunnels: { Icon: Cable, activeColor: '#3B5CCC' },
   runner: { Icon: TerminalSquare, activeColor: '#3B5CCC' },
 }

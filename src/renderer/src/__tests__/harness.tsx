@@ -139,6 +139,16 @@ export function buildWindowApi() {
       onData: vi.fn().mockImplementation(unsub),
       onExit: vi.fn().mockImplementation(unsub),
     },
+    mongo: {
+      connect: vi.fn().mockResolvedValue('mongo-1'),
+      databases: vi.fn().mockResolvedValue([{ name: 'shop', sizeOnDisk: 2048 }]),
+      collections: vi.fn().mockResolvedValue(['orders']),
+      find: vi.fn().mockResolvedValue({ documents: [], total: 0 }),
+      insert: vi.fn().mockResolvedValue('{"$oid":"1"}'),
+      replace: vi.fn().mockResolvedValue(undefined),
+      delete: vi.fn().mockResolvedValue(undefined),
+      disconnect: vi.fn().mockResolvedValue(undefined),
+    },
     mcp: {
       status: vi.fn().mockResolvedValue({ enabled: false, running: false, port: 39847, error: null }),
       setEnabled: vi.fn().mockResolvedValue({ enabled: true, running: true, port: 39847, error: null }),
