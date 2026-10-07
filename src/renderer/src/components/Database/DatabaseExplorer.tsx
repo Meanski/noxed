@@ -511,7 +511,7 @@ function filterTables(tables: string[], filter: string): string[] {
   return tables.filter(t => t.toLowerCase().includes(filter.toLowerCase()))
 }
 
-function getDetailRow(rows: any[], selectedRow: number | null): any {
+function getDetailRow(rows: Array<Record<string, unknown>>, selectedRow: number | null): Record<string, unknown> | null {
   return selectedRow === null ? null : rows[selectedRow] ?? null
 }
 
@@ -526,5 +526,5 @@ function PanelTab({ active, onClick, badge, children }: Readonly<{ active: boole
 }
 
 function TinyBtn({ title, onClick, active, children }: Readonly<{ title: string; onClick: () => void; active?: boolean; children: React.ReactNode }>) {
-  return <button onClick={onClick} title={title} className="w-6 h-6 flex items-center justify-center rounded mr-0.5" style={{ color: active ? '#3B5CCC' : 'var(--nox-text-3)' }} onMouseEnter={e => (e.currentTarget.style.background = 'var(--nox-hover)')} onMouseLeave={e => (e.currentTarget.style.background = '')}>{children}</button>
+  return <button type="button" onClick={onClick} title={title} aria-label={title} className="w-6 h-6 flex items-center justify-center rounded mr-0.5" style={{ color: active ? '#3B5CCC' : 'var(--nox-text-2)' }} onMouseEnter={e => (e.currentTarget.style.background = 'var(--nox-hover)')} onMouseLeave={e => (e.currentTarget.style.background = '')}>{children}</button>
 }

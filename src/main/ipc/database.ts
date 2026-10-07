@@ -153,22 +153,23 @@ async function connectPostgres(config: DbConnectConfig): Promise<DbConnection> {
     },
     async getTables() {
       const result = await pool.query(
-        `SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' ORDER BY table_name`
+        `SELECT table_name FROM information_schema.tables WHERE table_schema = current_schema() ORDER BY table_name`
       )
       return result.rows.map((r: { table_name: string }) => r.table_name)
     },
     async getTableInfo(table: string) {
       const result = await pool.query(
         `SELECT column_name, data_type, is_nullable FROM information_schema.columns
-         WHERE table_schema = 'public' AND table_name = $1 ORDER BY ordinal_position`,
+         WHERE table_schema = current_schema() AND table_name = $1 ORDER BY ordinal_position`,
         [table]
       )
-      // quote_ident keeps mixed-case names intact; to_regclass returns NULL
-      // (no rows) instead of erroring for a missing table.
+      // The schema the connection works in (search_path's first), as for the
+      // table list. quote_ident keeps mixed-case names intact; to_regclass
+      // returns NULL (no rows) instead of erroring for a missing table.
       const pk = await pool.query(
         `SELECT a.attname FROM pg_index i
          JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey)
-         WHERE i.indrelid = to_regclass('public.' || quote_ident($1)) AND i.indisprimary
+         WHERE i.indrelid = to_regclass(quote_ident(current_schema()) || '.' || quote_ident($1)) AND i.indisprimary
          ORDER BY array_position(i.indkey, a.attnum)`,
         [table]
       )

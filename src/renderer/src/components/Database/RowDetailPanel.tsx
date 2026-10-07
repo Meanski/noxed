@@ -1,7 +1,7 @@
 import { X } from 'lucide-react'
 
 export default function RowDetailPanel({ columns, row, rowNumber, onClose }: Readonly<{
-  columns: string[]; row: any; rowNumber: number; onClose: () => void
+  columns: string[]; row: Record<string, unknown>; rowNumber: number; onClose: () => void
 }>) {
   return (
     <div className="flex-shrink-0 flex flex-col overflow-hidden" style={{ width: 300, borderLeft: '1px solid var(--nox-border)', background: 'var(--nox-shell)' }}>

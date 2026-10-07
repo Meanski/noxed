@@ -99,6 +99,8 @@ describe('table metadata and write results', () => {
       primaryKey: ['org', 'id'],
     })
     expect(pgQuery.mock.calls.at(-1)?.[1]).toEqual(['Members'])
+    // Both lookups follow the connection's schema rather than assuming public.
+    expect(pgQuery.mock.calls.slice(-2).every((c) => String(c[0]).includes('current_schema()'))).toBe(true)
   })
 
   async function connectMysql(responses: unknown[]) {

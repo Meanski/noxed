@@ -553,7 +553,7 @@ describe('DatabaseExplorer — row editing', () => {
     fireEvent.change(within(dialog).getByLabelText(/^active/), { target: { value: 'true' } })
     fireEvent.click(within(dialog).getByText('Add row'))
     await waitFor(() =>
-      expect(api.database.query).toHaveBeenCalledWith('db-1', 'INSERT INTO "users" ("name", "active") VALUES ($1, $2)', ['carol', 'true'])
+      expect(api.database.query).toHaveBeenCalledWith('db-1', 'INSERT INTO "users" ("name", "active") VALUES ($1, $2)', ['carol', true])
     )
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
     expect(api.database.query).toHaveBeenLastCalledWith('db-1', 'SELECT * FROM "users" LIMIT 100')

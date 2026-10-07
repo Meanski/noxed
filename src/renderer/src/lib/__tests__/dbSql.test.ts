@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { bindPlaceholder, buildDelete, buildInsert, buildUpdate, quoteIdent, selectRows, toEditable, toParam } from '../dbSql'
+import { bindPlaceholder, buildDelete, coerceForColumn, coerceLike, buildInsert, buildUpdate, quoteIdent, selectRows, toEditable, toParam } from '../dbSql'
 
 describe('quoteIdent / bindPlaceholder', () => {
   it('quotes per dialect and escapes embedded quotes', () => {
@@ -67,5 +67,35 @@ describe('row statements', () => {
     expect(buildInsert('t', { a: 1 }, 'mysql')).toEqual({ sql: 'INSERT INTO `t` (`a`) VALUES (?)', params: [1] })
     expect(buildInsert('t', {}, 'postgresql').sql).toBe('INSERT INTO "t" DEFAULT VALUES')
     expect(buildInsert('t', {}, 'mysql').sql).toBe('INSERT INTO `t` () VALUES ()')
+  })
+})
+
+describe('typed values from text', () => {
+  it('types booleans and plain numbers by column, leaving the rest as text', () => {
+    expect(coerceForColumn('true', 'boolean')).toBe(true)
+    expect(coerceForColumn('0', 'tinyint(1)')).toBe(false)
+    expect(coerceForColumn('maybe', 'bool')).toBe('maybe')
+    expect(coerceForColumn('42', 'integer')).toBe(42)
+    expect(coerceForColumn('3.5', 'double precision')).toBe(3.5)
+    expect(coerceForColumn('12abc', 'int')).toBe('12abc')
+    // Precision-sensitive types stay text for the database to parse.
+    expect(coerceForColumn('9007199254740993', 'bigint')).toBe('9007199254740993')
+    expect(coerceForColumn('1.10', 'numeric')).toBe('1.10')
+    expect(coerceForColumn('hello', 'text')).toBe('hello')
+  })
+
+  it('types an edited cell like the value it replaces', () => {
+    expect(coerceLike('false', true)).toBe(false)
+    expect(coerceLike('7', 1)).toBe(7)
+    expect(coerceLike('7', 'x')).toBe('7')
+  })
+})
+
+describe('values JSON cannot encode', () => {
+  it('fall back to text instead of throwing', () => {
+    const cyclic: Record<string, unknown> = {}
+    cyclic.self = cyclic
+    expect(toEditable(cyclic)).toBe('[object Object]')
+    expect(toParam({ big: 1n })).toBe('[object Object]')
   })
 })

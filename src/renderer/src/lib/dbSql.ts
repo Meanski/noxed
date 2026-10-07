@@ -20,13 +20,48 @@ export function bindPlaceholder(dbType: string, n: number): string {
   return isMysqlFamily(dbType) ? '?' : `$${n}`
 }
 
+/** JSON for display or binding; values JSON can't encode (cycles, bigints) fall back to String(). */
+function safeJson(value: unknown): string {
+  try {
+    return JSON.stringify(value) ?? String(value)
+  } catch {
+    return String(value) // e.g. a structure holding a bigint or a cycle
+  }
+}
+
+const BOOLEAN_TYPE = /^(bool|boolean|bit|tinyint\(1\))$/i
+// Integers that fit a JS number, and floats. bigint and numeric/decimal stay
+// text so no precision is lost; the database parses them.
+const NUMBER_TYPE = /^(smallint|int|integer|int2|int4|mediumint|tinyint|real|float|float4|float8|double|double precision)$/i
+
+/**
+ * Typed text from a form field: booleans and plain numbers become real values
+ * so every dialect stores them the same way; anything else stays text.
+ */
+export function coerceForColumn(text: string, columnType: string): QueryParam {
+  const type = columnType.trim()
+  if (BOOLEAN_TYPE.test(type)) {
+    if (/^(true|t|1|yes)$/i.test(text)) return true
+    if (/^(false|f|0|no)$/i.test(text)) return false
+  }
+  if (NUMBER_TYPE.test(type) && text.trim() !== '' && Number.isFinite(Number(text))) return Number(text)
+  return text
+}
+
+/** Edited text, typed like the cell it replaces (a boolean stays a boolean, a number a number). */
+export function coerceLike(text: string, original: unknown): QueryParam {
+  if (typeof original === 'boolean') return coerceForColumn(text, 'boolean')
+  if (typeof original === 'number') return coerceForColumn(text, 'double')
+  return text
+}
+
 /** Converts a cell value (as returned by the driver) into a bindable parameter. */
 export function toParam(value: unknown): QueryParam {
   if (value === null || value === undefined) return null
   if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return value
   if (typeof value === 'bigint') return value.toString()
   if (value instanceof Date) return value.toISOString()
-  return JSON.stringify(value)
+  return safeJson(value)
 }
 
 export function selectRows(table: string, dbType: string, limit: number): string {
@@ -61,7 +96,10 @@ export function buildDelete(table: string, primaryKey: readonly string[], row: R
   return { sql: `DELETE FROM ${quoteIdent(table, dbType)} WHERE ${where.sql}`, params: where.params }
 }
 
-/** INSERT of the given columns; omitted columns take their database default. */
+/**
+ * INSERT of the given columns, in the order given (so callers pass table
+ * order); omitted columns take their database default.
+ */
 export function buildInsert(table: string, values: Readonly<Record<string, QueryParam>>, dbType: string): Statement {
   const columns = Object.keys(values)
   if (columns.length === 0) {
@@ -89,6 +127,6 @@ export function toEditable(v: unknown): string {
     case 'bigint':
       return v.toString()
     default:
-      return JSON.stringify(v) ?? ''
+      return safeJson(v)
   }
 }

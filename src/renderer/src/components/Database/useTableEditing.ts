@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react'
-import { buildDelete, buildInsert, buildUpdate, toEditable, type QueryParam } from '../../lib/dbSql'
+import { buildDelete, buildInsert, buildUpdate, coerceLike, toEditable, type QueryParam } from '../../lib/dbSql'
 import { ipcErrorMessage } from '../../lib/format'
 import type { QueryResult } from './types'
 
@@ -55,7 +55,7 @@ export function useTableEditing({ clientId, dbType, table, primaryKey, results, 
     setEditingCell(null)
     if (!cell || !editable || !table || !primaryKey || !results) return
     if (toEditable(cell.row[cell.col]) === editValue) return
-    const value: QueryParam = editValue === '' ? null : editValue
+    const value: QueryParam = editValue === '' ? null : coerceLike(editValue, cell.row[cell.col])
     try {
       const { sql, params } = buildUpdate(table, cell.col, value, primaryKey, cell.row, dbType)
       const result = await run(sql, params)

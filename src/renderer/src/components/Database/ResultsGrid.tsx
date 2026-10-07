@@ -18,7 +18,7 @@ function isJsonString(s: string): boolean {
 }
 
 export default function ResultsGrid({ results, sortedRows, resultSort, onToggleSort, selectedRow, onSelectRow, editingCell, editValue, setEditValue, editInputRef, commitEdit, cancelEdit, startCellEdit, changedCells, expandedJson, onToggleJson }: Readonly<{
-  results: QueryResult; sortedRows: any[]; resultSort: ResultSort; onToggleSort: (col: string) => void
+  results: QueryResult; sortedRows: Array<Record<string, unknown>>; resultSort: ResultSort; onToggleSort: (col: string) => void
   selectedRow: number | null; onSelectRow: (i: number | null) => void
   editingCell: { row: Record<string, unknown>; col: string } | null; editValue: string; setEditValue: (v: string) => void
   editInputRef: React.Ref<HTMLInputElement>; commitEdit: () => void; cancelEdit: () => void
@@ -93,7 +93,7 @@ export default function ResultsGrid({ results, sortedRows, resultSort, onToggleS
 }
 
 function ResultCell({ row, rowIndex, col, editing, changed, editValue, setEditValue, editInputRef, commitEdit, cancelEdit, startCellEdit, expandedJson, onToggleJson }: Readonly<{
-  row: any; rowIndex: number; col: string; editing: boolean; changed: boolean
+  row: Record<string, unknown>; rowIndex: number; col: string; editing: boolean; changed: boolean
   editValue: string; setEditValue: (v: string) => void; editInputRef: React.Ref<HTMLInputElement>
   commitEdit: () => void; cancelEdit: () => void; startCellEdit: (row: Record<string, unknown>, col: string, val: unknown) => void
   expandedJson: Set<string>; onToggleJson: (k: string) => void
@@ -117,15 +117,20 @@ function ResultCell({ row, rowIndex, col, editing, changed, editValue, setEditVa
   )
 }
 
-function tryParseJsonCell(value: any, str: string): any {
-  if (typeof value === 'object') return value
+function tryParseJsonCell(value: unknown, str: string): object | null {
+  if (value !== null && typeof value === 'object') return value
   if (!isJsonString(str)) return null
-  try { return JSON.parse(str) } catch { return null }
+  try {
+    const parsed: unknown = JSON.parse(str)
+    return parsed !== null && typeof parsed === 'object' ? parsed : null
+  } catch {
+    return null // looked like JSON but isn't; show it as text
+  }
 }
 
 // JSON object/array — expandable inline
 
-function JsonCell({ parsed, expanded, onToggle }: Readonly<{ parsed: any; expanded: boolean; onToggle: () => void }>) {
+function JsonCell({ parsed, expanded, onToggle }: Readonly<{ parsed: object; expanded: boolean; onToggle: () => void }>) {
   return (
     <span>
       <button onClick={e => { e.stopPropagation(); onToggle() }}
@@ -142,11 +147,11 @@ function JsonCell({ parsed, expanded, onToggle }: Readonly<{ parsed: any; expand
 }
 
 function SmartCell({ value, cellKey, expandedJson, onToggleJson }: Readonly<{
-  value: any; cellKey: string; expandedJson: Set<string>; onToggleJson: (k: string) => void
+  value: unknown; cellKey: string; expandedJson: Set<string>; onToggleJson: (k: string) => void
 }>) {
   if (value == null) return <span className="italic opacity-40">NULL</span>
 
-  const str = typeof value === 'object' ? JSON.stringify(value) : String(value)
+  const str = toEditable(value)
 
   const parsed = tryParseJsonCell(value, str)
   if (parsed) {
