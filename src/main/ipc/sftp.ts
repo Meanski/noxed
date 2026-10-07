@@ -5,6 +5,7 @@ import { ConnectionError, NotFoundError, OwnershipError, ValidationError, toMess
 import { getOwnedSshClient, SSH_CONNECT_DEFAULTS, sshConnectOptions } from './ssh'
 import { isInsideHome, isLikelyTextFile, validateHost, validatePort } from './security'
 import { connectSessionClient, openJumpSocket, ManagedSshConnection } from './sshClients'
+import { describeSshError, hostVerifierFor } from './hostKeys'
 
 interface SftpClient {
   client: Client
@@ -164,7 +165,7 @@ async function openSftp(event: IpcMainInvokeEvent, config: SftpConnectConfig): P
         (err) => { client.end(); upstream?.dispose(); settle(() => reject(err)) },
       )
     })
-    client.on('error', (err) => settle(() => { upstream?.dispose(); reject(new ConnectionError(toMessage(err))) }))
+    client.on('error', (err) => settle(() => { upstream?.dispose(); reject(new ConnectionError(describeSshError(err))) }))
     client.on('keyboard-interactive', (_name, _instructions, _instructionsLang, prompts, finish) => {
       if (!config.password) { finish([]); return }
       finish(prompts.map(() => config.password ?? ''))
@@ -178,6 +179,7 @@ async function openSftp(event: IpcMainInvokeEvent, config: SftpConnectConfig): P
       sock,
       agent: process.env.SSH_AUTH_SOCK,
       tryKeyboard: true,
+      hostVerifier: hostVerifierFor(config.host, config.port),
       ...sshConnectOptions(),
       algorithms: { ...SSH_CONNECT_DEFAULTS.algorithms },
     })

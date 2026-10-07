@@ -28,6 +28,7 @@ import { registerSettingsHandlers } from './ipc/settings'
 import { registerDatabaseHandlers, disposeDatabaseConnectionsForSender } from './ipc/database'
 import { registerLocalFsHandlers } from './ipc/localfs'
 import { registerRdpHandlers, disposeRdpSessionsForSender } from './ipc/rdp'
+import { registerHostKeyHandlers } from './ipc/hostKeys'
 import { isAllowedKeyPath } from './ipc/security'
 import { ValidationError } from './ipc/errors'
 import { buildAppMenu } from './menu'
@@ -142,6 +143,7 @@ app.whenReady().then(() => {
   registerDatabaseHandlers()
   registerLocalFsHandlers()
   registerRdpHandlers()
+  registerHostKeyHandlers()
   registerUpdaterHandlers()
 
   ipcMain.handle('fs:readFile', (_e, filePath: unknown) => {

@@ -5,6 +5,7 @@ import { getCredential, isUnlocked } from './keychain'
 import { isAllowedKeyPath } from './security'
 import { getStoredSettings } from './settings'
 import { AuthError, ConnectionError, NotFoundError, ValidationError, toMessage } from './errors'
+import { describeSshError, hostVerifierFor } from './hostKeys'
 
 const SSH_ALGORITHMS: Algorithms = {
   kex: [
@@ -111,7 +112,7 @@ export function connectRawClient(target: SshTarget): Promise<Client> {
     client.on('error', (err) => {
       if (!settled) {
         settled = true
-        reject(new ConnectionError(toMessage(err)))
+        reject(new ConnectionError(describeSshError(err)))
       }
     })
 
@@ -124,6 +125,7 @@ export function connectRawClient(target: SshTarget): Promise<Client> {
       sock: target.sock,
       agent: process.env.SSH_AUTH_SOCK,
       tryKeyboard: true,
+      hostVerifier: hostVerifierFor(target.host, target.port),
       ...sshConnectOptions(),
       algorithms: { ...SSH_ALGORITHMS },
     }

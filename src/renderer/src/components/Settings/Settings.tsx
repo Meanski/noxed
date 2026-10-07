@@ -7,6 +7,9 @@ import {
 } from 'lucide-react'
 import { useAppStore } from '../../store'
 import { ipcErrorMessage } from '../../lib/format'
+import Card from './Card'
+import Row from './Row'
+import KnownHostsSection from './KnownHostsSection'
 
 type SettingsTab = 'general' | 'security' | 'terminal' | 'about'
 
@@ -114,45 +117,6 @@ function ActionButton({ icon, label, onClick }: Readonly<{ icon: React.ReactNode
       <span style={{ color: 'var(--nox-text-2)' }}>{icon}</span>
       {label}
     </button>
-  )
-}
-
-/* ── Section card ────────────────────────────────────────────────────────── */
-function Card({ label, children }: Readonly<{ label: string; children: React.ReactNode }>) {
-  return (
-    <div
-      className="rounded-md p-5"
-      style={{ background: 'var(--nox-shell)', border: '1px solid var(--nox-border)' }}
-    >
-      <div className="mb-4">
-        <span
-          className="font-['Plus_Jakarta_Sans'] text-[10px] uppercase tracking-wider font-semibold"
-          style={{ color: 'var(--nox-text-3)' }}
-        >
-          {label}
-        </span>
-      </div>
-      <div className="space-y-4">{children}</div>
-    </div>
-  )
-}
-
-/* ── Row ─────────────────────────────────────────────────────────────────── */
-function Row({ label, description, children }: Readonly<{
-  label: string
-  description?: string
-  children: React.ReactNode
-}>) {
-  return (
-    <div className="flex items-center justify-between gap-4">
-      <div className="min-w-0">
-        <span className="font-['Inter'] text-[13px] font-medium" style={{ color: 'var(--nox-text)' }}>{label}</span>
-        {description && (
-          <p className="font-['Inter'] text-[11.5px] mt-0.5" style={{ color: 'var(--nox-text-2)' }}>{description}</p>
-        )}
-      </div>
-      <div className="flex-shrink-0">{children}</div>
-    </div>
   )
 }
 
@@ -407,6 +371,8 @@ function SecuritySettings({ onClear }: Readonly<{ onClear: () => void }>) {
             </span>
           </Row>
         </Card>
+
+        <KnownHostsSection />
 
         <div
           className="rounded-md p-5"

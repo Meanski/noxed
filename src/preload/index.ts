@@ -288,6 +288,24 @@ contextBridge.exposeInMainWorld('api', {
     command: (id: string, cmd: string) => ipcRenderer.invoke('redis:command', id, cmd),
   },
 
+  // SSH host-key trust: main asks the renderer to confirm unknown/changed keys.
+  hostKeys: {
+    list: () => ipcRenderer.invoke('hostkeys:list'),
+    remove: (host: string, port: number, keyType: string) => ipcRenderer.invoke('hostkeys:remove', host, port, keyType),
+    respond: (requestId: string, decision: 'trust' | 'once' | 'reject') =>
+      ipcRenderer.invoke('hostkeys:respond', requestId, decision),
+    onPrompt: (cb: (prompt: unknown) => void) => {
+      const handler = (_e: any, prompt: unknown) => cb(prompt)
+      ipcRenderer.on('hostkeys:prompt', handler)
+      return () => ipcRenderer.off('hostkeys:prompt', handler)
+    },
+    onDismiss: (cb: (requestId: string) => void) => {
+      const handler = (_e: any, requestId: string) => cb(requestId)
+      ipcRenderer.on('hostkeys:dismiss', handler)
+      return () => ipcRenderer.off('hostkeys:dismiss', handler)
+    },
+  },
+
   // RDP (FreeRDP sidecar — desktop frames to a canvas, input over stdin)
   rdp: {
     connect: (config: { host: string; port?: number; username: string; password: string; width?: number; height?: number }) =>

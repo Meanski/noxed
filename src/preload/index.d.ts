@@ -13,6 +13,28 @@ interface TunnelInfo {
   connections: number
 }
 
+type HostKeyDecision = 'trust' | 'once' | 'reject'
+
+interface TrustedHostKey {
+  host: string
+  port: number
+  keyType: string
+  key: string
+  fingerprint: string
+  addedAt: number
+}
+
+interface HostKeyPrompt {
+  requestId: string
+  host: string
+  port: number
+  keyType: string
+  fingerprint: string
+  status: 'new' | 'changed'
+  knownFingerprints: string[]
+  otherKeyTypes: string[]
+}
+
 declare global {
   interface File {
     readonly path: string
@@ -174,6 +196,13 @@ declare global {
         set: (id: string, key: string, value: string, ttl?: number) => Promise<void>
         del: (id: string, ...keys: string[]) => Promise<void>
         command: (id: string, cmd: string) => Promise<any>
+      }
+      hostKeys: {
+        list: () => Promise<TrustedHostKey[]>
+        remove: (host: string, port: number, keyType: string) => Promise<void>
+        respond: (requestId: string, decision: HostKeyDecision) => Promise<void>
+        onPrompt: (cb: (prompt: HostKeyPrompt) => void) => () => void
+        onDismiss: (cb: (requestId: string) => void) => () => void
       }
       rdp: {
         connect: (config: { host: string; port?: number; username: string; password: string; width?: number; height?: number }) => Promise<string>

@@ -75,6 +75,9 @@
 <h2>No accounts, no cloud, no telemetry</h2>
 <p>noxed has no sign-in, no sync service and no analytics in the app. It connects only to the servers, databases and clusters you configure. The one other request is the update check: installed builds ask GitHub Releases whether a new version exists when they start, and nothing is downloaded until you agree.</p>
 
+<h2>SSH host key verification</h2>
+<p>noxed checks every SSH server's host key before sending credentials. Keys you already trust in <code>~/.ssh/known_hosts</code> (hashed entries included) are accepted automatically. A host noxed hasn't seen before shows its <code>SHA256</code> fingerprint for you to confirm. If a trusted host presents a different key, noxed warns you and won't connect unless you choose to replace the key. You can review and remove trusted keys under <strong>Settings → Security → Known Hosts</strong>.</p>
+
 <h2>Lock screen</h2>
 <p>An optional lock screen protects saved credentials with Touch ID, a PIN or a password. It can lock automatically after a period of inactivity. While noxed is locked, secrets aren't released to the interface.</p>
 
