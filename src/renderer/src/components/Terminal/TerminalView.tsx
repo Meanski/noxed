@@ -525,6 +525,7 @@ export default function TerminalView({ tab }: Props) {
         password,
         privateKey,
         jumpHostId: session.jumpHostId,
+        agentForward: session.agentForward,
       })
       if (streamIdRef.current) unregisterStream(streamIdRef.current)
       streamIdRef.current = streamId

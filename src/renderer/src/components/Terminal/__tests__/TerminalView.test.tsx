@@ -86,14 +86,14 @@ describe('TerminalView', () => {
 
   it('connects with the stored password and starts metrics', async () => {
     const tab = setup(
-      { authType: 'password' },
+      { authType: 'password', agentForward: true },
       { sessions: { getCredentials: vi.fn().mockResolvedValue({ password: 'hunter2' }) } },
     )
     render(<TerminalView tab={tab} />)
 
     await waitFor(() => expect(storeTab().status).toBe('connected'))
     expect(api.ssh.connect).toHaveBeenCalledWith(expect.objectContaining({
-      host: 'h1.example.com', username: 'root', password: 'hunter2', privateKey: undefined,
+      host: 'h1.example.com', username: 'root', password: 'hunter2', privateKey: undefined, agentForward: true,
     }))
     expect(storeTab().streamId).toBe('stream-1')
 

@@ -95,6 +95,7 @@ export interface SshTarget {
   password?: string
   privateKey?: string
   sock?: ClientChannel
+  agentForward?: boolean
 }
 
 /** A keyboard-interactive listener that answers every prompt with the password (or gives up without one). */
@@ -129,7 +130,8 @@ export function connectRawClient(target: SshTarget): Promise<Client> {
       password: target.password,
       privateKey: target.privateKey,
       sock: target.sock,
-      agent: process.env.SSH_AUTH_SOCK,
+      agent: localAgentPath(),
+      ...agentForwardOptions(target.agentForward),
       tryKeyboard: true,
       authHandler: target.password || target.privateKey ? undefined : defaultAuthMethods(target.username),
       ...sshConnectOptions(),
@@ -151,6 +153,28 @@ export function openJumpSocket(via: Client, destHost: string, destPort: number):
 }
 
 const MAX_JUMP_DEPTH = 3
+
+// Windows' built-in OpenSSH agent listens on this pipe and doesn't set
+// SSH_AUTH_SOCK; ssh2 speaks to it the same way as a Unix socket.
+const WINDOWS_OPENSSH_AGENT_PIPE = String.raw`\\.\pipe\openssh-ssh-agent`
+
+/**
+ * The local SSH agent to authenticate (and optionally forward) with, if any.
+ * The agent signs with the user's keys, so like them it's off-limits while
+ * noxed is locked.
+ */
+export function localAgentPath(): string | undefined {
+  if (!isUnlocked()) return undefined
+  return process.env.SSH_AUTH_SOCK || (process.platform === 'win32' ? WINDOWS_OPENSSH_AGENT_PIPE : undefined)
+}
+
+/**
+ * ssh2 options for agent forwarding. Off unless the connection opted in, and
+ * only when a local agent exists (ssh2 refuses agentForward without one).
+ */
+export function agentForwardOptions(enabled: boolean | undefined): Pick<ConnectConfig, 'agentForward'> {
+  return { agentForward: enabled === true && localAgentPath() !== undefined }
+}
 
 // OpenSSH's default identities, in the order `ssh` tries them. Its security-key
 // (*_sk) defaults need a hardware-token prompt noxed can't drive; an agent
@@ -187,7 +211,8 @@ export function defaultAuthMethods(username: string): ConnectConfig['authHandler
   // while noxed is locked.
   if (!isUnlocked()) throw new AuthError('App is locked — unlock noxed to use your SSH keys')
   const methods: Array<{ type: 'agent'; username: string; agent: string } | { type: 'publickey'; username: string; key: string }> = []
-  if (process.env.SSH_AUTH_SOCK) methods.push({ type: 'agent', username, agent: process.env.SSH_AUTH_SOCK })
+  const agent = localAgentPath()
+  if (agent) methods.push({ type: 'agent', username, agent })
   for (const key of readDefaultIdentities()) methods.push({ type: 'publickey', username, key })
   return methods.length > 0 ? methods : undefined
 }
@@ -249,6 +274,7 @@ export async function connectSessionClient(sessionId: string, depth = 0): Promis
       username: session.username,
       ...creds,
       sock,
+      agentForward: session.agentForward,
     })
   } catch (err) {
     upstream?.dispose()

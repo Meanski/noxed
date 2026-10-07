@@ -10,6 +10,8 @@ import {
   connectSessionClient,
   answerPromptsWith,
   defaultAuthMethods,
+  agentForwardOptions,
+  localAgentPath,
   openJumpSocket,
   ManagedSshConnection,
 } from './sshClients'
@@ -32,6 +34,7 @@ interface SshConnectConfig {
   password?: string
   privateKey?: string
   jumpHostId?: string
+  agentForward?: boolean
 }
 
 interface MetricsTimers {
@@ -96,6 +99,9 @@ function validateConnectConfig(config: unknown): SshConnectConfig {
   if (candidate.jumpHostId !== undefined && (typeof candidate.jumpHostId !== 'string' || candidate.jumpHostId.length > 128)) {
     throw new ValidationError('Invalid jump host id')
   }
+  if (candidate.agentForward !== undefined && typeof candidate.agentForward !== 'boolean') {
+    throw new ValidationError('Invalid agent forwarding flag')
+  }
 
   return {
     host,
@@ -104,6 +110,7 @@ function validateConnectConfig(config: unknown): SshConnectConfig {
     password: candidate.password as string | undefined,
     privateKey: candidate.privateKey as string | undefined,
     jumpHostId: candidate.jumpHostId as string | undefined,
+    agentForward: candidate.agentForward as boolean | undefined,
   }
 }
 
@@ -296,7 +303,8 @@ export function registerSshHandlers(): void {
           password: config.password,
           privateKey: config.privateKey,
           sock,
-          agent: process.env.SSH_AUTH_SOCK,
+          agent: localAgentPath(),
+          ...agentForwardOptions(config.agentForward),
           tryKeyboard: true,
           authHandler: config.password || config.privateKey ? undefined : defaultAuthMethods(config.username),
           ...sshConnectOptions(),

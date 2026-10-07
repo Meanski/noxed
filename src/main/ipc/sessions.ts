@@ -33,6 +33,8 @@ export interface Session {
   kubeconfigPath?: string
   // Connect through another saved SSH connection (ProxyJump)
   jumpHostId?: string
+  // Forward the local SSH agent to this host (opt-in: the host can use your keys)
+  agentForward?: boolean
   // UI hint: a credential exists in the keychain for this session
   hasPassword?: boolean
 }

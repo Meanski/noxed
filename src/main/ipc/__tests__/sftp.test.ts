@@ -29,6 +29,7 @@ vi.mock('../sshClients', async (importOriginal) => ({
   connectSessionClient: vi.fn(),
   openJumpSocket: vi.fn(),
   defaultAuthMethods: vi.fn(() => [{ type: 'agent', username: 'u', agent: '/sock' }]),
+  localAgentPath: vi.fn(() => '/sock'),
 }))
 
 import { ipcMain } from 'electron'

@@ -198,6 +198,7 @@ describe('AddConnectionModal — SSH', () => {
     fireEvent.click(toggleFor('Enable Dashboard Polling'))
     expect(toggleFor('Enable Dashboard Polling').getAttribute('aria-pressed')).toBe('true')
     fireEvent.click(toggleFor('Connect on App Start'))
+    fireEvent.click(toggleFor('Forward SSH Agent'))
     // Toggle polling back off, then re-enable it
     fireEvent.click(toggleFor('Enable Dashboard Polling'))
     fireEvent.click(toggleFor('Enable Dashboard Polling'))
@@ -207,6 +208,7 @@ describe('AddConnectionModal — SSH', () => {
     expect(api.sessions.create).toHaveBeenCalledWith(expect.objectContaining({
       pollingEnabled: true,
       connectOnStart: true,
+      agentForward: true,
       pollingIntervalSeconds: 60,
     }))
   })
