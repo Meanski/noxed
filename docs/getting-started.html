@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<!-- Google tag (gtag.js) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-EEH922EKWJ"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+
+  gtag('config', 'G-EEH922EKWJ');
+</script>
+<title>Getting started with noxed: SSH, SFTP, databases &amp; Kubernetes</title>
+<meta name="description" content="Set up noxed: add an SSH host with a password or key, import ~/.ssh/config, browse files over SFTP, forward ports, and connect to databases and Kubernetes." />
+<link rel="canonical" href="https://noxed.app/getting-started" />
+<meta property="og:title" content="Getting started with noxed: SSH, SFTP, databases &amp; Kubernetes" />
+<meta property="og:description" content="Set up noxed: add an SSH host with a password or key, import ~/.ssh/config, browse files over SFTP, forward ports, and connect to databases and Kubernetes." />
+<meta property="og:url" content="https://noxed.app/getting-started" />
+<meta property="og:type" content="website" />
+<meta property="og:site_name" content="noxed" />
+<meta property="og:image" content="https://noxed.app/og.png" />
+<meta property="og:image:width" content="1200" />
+<meta property="og:image:height" content="630" />
+<meta name="twitter:card" content="summary_large_image" />
+<link rel="icon" type="image/svg+xml" href='data:image/svg+xml,%3Csvg viewBox="0 0 256 256" xmlns="http://www.w3.org/2000/svg"%3E%3Cdefs%3E%3CclipPath id="s"%3E%3Crect width="256" height="256" rx="58"/%3E%3C/clipPath%3E%3C/defs%3E%3Cg clip-path="url(%23s)"%3E%3Cpath d="M0 0 L148 0 Q138 64 128 128 Q64 118 0 108 Z" fill="%23A78BFA"/%3E%3Cpath d="M148 0 L256 0 L256 148 Q192 138 128 128 Q138 64 148 0 Z" fill="%236D28D9"/%3E%3Cpath d="M256 148 L256 256 L108 256 Q118 192 128 128 Q192 138 256 148 Z" fill="%23312A7D"/%3E%3Cpath d="M108 256 L0 256 L0 108 Q64 118 128 128 Q118 192 108 256 Z" fill="%234C6EF5"/%3E%3C/g%3E%3Cpath d="M128 44 C136 100 156 120 212 128 C156 136 136 156 128 212 C120 156 100 136 44 128 C100 120 120 100 128 44 Z" fill="%23FFFFFF" transform="rotate(14 128 128)"/%3E%3C/svg%3E' />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="/site.css" />
+</head>
+<body>
+
+<nav class="nav" aria-label="Main">
+  <a class="nav-brand" href="/">
+    <svg viewBox="0 0 256 256" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <defs><clipPath id="nlogo"><rect width="256" height="256" rx="58"/></clipPath></defs>
+      <g clip-path="url(#nlogo)">
+        <path d="M0 0 L148 0 Q138 64 128 128 Q64 118 0 108 Z" fill="#A78BFA"/>
+        <path d="M148 0 L256 0 L256 148 Q192 138 128 128 Q138 64 148 0 Z" fill="#6D28D9"/>
+        <path d="M256 148 L256 256 L108 256 Q118 192 128 128 Q192 138 256 148 Z" fill="#312A7D"/>
+        <path d="M108 256 L0 256 L0 108 Q64 118 128 128 Q118 192 108 256 Z" fill="#4C6EF5"/>
+      </g>
+      <path d="M128 44 C136 100 156 120 212 128 C156 136 136 156 128 212 C120 156 100 136 44 128 C100 120 120 100 128 44 Z" fill="#FFF" transform="rotate(14 128 128)"/>
+    </svg>
+    noxed
+  </a>
+  <div class="nav-links">
+    <a href="/features">Features</a>
+    <a href="/download">Download</a>
+    <a href="/getting-started" aria-current="page">Docs</a>
+    <a href="/security">Security</a>
+    <a class="nav-gh" href="https://github.com/Meanski/noxed" rel="noopener">GitHub</a>
+  </div>
+</nav>
+
+<main>
+<p class="eyebrow">Docs</p>
+<h1>Getting started with noxed</h1>
+<p class="lede">From install to your first SSH session, SFTP transfer, database query and Kubernetes cluster in a few minutes.</p>
+
+<h2 id="install">1. Install noxed</h2>
+<p>Download the installer for your platform from the <a href="/download">download page</a> and run it. noxed doesn't need an account or sign-in.</p>
+
+<h2 id="ssh">2. Add an SSH host</h2>
+<ol>
+  <li>Press <kbd>⌘T</kbd> (or <kbd>Ctrl+T</kbd>) or click <strong>New Connection</strong>.</li>
+  <li>Choose <strong>SSH Server</strong>.</li>
+  <li>Enter the host, port and username.</li>
+  <li>Choose authentication: a <strong>password</strong> (saved in your OS keychain) or a <strong>private key</strong>.</li>
+  <li>Click <strong>Test Connection</strong>, then save. Open the host from the sidebar to start a session.</li>
+</ol>
+
+<h3 id="ssh-keys">Connect using an SSH key</h3>
+<p>Choose key authentication and enter the path to your private key, for example <code>~/.ssh/id_ed25519</code>. For safety, noxed only reads keys from <code>~/.ssh</code>, <code>~/.config/ssh</code> and <code>~/.pem</code>.</p>
+
+<h3 id="ssh-config">Import hosts from ~/.ssh/config</h3>
+<p>In the <strong>Connections</strong> view, use <strong>Import hosts from ~/.ssh/config</strong>. noxed lists the hosts it finds and imports the ones you select, including <code>ProxyJump</code> settings.</p>
+
+<h3 id="jump-hosts">Use a jump host</h3>
+<p>In a connection's settings, pick a saved server under <strong>Connect via (jump host)</strong>. noxed connects through it automatically, and chains of jump hosts also work.</p>
+
+<h2 id="sftp">3. Browse files with SFTP</h2>
+<p>In an open SSH session, click <strong>Files</strong> in the session header to open an SFTP drawer for that server. For a full two-pane browser, add an <strong>SFTP Server</strong> connection instead. Drag files between panes to transfer them, and press <kbd>Space</kbd> to preview a file.</p>
+
+<h2 id="tunnels">4. Forward a port</h2>
+<p>Open <strong>Tunnels</strong> from the sidebar and define a local forward, remote forward or SOCKS5 proxy over a saved connection. Start and stop it with one click. Active tunnels appear in the status bar.</p>
+
+<h2 id="databases">5. Connect to a database or Redis</h2>
+<p>Add a <strong>Database</strong> connection for PostgreSQL, MySQL or MariaDB, or a <strong>Redis</strong> connection. Database tabs open with a schema browser and query editor. Run a query with <kbd>⌘Enter</kbd>, and use the History and Saved tabs to go back to earlier queries.</p>
+
+<h2 id="kubernetes">6. Open a Kubernetes cluster</h2>
+<p>Add a <strong>Kubernetes</strong> connection and pick a context from your kubeconfig (<code>~/.kube/config</code>), or import another kubeconfig file. The dashboard covers pods, deployments, services, config, nodes and events. You can stream logs, exec into a pod or start a port-forward from there.</p>
+
+<h2 id="lock">7. Lock noxed when you step away</h2>
+<p>In <strong>Settings</strong>, choose a lock method (Touch ID, PIN or password) and an auto-lock timeout. Saved credentials stay locked until you unlock the app.</p>
+
+<h2 id="shortcuts">Keyboard shortcuts</h2>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Shortcut</th><th>Action</th></tr></thead>
+  <tbody>
+    <tr><td><kbd>⌘K</kbd></td><td>Command palette</td></tr>
+    <tr><td><kbd>⌘T</kbd></td><td>New connection</td></tr>
+    <tr><td><kbd>⌘W</kbd></td><td>Close tab</td></tr>
+    <tr><td><kbd>⌘F</kbd></td><td>Search terminal scrollback</td></tr>
+    <tr><td><kbd>⌘1</kbd>–<kbd>⌘9</kbd></td><td>Jump to tab</td></tr>
+    <tr><td><kbd>Ctrl+Tab</kbd></td><td>Cycle tabs</td></tr>
+  </tbody>
+</table>
+</div>
+<p>On Windows and Linux, use <kbd>Ctrl</kbd> in place of <kbd>⌘</kbd>.</p>
+
+<h2 id="help">Getting help</h2>
+<p>Found a bug or want a feature? <a href="https://github.com/Meanski/noxed/issues">Open an issue on GitHub</a>.</p>
+
+<nav class="next" aria-label="More">
+  <a href="/features"><span>Explore</span>All features</a>
+  <a href="/security"><span>Trust</span>Security overview</a>
+</nav>
+</main>
+
+<footer>
+  <div class="foot-brand">
+    <svg viewBox="0 0 256 256" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <defs><clipPath id="flogo"><rect width="256" height="256" rx="58"/></clipPath></defs>
+      <g clip-path="url(#flogo)">
+        <path d="M0 0 L148 0 Q138 64 128 128 Q64 118 0 108 Z" fill="#A78BFA"/>
+        <path d="M148 0 L256 0 L256 148 Q192 138 128 128 Q138 64 148 0 Z" fill="#6D28D9"/>
+        <path d="M256 148 L256 256 L108 256 Q118 192 128 128 Q192 138 256 148 Z" fill="#312A7D"/>
+        <path d="M108 256 L0 256 L0 108 Q64 118 128 128 Q118 192 108 256 Z" fill="#4C6EF5"/>
+      </g>
+      <path d="M128 44 C136 100 156 120 212 128 C156 136 136 156 128 212 C120 156 100 136 44 128 C100 120 120 100 128 44 Z" fill="#FFF" transform="rotate(14 128 128)"/>
+    </svg>
+    noxed
+  </div>
+  <nav aria-label="Footer">
+    <a href="/features">Features</a>
+    <a href="/download">Download</a>
+    <a href="/getting-started">Docs</a>
+    <a href="/security">Security</a>
+    <a href="https://github.com/Meanski/noxed" rel="noopener">GitHub</a>
+    <a href="https://github.com/Meanski/noxed/issues" rel="noopener">Issues</a>
+  </nav>
+  <span>MIT licensed · © 2026 Sean Woodliffe</span>
+</footer>
+
+</body>
+</html>

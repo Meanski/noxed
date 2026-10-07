@@ -9,6 +9,13 @@
 </p>
 
 <p align="center">
+  <a href="https://noxed.app"><b>noxed.app</b></a> ·
+  <a href="https://noxed.app/download">Download</a> ·
+  <a href="https://noxed.app/getting-started">Getting started</a> ·
+  <a href="https://noxed.app/security">Security</a>
+</p>
+
+<p align="center">
   <a href="https://github.com/Meanski/noxed/actions/workflows/ci.yml"><img src="https://github.com/Meanski/noxed/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
   <img src="docs/badges/quality_gate.svg" alt="Quality gate" />
   <img src="docs/badges/coverage.svg" alt="Coverage" />
@@ -81,14 +88,10 @@ tool, not the golden standard when it comes to software development. If you want
 
 ## Install
 
-Grab a build from the releases page, or build one yourself (below).
-
-**macOS note:** release builds are not yet signed or notarized. If macOS
-reports the app as damaged after download, clear the quarantine flag:
-
-```sh
-xattr -cr /Applications/noxed.app
-```
+Download a build from [noxed.app/download](https://noxed.app/download) or the
+[releases page](https://github.com/Meanski/noxed/releases/latest), or build one
+yourself (below). macOS builds are signed and notarized; Windows installers are
+code-signed.
 
 **Linux note:** credentials are stored through `libsecret`, so a keyring
 service (GNOME Keyring or KWallet) must be running. On Debian/Ubuntu:
