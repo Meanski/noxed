@@ -1,5 +1,7 @@
-import { Client, Algorithms, ClientChannel, ConnectConfig } from 'ssh2'
-import { readFileSync } from 'node:fs'
+import { Client, Algorithms, ClientChannel, ConnectConfig, utils } from 'ssh2'
+import { readFileSync, statSync } from 'node:fs'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
 import { getSessionById, Session } from './sessions'
 import { getCredential, isUnlocked } from './keychain'
 import { isAllowedKeyPath } from './security'
@@ -144,6 +146,41 @@ export function openJumpSocket(via: Client, destHost: string, destPort: number):
 }
 
 const MAX_JUMP_DEPTH = 3
+
+// OpenSSH's default identities, in the order `ssh` tries them.
+const DEFAULT_IDENTITY_FILES = ['id_ed25519', 'id_ecdsa', 'id_rsa']
+const MAX_IDENTITY_BYTES = 64 * 1024
+
+function readDefaultIdentities(): string[] {
+  const keys: string[] = []
+  for (const name of DEFAULT_IDENTITY_FILES) {
+    const path = join(homedir(), '.ssh', name)
+    try {
+      if (statSync(path).size > MAX_IDENTITY_BYTES) continue
+      const contents = readFileSync(path, 'utf-8')
+      // Passphrase-protected keys can't be used without prompting; skip them
+      // rather than failing the whole connection (the agent may hold them).
+      if (!(utils.parseKey(contents) instanceof Error)) keys.push(contents)
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+        console.error(`[ssh] could not read default identity ${path}: ${toMessage(err)}`)
+      }
+    }
+  }
+  return keys
+}
+
+/**
+ * Auth for a connection given no password or key — what `ssh user@host` does:
+ * the SSH agent, then unencrypted default keys from ~/.ssh. Undefined when
+ * neither exists, leaving ssh2's own defaults in place.
+ */
+export function defaultAuthMethods(username: string): ConnectConfig['authHandler'] {
+  const methods: Array<{ type: 'agent'; username: string; agent: string } | { type: 'publickey'; username: string; key: string }> = []
+  if (process.env.SSH_AUTH_SOCK) methods.push({ type: 'agent', username, agent: process.env.SSH_AUTH_SOCK })
+  for (const key of readDefaultIdentities()) methods.push({ type: 'publickey', username, key })
+  return methods.length > 0 ? methods : undefined
+}
 
 export async function credentialsForSession(session: Session): Promise<{ password?: string; privateKey?: string }> {
   if (session.authType === 'key') {

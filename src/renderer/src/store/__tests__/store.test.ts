@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { useAppStore } from '../index'
+import { useAppStore, selectSession } from '../index'
+import { resolveSshCredentials, setAdhocPassword } from '../../lib/sshCredentials'
 import { groupColor, connectionColor, dbTypeLabel } from '../../lib/colors'
 import type { Session } from '../index'
 
@@ -454,5 +455,49 @@ describe('Store utility functions', () => {
     it('returns "Database" for undefined', () => {
       expect(dbTypeLabel(undefined)).toBe('Database')
     })
+  })
+})
+
+describe('quick-connect sessions', () => {
+  beforeEach(() => {
+    useAppStore.setState({ sessions: [], adhocSessions: [], tabs: [], activeTabId: null, quickConnectTarget: 'x' })
+  })
+
+  it('opens an ad-hoc session in a tab without adding it to saved connections', () => {
+    useAppStore.getState().openAdhocSession(makeSession({ id: 'adhoc-1' }))
+    const s = useAppStore.getState()
+    expect(s.sessions).toEqual([])
+    expect(s.adhocSessions).toEqual([expect.objectContaining({ id: 'adhoc-1', adhoc: true })])
+    expect(s.tabs).toHaveLength(1)
+    expect(s.tabs[0].sessionId).toBe('adhoc-1')
+    expect(s.quickConnectTarget).toBeNull()
+  })
+
+  it('finds saved and ad-hoc sessions alike', () => {
+    const saved = makeSession({ id: 'saved' })
+    useAppStore.setState({ sessions: [saved] })
+    useAppStore.getState().openAdhocSession(makeSession({ id: 'adhoc-1' }))
+    const state = useAppStore.getState()
+    expect(selectSession('saved')(state)).toBe(saved)
+    expect(selectSession('adhoc-1')(state)?.adhoc).toBe(true)
+    expect(selectSession('missing')(state)).toBeUndefined()
+    expect(selectSession(undefined)(state)).toBeUndefined()
+  })
+
+  it('forgets an ad-hoc session and its password when its last tab closes', async () => {
+    setAdhocPassword('adhoc-1', 'secret')
+    useAppStore.getState().openAdhocSession(makeSession({ id: 'adhoc-1', adhoc: true }))
+    const parent = useAppStore.getState().tabs[0]
+    useAppStore.getState().splitTab(parent.id, useAppStore.getState().adhocSessions[0])
+    const pane = useAppStore.getState().tabs.find((t) => t.paneOf === parent.id)!
+
+    // Closing a pane keeps the session: the parent tab still uses it.
+    useAppStore.getState().closeTab(pane.id)
+    expect(useAppStore.getState().adhocSessions).toHaveLength(1)
+    expect(await resolveSshCredentials(useAppStore.getState().adhocSessions[0])).toEqual({ password: 'secret' })
+
+    useAppStore.getState().closeTab(parent.id)
+    expect(useAppStore.getState().adhocSessions).toEqual([])
+    expect(await resolveSshCredentials(makeSession({ id: 'adhoc-1', adhoc: true }))).toEqual({ password: undefined })
   })
 })

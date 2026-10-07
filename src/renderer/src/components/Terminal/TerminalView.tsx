@@ -3,7 +3,8 @@ import { Terminal } from '@xterm/xterm'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import { SearchAddon } from '@xterm/addon-search'
 import '@xterm/xterm/css/xterm.css'
-import { useAppStore, Tab, Session } from '../../store'
+import { useAppStore, Tab, selectSession } from '../../store'
+import { resolveSshCredentials } from '../../lib/sshCredentials'
 import { checkResourceAlerts } from '../../lib/metricsAlerts'
 import SnippetRunner, { Snippet, SnippetScope } from './SnippetRunner'
 import TerminalSearchBar from './TerminalSearchBar'
@@ -86,7 +87,6 @@ export default function TerminalView({ tab }: Props) {
   const updateTab = useAppStore((s) => s.updateTab)
   const closeTab = useAppStore((s) => s.closeTab)
   const toggleFilesDrawer = useAppStore((s) => s.toggleFilesDrawer)
-  const sessions = useAppStore((s) => s.sessions)
   const setServerMetrics = useAppStore((s) => s.setServerMetrics)
   const addNotification = useAppStore((s) => s.addNotification)
   const [connecting, setConnecting] = useState(false)
@@ -113,7 +113,7 @@ export default function TerminalView({ tab }: Props) {
   const lastWheelDeltaRef = useRef<number | null>(null)
   const behaviorRef = useRef<TerminalBehavior>({ copyOnSelect: false, bellSound: true, resourceAlerts: true })
 
-  const session = sessions.find((s) => s.id === tab.sessionId)
+  const session = useAppStore(selectSession(tab.sessionId))
 
   // Split panes render under their parent tab; visibility and keyboard
   // shortcuts follow the parent's active state plus pane focus.
@@ -509,7 +509,9 @@ export default function TerminalView({ tab }: Props) {
     termRef.current?.write(`${dim}Connecting to ${session.username}@${session.host}…${reset}\r\n`)
 
     try {
-      const { password, privateKey } = await resolveSshCredentials(session, tab.sessionId)
+      // Quick-connect sessions may rely on the agent/default keys, so only a
+      // saved password session must have a password.
+      const { password, privateKey } = await resolveSshCredentials(session, { requirePassword: !session.adhoc })
 
       const streamId = await window.api.ssh.connect({
         host: session.host,
@@ -617,31 +619,3 @@ export default function TerminalView({ tab }: Props) {
 }
 
 const BACKOFF_SECONDS = [5, 15, 30]
-
-async function readKeyFile(path: string): Promise<string | undefined> {
-  try {
-    return await window.api.fs.readFile(path)
-  } catch (err: any) {
-    console.error(`[terminal] failed to read key file ${path}:`, err?.message ?? err)
-    return undefined
-  }
-}
-
-// Resolves either the private key or the stored password for a session,
-// throwing a user-facing error when neither is usable.
-async function resolveSshCredentials(session: Session, sessionId?: string): Promise<{ password?: string; privateKey?: string }> {
-  if (session.authType === 'key') {
-    if (!session.keyPath) throw new Error('Key authentication selected but no key file path is configured')
-    const privateKey = await readKeyFile(session.keyPath)
-    if (!privateKey) throw new Error(`Cannot read private key: ${session.keyPath}`)
-    return { privateKey }
-  }
-  const creds = sessionId
-    ? await window.api.sessions.getCredentials(sessionId).catch((err: any) => {
-        throw new Error(err?.message?.includes('locked') ? 'App is locked — unlock noxed to reconnect' : (err?.message ?? 'Failed to retrieve credentials'))
-      })
-    : null
-  const password = creds?.password
-  if (password === undefined) throw new Error('No password found for this session — re-enter credentials in Settings')
-  return { password }
-}

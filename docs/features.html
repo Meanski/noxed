@@ -73,6 +73,7 @@
 <p>Save every host once and open it in a tab. Sessions are colour-coded per host and can be grouped into projects or pinned as favorites. A command palette (<kbd>⌘K</kbd>) finds any connection quickly.</p>
 <ul>
   <li><strong>Split panes:</strong> up to four terminals in one tab, resizable by dragging the dividers, with optional keystroke broadcast to all of them.</li>
+  <li><strong>Quick connect:</strong> press <kbd>⌘⇧K</kbd>, or type <code>user@host</code> into the command palette, to connect without saving the host first. It understands <code>ssh</code> commands as you'd paste them, e.g. <code>ssh deploy@web -p 2222</code>.</li>
   <li><strong>Jump hosts (ProxyJump):</strong> reach servers behind a bastion. Chained hops resolve automatically.</li>
   <li><strong>Import from <code>~/.ssh/config</code>:</strong> bring in your existing hosts, including ProxyJump settings.</li>
   <li><strong>Host key verification:</strong> new hosts show their fingerprint for you to confirm, changed keys are blocked with a warning, and existing <code>~/.ssh/known_hosts</code> entries are honoured.</li>

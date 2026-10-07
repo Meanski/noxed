@@ -363,6 +363,7 @@ describe('menu', () => {
   it.each([
     'new-connection',
     'open-connection',
+    'quick-connect',
     'new-local-terminal',
     'close-tab',
   ] as const)('on(%s) subscribes to the menu channel and unsubscribes', (action) => {

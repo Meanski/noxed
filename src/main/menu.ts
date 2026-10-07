@@ -39,6 +39,7 @@ export function buildAppMenu(): void {
       submenu: [
         { label: 'New Connection…', accelerator: 'CmdOrCtrl+N', click: () => send('menu:new-connection') },
         { label: 'Open Connection…', accelerator: 'CmdOrCtrl+T', click: () => send('menu:open-connection') },
+        { label: 'Quick Connect…', accelerator: 'CmdOrCtrl+Shift+K', click: () => send('menu:quick-connect') },
         { label: 'New Local Terminal', accelerator: 'CmdOrCtrl+`', click: () => send('menu:new-local-terminal') },
         { type: 'separator' },
         { label: 'Close Tab', accelerator: 'CmdOrCtrl+W', click: () => send('menu:close-tab') },

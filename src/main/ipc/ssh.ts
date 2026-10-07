@@ -8,6 +8,7 @@ import {
   SSH_CONNECT_DEFAULTS,
   sshConnectOptions,
   connectSessionClient,
+  defaultAuthMethods,
   openJumpSocket,
   ManagedSshConnection,
 } from './sshClients'
@@ -294,6 +295,7 @@ export function registerSshHandlers(): void {
           sock,
           agent: process.env.SSH_AUTH_SOCK,
           tryKeyboard: true,
+          authHandler: config.password || config.privateKey ? undefined : defaultAuthMethods(config.username),
           ...sshConnectOptions(),
           ...verifiedHandshake(client, config.host, config.port),
           algorithms: { ...SSH_CONNECT_DEFAULTS.algorithms },

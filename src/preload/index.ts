@@ -347,7 +347,7 @@ contextBridge.exposeInMainWorld('api', {
 
   // Application-menu commands, forwarded from the main process
   menu: {
-    on: (action: 'new-connection' | 'open-connection' | 'new-local-terminal' | 'close-tab', cb: () => void) => {
+    on: (action: 'new-connection' | 'open-connection' | 'quick-connect' | 'new-local-terminal' | 'close-tab', cb: () => void) => {
       const channel = `menu:${action}`
       const handler = () => cb()
       ipcRenderer.on(channel, handler)

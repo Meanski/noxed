@@ -43,7 +43,7 @@ vi.mock('ssh2', async () => {
     }
   }
 
-  return { Client: FakeClient }
+  return { Client: FakeClient, utils: { parseKey: vi.fn() } }
 })
 
 vi.mock('../sessions', () => ({
@@ -61,11 +61,14 @@ vi.mock('../settings', () => ({
 }))
 vi.mock('node:fs', () => ({
   readFileSync: vi.fn(),
+  statSync: vi.fn(),
 }))
+vi.mock('node:os', async (orig) => ({ ...(await orig<typeof import('node:os')>()), homedir: () => '/home/me' }))
 
-import { readFileSync } from 'node:fs'
-import { Client } from 'ssh2'
+import { readFileSync, statSync } from 'node:fs'
+import { Client, utils } from 'ssh2'
 import {
+  defaultAuthMethods,
   parseKeepaliveIntervalMs,
   sshConnectOptions,
   connectRawClient,
@@ -354,5 +357,44 @@ describe('connectSessionClient', () => {
 
     await expect(connectSessionClient('leaf')).rejects.toThrow(ConnectionError)
     expect((fakeSsh.clients[0] as FakeSshClient).end).toHaveBeenCalled()
+  })
+})
+
+describe('defaultAuthMethods', () => {
+  const enoent = (): never => { throw Object.assign(new Error('missing'), { code: 'ENOENT' }) }
+  const originalSock = process.env.SSH_AUTH_SOCK
+
+  afterEach(() => {
+    if (originalSock === undefined) delete process.env.SSH_AUTH_SOCK
+    else process.env.SSH_AUTH_SOCK = originalSock
+  })
+
+  it('tries the agent, then unencrypted default keys, like ssh does', () => {
+    process.env.SSH_AUTH_SOCK = '/tmp/agent.sock'
+    vi.mocked(statSync).mockImplementation(((path: string) => {
+      if (path.endsWith('id_ecdsa')) return enoent()
+      return { size: 400 }
+    }) as never)
+    vi.mocked(readFileSync).mockImplementation(((path: string) => `KEY:${path}`) as never)
+    // id_rsa is passphrase-protected, so parseKey rejects it.
+    vi.mocked(utils.parseKey).mockImplementation(((key: string) => (key.endsWith('id_rsa') ? new Error('encrypted') : {})) as never)
+
+    expect(defaultAuthMethods('deploy')).toEqual([
+      { type: 'agent', username: 'deploy', agent: '/tmp/agent.sock' },
+      { type: 'publickey', username: 'deploy', key: 'KEY:/home/me/.ssh/id_ed25519' },
+    ])
+  })
+
+  it('skips oversized keys and logs unreadable ones', () => {
+    delete process.env.SSH_AUTH_SOCK
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    vi.mocked(statSync).mockImplementation(((path: string) => {
+      if (path.endsWith('id_ed25519')) return { size: 10 * 1024 * 1024 }
+      if (path.endsWith('id_ecdsa')) throw Object.assign(new Error('denied'), { code: 'EACCES' })
+      return enoent()
+    }) as never)
+    expect(defaultAuthMethods('deploy')).toBeUndefined()
+    expect(errSpy).toHaveBeenCalledWith(expect.stringContaining('id_ecdsa'))
+    errSpy.mockRestore()
   })
 })
