@@ -114,13 +114,16 @@ describe('HostKeyPrompt', () => {
     expect(screen.queryByRole('dialog')).toBeNull()
   })
 
-  it('surfaces a failed response as a notification', async () => {
+  it('reports a failed answer and brings the prompt back to retry', async () => {
     const { api, prompt } = setup()
-    api.hostKeys.respond.mockRejectedValueOnce(new Error('gone'))
+    api.hostKeys.respond.mockRejectedValueOnce(new Error('Unlock noxed to trust a host key'))
     prompt(newPrompt())
-    fireEvent.click(screen.getByText('Cancel'))
+    fireEvent.click(screen.getByText('Trust and connect'))
     await waitFor(() =>
-      expect(useAppStore.getState().notifications.some((n) => n.message === 'gone')).toBe(true),
+      expect(useAppStore.getState().notifications.some((n) => n.message === 'Unlock noxed to trust a host key')).toBe(true),
     )
+    expect(await screen.findByRole('dialog', { name: 'Trust example.com?' })).toBeTruthy()
+    fireEvent.click(screen.getByText('Cancel'))
+    expect(api.hostKeys.respond).toHaveBeenLastCalledWith('req-1', 'reject')
   })
 })

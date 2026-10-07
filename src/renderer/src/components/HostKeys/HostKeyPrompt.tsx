@@ -50,8 +50,12 @@ export default function HostKeyPrompt() {
   // consuming the next queued prompt; main ignores the duplicate answer.
   const answer = (decision: Decision) => {
     setQueue(withoutRequest(current.requestId))
-    window.api.hostKeys.respond(current.requestId, decision).catch((err: unknown) => {
+    const answered = current
+    window.api.hostKeys.respond(answered.requestId, decision).catch((err: unknown) => {
       useAppStore.getState().addNotification({ type: 'error', message: ipcErrorMessage(err, 'Could not send host key decision') })
+      // Main still holds the request (e.g. it refused "trust" because the app
+      // just auto-locked), so bring the prompt back to retry or reject.
+      setQueue((q) => (q.some((p) => p.requestId === answered.requestId) ? q : [answered, ...q]))
     })
   }
   const reject = () => answer('reject')

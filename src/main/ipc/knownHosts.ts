@@ -66,6 +66,8 @@ export function hostFieldMatches(field: string, name: string): boolean {
   return matched
 }
 
+const SUPPORTED_MARKERS = new Set(['@cert-authority', '@revoked'])
+
 export interface KnownHostsLine {
   marker?: string
   hostField: string
@@ -88,6 +90,8 @@ function parseKnownHostsLine(rawLine: string): KnownHostsLine | null {
   if (!line || line.startsWith('#')) return null
   const fields = line.split(/\s+/)
   const marker = fields[0].startsWith('@') ? fields.shift() : undefined
+  // OpenSSH treats unknown markers as invalid lines; never read them as trust.
+  if (marker !== undefined && !SUPPORTED_MARKERS.has(marker)) return null
   if (fields.length < 3) return null
   return { marker, hostField: fields[0], keyType: fields[1], key: fields[2] }
 }

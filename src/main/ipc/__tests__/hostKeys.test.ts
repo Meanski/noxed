@@ -361,6 +361,31 @@ describe('verifiedHandshake', () => {
     expect(await first).toBe(false)
   })
 
+  it('withdraws the prompt once every waiting connection has gone away', async () => {
+    const a = fakeClient()
+    const b = fakeClient()
+    a.on('error', () => {})
+    b.on('error', () => {})
+    const verifyA = vi.fn()
+    const verifyB = vi.fn()
+    ;(verifiedHandshake(a as never, 'example.com', 22).hostVerifier as (k: Buffer, v: (ok: boolean) => void) => void)(KEY1, verifyA)
+    await Promise.resolve()
+    ;(verifiedHandshake(b as never, 'example.com', 22).hostVerifier as (k: Buffer, v: (ok: boolean) => void) => void)(KEY1, verifyB)
+    const requestId = lastPrompt().requestId
+
+    // One of two connections dropping keeps the prompt for the other.
+    a.emit('close')
+    await Promise.resolve()
+    expect(sent.some(([ch]) => ch === 'hostkeys:dismiss')).toBe(false)
+
+    b.emit('error', new Error('reset'))
+    await vi.waitFor(() => expect(verifyB).toHaveBeenCalledWith(false))
+    expect(sent).toContainEqual(['hostkeys:dismiss', requestId])
+    // A late answer can no longer trust the key.
+    expect(handlers.get('hostkeys:respond')!(sender, requestId, 'trust')).toBeUndefined()
+    expect(listTrustedHostKeys()).toEqual([])
+  })
+
   it('stops timing once the connection is ready', async () => {
     vi.useFakeTimers()
     const client = fakeClient()

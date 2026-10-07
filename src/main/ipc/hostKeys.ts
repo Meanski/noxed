@@ -66,6 +66,8 @@ interface InflightCheck {
   result: Promise<boolean>
   watchers: Set<PromptWatcher>
   prompting: boolean
+  /** Withdraws the open prompt (rejecting it); set while one is shown. */
+  cancelPrompt?: () => void
 }
 
 const pending = new Map<string, PendingPrompt>()
@@ -115,7 +117,7 @@ function promptTarget(): Electron.WebContents | null {
   return win && !win.isDestroyed() ? win.webContents : null
 }
 
-function askUser(prompt: Omit<HostKeyPrompt, 'requestId'>): Promise<HostKeyDecision> {
+function askUser(prompt: Omit<HostKeyPrompt, 'requestId'>, onOpen?: (cancel: () => void) => void): Promise<HostKeyDecision> {
   const target = promptTarget()
   if (!target) return Promise.resolve('reject')
   const requestId = randomUUID()
@@ -136,6 +138,10 @@ function askUser(prompt: Omit<HostKeyPrompt, 'requestId'>): Promise<HostKeyDecis
     target.once('destroyed', onDestroyed)
     pending.set(requestId, { webContentsId: target.id, settle })
     target.send('hostkeys:prompt', { ...prompt, requestId })
+    onOpen?.(() => {
+      if (!target.isDestroyed()) target.send('hostkeys:dismiss', requestId)
+      settle('reject')
+    })
   })
 }
 
@@ -144,9 +150,10 @@ async function askWhileWatched(check: InflightCheck, prompt: Omit<HostKeyPrompt,
   check.prompting = true
   check.watchers.forEach((w) => w.onPromptStart())
   try {
-    return await askUser(prompt)
+    return await askUser(prompt, (cancel) => { check.cancelPrompt = cancel })
   } finally {
     check.prompting = false
+    check.cancelPrompt = undefined
     check.watchers.forEach((w) => w.onPromptEnd())
   }
 }
@@ -209,6 +216,18 @@ export function verifyHostKey(host: string, port: number, blob: Buffer, watcher?
 }
 
 /**
+ * A connection gave up (closed or errored) before its host key was decided.
+ * Once no connection is waiting on a check, its prompt is withdrawn so a late
+ * "Trust" can't save a key for a connection that no longer exists.
+ */
+function abandonWatcher(watcher: PromptWatcher): void {
+  for (const check of inflight.values()) {
+    if (!check.watchers.delete(watcher)) continue
+    if (check.watchers.size === 0) check.cancelPrompt?.()
+  }
+}
+
+/**
  * Connect options that verify the host key and enforce the handshake timeout
  * ourselves. ssh2's own readyTimeout can't be paused, so it would kill the
  * connection while the user is still reading a fingerprint; this timer stops
@@ -229,16 +248,20 @@ export function verifiedHandshake(client: Client, host: string, port: number): P
       client.destroy()
     }, SSH_HANDSHAKE_TIMEOUT_MS)
   }
+  const watcher: PromptWatcher = { onPromptStart: disarm, onPromptEnd: arm }
   const finish = () => {
     finished = true
     disarm()
   }
+  const abandon = () => {
+    finish()
+    abandonWatcher(watcher)
+  }
   client.once('ready', finish)
-  client.once('error', finish)
-  client.once('close', finish)
+  client.once('error', abandon)
+  client.once('close', abandon)
   arm()
 
-  const watcher: PromptWatcher = { onPromptStart: disarm, onPromptEnd: arm }
   return {
     readyTimeout: 0,
     hostVerifier: (key: Buffer, verify: (valid: boolean) => void) => {

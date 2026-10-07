@@ -108,6 +108,11 @@ describe('matchKnownHosts', () => {
     expect(matchKnownHosts(file, 'example.com', 22, 'ssh-ed25519', KEY2)).toEqual({ verdict: 'mismatch', sameTypeKeys: [KEY1] })
   })
 
+  it('ignores lines with unsupported markers instead of trusting them', () => {
+    const text = `@future-marker example.com ssh-ed25519 ${KEY1}`
+    expect(matchKnownHosts(text, 'example.com', 22, 'ssh-ed25519', KEY1).verdict).toBe('none')
+  })
+
   it('returns none for unknown hosts and ports', () => {
     expect(matchKnownHosts(file, 'nowhere.com', 22, 'ssh-ed25519', KEY1).verdict).toBe('none')
     expect(matchKnownHosts(file, 'example.com', 2200, 'ssh-ed25519', KEY1).verdict).toBe('none')
