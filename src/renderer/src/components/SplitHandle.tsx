@@ -56,7 +56,9 @@ export default function SplitHandle({
         type="range"
         className="sr-only"
         aria-label={label}
-        aria-orientation={orientation}
+        // ARIA orientation is the axis the value moves along: a vertical bar
+        // is dragged left/right, so it's a horizontal slider (and vice versa).
+        aria-orientation={vertical ? 'horizontal' : 'vertical'}
         min={min}
         max={max}
         step={step}

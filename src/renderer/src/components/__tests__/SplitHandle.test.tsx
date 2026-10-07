@@ -55,7 +55,8 @@ describe('SplitHandle', () => {
   it('exposes a labelled range input for keyboard users', () => {
     const { onChange, input } = setup({ orientation: 'horizontal', step: 5 })
     expect(input.type).toBe('range')
-    expect(input.getAttribute('aria-orientation')).toBe('horizontal')
+    // A horizontal divider moves up/down, so it's announced as a vertical slider.
+    expect(input.getAttribute('aria-orientation')).toBe('vertical')
     expect([input.min, input.max, input.step, input.value]).toEqual(['20', '80', '5', '50'])
     fireEvent.change(input, { target: { value: '65' } })
     expect(onChange).toHaveBeenCalledWith(65)

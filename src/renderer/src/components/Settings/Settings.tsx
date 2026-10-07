@@ -179,6 +179,9 @@ function useSettings() {
     window.api.settings.get().then(s => { setSettings(s); setLoaded(true) })
   }, [])
   const update = async (key: string, value: unknown) => {
+    // Apply locally first so quick repeat clicks (font size +/-) build on the
+    // new value instead of the one from before the IPC round-trip.
+    setSettings(prev => ({ ...prev, [key]: value }))
     const updated = await window.api.settings.set(key, value)
     setSettings(updated)
     window.dispatchEvent(new CustomEvent('noxed:settings-changed'))
