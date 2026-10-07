@@ -15,6 +15,9 @@
   --nox-hover:    rgba(229,231,235,0.6);
   --nox-active:   #EBF0FF;
   --nox-active-t: #3B5CCC;
+  /* Danger: text on surfaces, and a fill that carries white text (both ≥ 4.5:1) */
+  --nox-danger-text: #B91C1C;
+  --nox-danger-bg:   #B91C1C;
 
   /* Syntax highlighting (CodeEditor) */
   --nox-syn-keyword:  #9333EA;
@@ -39,6 +42,8 @@ html.dark {
   --nox-hover:    rgba(48,54,61,0.7);
   --nox-active:   #1C2D5E;
   --nox-active-t: #79A0FF;
+  --nox-danger-text: #FF7B72;
+  --nox-danger-bg:   #B62324;
 
   /* Syntax highlighting (CodeEditor) */
   --nox-syn-keyword:  #C792EA;

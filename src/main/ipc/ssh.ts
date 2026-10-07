@@ -3,6 +3,7 @@ import { Client, ClientChannel } from 'ssh2'
 import { randomUUID } from 'node:crypto'
 import { ConnectionError, OwnershipError, ValidationError, toMessage } from './errors'
 import { validateHost, validatePort } from './security'
+import { describeSshError, verifiedHandshake } from './hostKeys'
 import {
   SSH_CONNECT_DEFAULTS,
   sshConnectOptions,
@@ -273,7 +274,7 @@ export function registerSshHandlers(): void {
         client.on('error', (err) => {
           if (!settled) {
             upstream?.dispose()
-            settle(() => reject(new ConnectionError(toMessage(err))))
+            settle(() => reject(new ConnectionError(describeSshError(err))))
             return
           }
           // Already-connected clients can also emit 'error' — surface as close.
@@ -294,6 +295,7 @@ export function registerSshHandlers(): void {
           agent: process.env.SSH_AUTH_SOCK,
           tryKeyboard: true,
           ...sshConnectOptions(),
+          ...verifiedHandshake(client, config.host, config.port),
           algorithms: { ...SSH_CONNECT_DEFAULTS.algorithms },
         })
       })

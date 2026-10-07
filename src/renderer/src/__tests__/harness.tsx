@@ -169,6 +169,13 @@ export function buildWindowApi() {
       del: vi.fn().mockResolvedValue(undefined),
       command: vi.fn().mockResolvedValue(''),
     },
+    hostKeys: {
+      list: vi.fn().mockResolvedValue([]),
+      remove: vi.fn().mockResolvedValue(undefined),
+      respond: vi.fn().mockResolvedValue(undefined),
+      onPrompt: vi.fn().mockImplementation(unsub),
+      onDismiss: vi.fn().mockImplementation(unsub),
+    },
     rdp: {
       connect: vi.fn().mockResolvedValue('rdp-1'),
       disconnect: vi.fn().mockResolvedValue(undefined),

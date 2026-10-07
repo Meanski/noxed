@@ -323,6 +323,19 @@ describe('redis', () => {
   })
 })
 
+describe('hostKeys', () => {
+  it('forwards invoke calls', () => {
+    expectInvoke(api.hostKeys.list, [], 'hostkeys:list')
+    expectInvoke(api.hostKeys.remove, ['h', 22, 'ssh-ed25519'], 'hostkeys:remove')
+    expectInvoke(api.hostKeys.respond, ['req-1', 'trust'], 'hostkeys:respond')
+  })
+
+  it('subscriptions forward events and unsubscribe', () => {
+    expectSubscription(api.hostKeys.onPrompt, 'hostkeys:prompt', [{ requestId: 'req-1' }])
+    expectSubscription(api.hostKeys.onDismiss, 'hostkeys:dismiss', ['req-1'])
+  })
+})
+
 describe('rdp', () => {
   it('forwards invoke calls', () => {
     const config = { host: 'h', username: 'u', password: 'p' }

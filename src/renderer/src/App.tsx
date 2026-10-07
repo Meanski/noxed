@@ -10,6 +10,7 @@ import CommandPalette from './components/CommandPalette/CommandPalette'
 import NotificationHost from './components/Notifications/NotificationHost'
 import UnlockScreen from './components/UnlockScreen'
 import SidebarResizeHandle, { clampSidebarWidth } from './components/Sidebar/SidebarResizeHandle'
+import HostKeyPrompt from './components/HostKeys/HostKeyPrompt'
 
 export const SIDEBAR_W = 220
 
@@ -171,6 +172,7 @@ export default function App() {
         <AddConnectionModal onClose={() => { setShowAddConnection(false); setShowAddSession(false) }} />
       )}
       {showCommandPalette && <CommandPalette onClose={() => setShowCommandPalette(false)} />}
+      <HostKeyPrompt />
     </div>
   )
 }
