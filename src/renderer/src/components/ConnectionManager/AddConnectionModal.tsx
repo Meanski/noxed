@@ -6,6 +6,7 @@ import {
 } from 'lucide-react'
 import { useAppStore } from '../../store'
 import { ipcErrorMessage } from '../../lib/format'
+import { rdpSupported } from '../../lib/platform'
 
 interface K8sContextEntry {
   name: string
@@ -557,9 +558,7 @@ function TypeSelector({ selected, onSelect }: Readonly<{
   selected: ConnectionType
   onSelect: (t: ConnectionType) => void
 }>) {
-  // RDP needs the bundled FreeRDP sidecar, which currently ships on macOS only.
-  // Hide the type elsewhere so we never offer a connection that can't run.
-  const options = TYPE_OPTIONS.filter(o => o.type !== 'rdp' || window.api.platform === 'darwin')
+  const options = TYPE_OPTIONS.filter(o => o.type !== 'rdp' || rdpSupported())
   return (
     <div className="px-6 py-4">
       <div className="grid grid-cols-2 gap-3">
