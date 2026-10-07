@@ -1,4 +1,4 @@
-import { app, shell, BrowserWindow, ipcMain, session } from 'electron'
+import { app, shell, BrowserWindow, session } from 'electron'
 
 // k8s API calls can reject with malformed responses; those rejections are
 // already caught inside ipcMain.handle wrappers, but a double-rejection or an
@@ -11,7 +11,6 @@ process.on('uncaughtException', (err) => {
 })
 
 import { join } from 'node:path'
-import { readFileSync } from 'node:fs'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { registerSshHandlers, disposeSshStreamsForSender } from './ipc/ssh'
 import { registerSftpHandlers, disposeSftpClientsForSender } from './ipc/sftp'
@@ -29,8 +28,7 @@ import { registerDatabaseHandlers, disposeDatabaseConnectionsForSender } from '.
 import { registerLocalFsHandlers } from './ipc/localfs'
 import { registerRdpHandlers, disposeRdpSessionsForSender } from './ipc/rdp'
 import { registerHostKeyHandlers } from './ipc/hostKeys'
-import { isAllowedKeyPath } from './ipc/security'
-import { ValidationError } from './ipc/errors'
+import { registerKeyFileHandlers } from './ipc/keyFiles'
 import { buildAppMenu } from './menu'
 import { registerUpdaterHandlers, checkForUpdatesOnStartup } from './updater'
 
@@ -146,12 +144,7 @@ app.whenReady().then(() => {
   registerHostKeyHandlers()
   registerUpdaterHandlers()
 
-  ipcMain.handle('fs:readFile', (_e, filePath: unknown) => {
-    if (typeof filePath !== 'string') throw new ValidationError('Path is required')
-    const check = isAllowedKeyPath(filePath)
-    if (!check.ok) throw new ValidationError(check.reason)
-    return readFileSync(check.resolved, 'utf-8')
-  })
+  registerKeyFileHandlers()
 
   createWindow()
   checkForUpdatesOnStartup()

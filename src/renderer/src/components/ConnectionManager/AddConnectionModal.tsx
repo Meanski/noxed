@@ -6,6 +6,7 @@ import {
 } from 'lucide-react'
 import { useAppStore } from '../../store'
 import { ipcErrorMessage } from '../../lib/format'
+import { readPrivateKey } from '../../lib/sshCredentials'
 import { rdpSupported } from '../../lib/platform'
 import { ACCENT } from '../../lib/colors'
 
@@ -270,8 +271,7 @@ export default function AddConnectionModal({ onClose }: Props) {
       if (selectedType === 'ssh' || selectedType === 'sftp') {
         let privateKey: string | undefined
         if (form.authType === 'key') {
-          privateKey = await window.api.fs.readFile(form.keyPath.trim()).catch(() => undefined)
-          if (!privateKey) throw new Error(`Cannot read private key: ${form.keyPath.trim()}`)
+          privateKey = await readPrivateKey(form.keyPath.trim())
         }
         const target = {
           host,

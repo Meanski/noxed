@@ -13,6 +13,16 @@ export function clearAdhocPassword(sessionId: string): void {
   adhocPasswords.delete(sessionId)
 }
 
+/** Reads a key file through main, which refuses while noxed is locked. */
+export async function readPrivateKey(keyPath: string): Promise<string> {
+  const privateKey = await window.api.fs.readFile(keyPath).catch((err: unknown) => {
+    if (ipcErrorMessage(err, '').includes('locked')) throw new Error('App is locked — unlock noxed to use your keys')
+    return undefined
+  })
+  if (!privateKey) throw new Error(`Cannot read private key: ${keyPath}`)
+  return privateKey
+}
+
 export interface SshCredentials {
   password?: string
   privateKey?: string
@@ -27,9 +37,7 @@ export interface SshCredentials {
 export async function resolveSshCredentials(session: Session, { requirePassword = false } = {}): Promise<SshCredentials> {
   if (session.authType === 'key') {
     if (!session.keyPath) throw new Error('Key authentication selected but no key file path is configured')
-    const privateKey = await window.api.fs.readFile(session.keyPath).catch(() => undefined)
-    if (!privateKey) throw new Error(`Cannot read private key: ${session.keyPath}`)
-    return { privateKey }
+    return { privateKey: await readPrivateKey(session.keyPath) }
   }
 
   // Main tries the SSH agent, then default keys, when given nothing.

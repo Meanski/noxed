@@ -13,6 +13,12 @@ describe('resolveSshCredentials', () => {
     expect(api.fs.readFile).toHaveBeenCalledWith('~/.ssh/id')
   })
 
+  it('asks to unlock when main refuses to read a key while locked', async () => {
+    const api = installWindowApi()
+    api.fs.readFile.mockRejectedValueOnce(new Error("Error invoking remote method 'fs:readFile': AuthError: App is locked — unlock noxed to use your keys"))
+    await expect(resolveSshCredentials(makeSession({ authType: 'key', keyPath: '~/.ssh/id' }))).rejects.toThrow('App is locked — unlock noxed to use your keys')
+  })
+
   it('explains a missing or unreadable key', async () => {
     const api = installWindowApi()
     await expect(resolveSshCredentials(makeSession({ authType: 'key', keyPath: undefined }))).rejects.toThrow('no key file path')
