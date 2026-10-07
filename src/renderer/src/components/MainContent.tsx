@@ -57,8 +57,9 @@ const PANE_MIN_PCT = 15
 const PANE_MAX_PCT = 85
 const PANE_DEFAULT_PCT = 50
 
-// 2 panes sit side by side; 3–4 form a 2×2 grid where the third pane spans the
-// bottom row. Column/row splits are shared by every pane in the grid.
+// 2 panes sit side by side; 3–4 form a 2×2 grid. With exactly three panes the
+// third spans the whole bottom row; with four, each takes its own cell.
+// Column/row splits are shared by every pane in the grid.
 function paneGrid(count: number, colPct: number, rowPct: number): React.CSSProperties {
   const columns = `${colPct}fr ${100 - colPct}fr`
   if (count === 2) return { gridTemplateColumns: columns }
