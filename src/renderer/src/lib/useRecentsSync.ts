@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import { useAppStore } from '../store'
-import { MAX_RECENTS, sanitizeRecents } from './recents'
+import { mergeRecents, sanitizeRecents } from './recents'
 import { ipcErrorMessage } from './format'
 
 // Recents change every time a tab opens; batch the writes.
@@ -24,10 +24,8 @@ export function useRecentsSync(): void {
       .get()
       .then((cfg: { recentConnections?: unknown }) => {
         // Anything opened before settings arrived goes first.
-        const current = useAppStore.getState().recentConnections
-        const saved = sanitizeRecents(cfg.recentConnections).filter((r) => !current.some((c) => c.id === r.id))
         loaded = true
-        useAppStore.getState().setRecentConnections([...current, ...saved].slice(0, MAX_RECENTS))
+        useAppStore.getState().setRecentConnections(mergeRecents(useAppStore.getState().recentConnections, sanitizeRecents(cfg.recentConnections)))
       })
       .catch((err: unknown) => {
         useAppStore.getState().addNotification({ type: 'warning', message: ipcErrorMessage(err, 'Could not load recent connections') })

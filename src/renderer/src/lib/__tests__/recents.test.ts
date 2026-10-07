@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { MAX_RECENTS, sanitizeRecents, withRecent } from '../recents'
+import { MAX_RECENTS, mergeRecents, sanitizeRecents, withRecent } from '../recents'
 
 describe('withRecent', () => {
   it('moves the connection to the front and caps the list', () => {
@@ -22,5 +22,9 @@ describe('sanitizeRecents', () => {
 
   it('keeps one entry per connection when loading saved recents', () => {
     expect(sanitizeRecents([{ id: 'a', at: 3 }, { id: 'b', at: 2 }, { id: 'a', at: 1 }])).toEqual([{ id: 'a', at: 3 }, { id: 'b', at: 2 }])
+  })
+
+  it('merges a saved list behind the current one without repeats', () => {
+    expect(mergeRecents([{ id: 'a', at: 5 }], [{ id: 'b', at: 2 }, { id: 'a', at: 1 }])).toEqual([{ id: 'a', at: 5 }, { id: 'b', at: 2 }])
   })
 })
