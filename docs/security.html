@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<!-- Google tag (gtag.js) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-EEH922EKWJ"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+
+  gtag('config', 'G-EEH922EKWJ');
+</script>
+<title>noxed security: keychain storage, no cloud, no telemetry</title>
+<meta name="description" content="How noxed stores credentials in your OS keychain, keeps data on your machine, locks with Touch ID or a PIN, and sandboxes its UI. No accounts, no cloud sync, no telemetry." />
+<link rel="canonical" href="https://noxed.app/security" />
+<meta property="og:title" content="noxed security: keychain storage, no cloud, no telemetry" />
+<meta property="og:description" content="How noxed stores credentials in your OS keychain, keeps data on your machine, locks with Touch ID or a PIN, and sandboxes its UI. No accounts, no cloud sync, no telemetry." />
+<meta property="og:url" content="https://noxed.app/security" />
+<meta property="og:type" content="website" />
+<meta property="og:site_name" content="noxed" />
+<meta property="og:image" content="https://noxed.app/og.png" />
+<meta property="og:image:width" content="1200" />
+<meta property="og:image:height" content="630" />
+<meta name="twitter:card" content="summary_large_image" />
+<link rel="icon" type="image/svg+xml" href='data:image/svg+xml,%3Csvg viewBox="0 0 256 256" xmlns="http://www.w3.org/2000/svg"%3E%3Cdefs%3E%3CclipPath id="s"%3E%3Crect width="256" height="256" rx="58"/%3E%3C/clipPath%3E%3C/defs%3E%3Cg clip-path="url(%23s)"%3E%3Cpath d="M0 0 L148 0 Q138 64 128 128 Q64 118 0 108 Z" fill="%23A78BFA"/%3E%3Cpath d="M148 0 L256 0 L256 148 Q192 138 128 128 Q138 64 148 0 Z" fill="%236D28D9"/%3E%3Cpath d="M256 148 L256 256 L108 256 Q118 192 128 128 Q192 138 256 148 Z" fill="%23312A7D"/%3E%3Cpath d="M108 256 L0 256 L0 108 Q64 118 128 128 Q118 192 108 256 Z" fill="%234C6EF5"/%3E%3C/g%3E%3Cpath d="M128 44 C136 100 156 120 212 128 C156 136 136 156 128 212 C120 156 100 136 44 128 C100 120 120 100 128 44 Z" fill="%23FFFFFF" transform="rotate(14 128 128)"/%3E%3C/svg%3E' />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="/site.css" />
+</head>
+<body>
+
+<nav class="nav" aria-label="Main">
+  <a class="nav-brand" href="/">
+    <svg viewBox="0 0 256 256" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <defs><clipPath id="nlogo"><rect width="256" height="256" rx="58"/></clipPath></defs>
+      <g clip-path="url(#nlogo)">
+        <path d="M0 0 L148 0 Q138 64 128 128 Q64 118 0 108 Z" fill="#A78BFA"/>
+        <path d="M148 0 L256 0 L256 148 Q192 138 128 128 Q138 64 148 0 Z" fill="#6D28D9"/>
+        <path d="M256 148 L256 256 L108 256 Q118 192 128 128 Q192 138 256 148 Z" fill="#312A7D"/>
+        <path d="M108 256 L0 256 L0 108 Q64 118 128 128 Q118 192 108 256 Z" fill="#4C6EF5"/>
+      </g>
+      <path d="M128 44 C136 100 156 120 212 128 C156 136 136 156 128 212 C120 156 100 136 44 128 C100 120 120 100 128 44 Z" fill="#FFF" transform="rotate(14 128 128)"/>
+    </svg>
+    noxed
+  </a>
+  <div class="nav-links">
+    <a href="/features">Features</a>
+    <a href="/download">Download</a>
+    <a href="/getting-started">Docs</a>
+    <a href="/security" aria-current="page">Security</a>
+    <a class="nav-gh" href="https://github.com/Meanski/noxed" rel="noopener">GitHub</a>
+  </div>
+</nav>
+
+<main>
+<p class="eyebrow">Security</p>
+<h1>How noxed protects your servers and credentials</h1>
+<p class="lede">noxed holds the keys to your infrastructure, so it's built to keep secrets out of files, keep data on your machine, and treat its own UI as untrusted.</p>
+
+<h2>Where your data is stored</h2>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Data</th><th>Where it lives</th></tr></thead>
+  <tbody>
+    <tr><td>Passwords and other secrets</td><td>Your OS keychain: macOS Keychain, Windows Credential Manager, or libsecret on Linux. Never written to a config file.</td></tr>
+    <tr><td>Connection details (host, port, username, key path)</td><td>A local settings file in noxed's app-data folder on your computer.</td></tr>
+    <tr><td>SSH private keys</td><td>Stay where they already are. noxed stores the path and reads the key only when connecting.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h2>No accounts, no cloud, no telemetry</h2>
+<p>noxed has no sign-in, no sync service and no analytics in the app. It connects only to the servers, databases and clusters you configure. The one other request is the update check: installed builds ask GitHub Releases whether a new version exists when they start, and nothing is downloaded until you agree.</p>
+
+<h2>Lock screen</h2>
+<p>An optional lock screen protects saved credentials with Touch ID, a PIN or a password. It can lock automatically after a period of inactivity. While noxed is locked, secrets aren't released to the interface.</p>
+
+<h2>Restricted file access</h2>
+<p>SSH keys are only read from <code>~/.ssh</code>, <code>~/.config/ssh</code> and <code>~/.pem</code>. Kubeconfigs are only read from <code>~/.kube</code> and standard config folders, plus files you explicitly import. A compromised UI can't ask the app to read arbitrary files.</p>
+
+<h2>Sandboxed, untrusted UI</h2>
+<p>noxed is an Electron app with a sandboxed, context-isolated renderer. All system access (SSH, SFTP, databases, Kubernetes, keychain) lives in the main process, behind handlers that validate every input. They also check that a window only uses connections it opened.</p>
+
+<h2>Guard rails</h2>
+<ul>
+  <li>The Redis command line blocks destructive commands.</li>
+  <li>Docker, metrics and Kubernetes features use your existing SSH connection or kubeconfig, so nothing has to be installed on your servers.</li>
+</ul>
+
+<h2>Signed releases and open source</h2>
+<p>macOS builds are signed with an Apple Developer ID and notarized, and Windows installers are code-signed. All the source code is <a href="https://github.com/Meanski/noxed">on GitHub</a> under the MIT license, so you can audit it or build it yourself.</p>
+
+<h2>Reporting a security issue</h2>
+<p>If you find a vulnerability, please <a href="https://github.com/Meanski/noxed/issues">open an issue on GitHub</a> without exploit details, and the maintainer will follow up.</p>
+
+<nav class="next" aria-label="More">
+  <a href="/download"><span>Next</span>Download noxed</a>
+  <a href="/features"><span>Explore</span>All features</a>
+</nav>
+</main>
+
+<footer>
+  <div class="foot-brand">
+    <svg viewBox="0 0 256 256" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <defs><clipPath id="flogo"><rect width="256" height="256" rx="58"/></clipPath></defs>
+      <g clip-path="url(#flogo)">
+        <path d="M0 0 L148 0 Q138 64 128 128 Q64 118 0 108 Z" fill="#A78BFA"/>
+        <path d="M148 0 L256 0 L256 148 Q192 138 128 128 Q138 64 148 0 Z" fill="#6D28D9"/>
+        <path d="M256 148 L256 256 L108 256 Q118 192 128 128 Q192 138 256 148 Z" fill="#312A7D"/>
+        <path d="M108 256 L0 256 L0 108 Q64 118 128 128 Q118 192 108 256 Z" fill="#4C6EF5"/>
+      </g>
+      <path d="M128 44 C136 100 156 120 212 128 C156 136 136 156 128 212 C120 156 100 136 44 128 C100 120 120 100 128 44 Z" fill="#FFF" transform="rotate(14 128 128)"/>
+    </svg>
+    noxed
+  </div>
+  <nav aria-label="Footer">
+    <a href="/features">Features</a>
+    <a href="/download">Download</a>
+    <a href="/getting-started">Docs</a>
+    <a href="/security">Security</a>
+    <a href="https://github.com/Meanski/noxed" rel="noopener">GitHub</a>
+    <a href="https://github.com/Meanski/noxed/issues" rel="noopener">Issues</a>
+  </nav>
+  <span>MIT licensed · © 2026 Sean Woodliffe</span>
+</footer>
+
+</body>
+</html>

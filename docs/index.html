@@ -12,11 +12,46 @@
 
   gtag('config', 'G-EEH922EKWJ');
 </script>
-<title>noxed — every server, one window</title>
-<meta name="description" content="noxed is a free, open-source connection manager for people who live in terminals. SSH, SFTP, databases, Redis, Docker, and Kubernetes — in tabs of a single desktop app." />
-<meta property="og:title" content="noxed — every server, one window" />
-<meta property="og:description" content="Free, open-source SSH sessions, SFTP, databases, Redis, Docker, and Kubernetes in one desktop app." />
+<title>noxed — Free SSH Client, SFTP &amp; Server Manager</title>
+<meta name="description" content="noxed is a free, open-source SSH client and server manager for macOS, Windows and Linux. SSH sessions, SFTP, port forwarding, databases, Redis, Docker and Kubernetes in tabs of one desktop app." />
+<link rel="canonical" href="https://noxed.app/" />
+<meta property="og:title" content="noxed — Free SSH Client, SFTP &amp; Server Manager" />
+<meta property="og:description" content="Free, open-source SSH sessions, SFTP, databases, Redis, Docker, and Kubernetes in one desktop app for macOS, Windows and Linux." />
+<meta property="og:url" content="https://noxed.app/" />
 <meta property="og:type" content="website" />
+<meta property="og:site_name" content="noxed" />
+<meta property="og:image" content="https://noxed.app/og.png" />
+<meta property="og:image:width" content="1200" />
+<meta property="og:image:height" content="630" />
+<meta name="twitter:card" content="summary_large_image" />
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "noxed",
+  "url": "https://noxed.app/",
+  "description": "Free, open-source SSH client and server manager with SFTP, port forwarding, database and Redis tools, Docker over SSH and a Kubernetes dashboard in one desktop app.",
+  "applicationCategory": "DeveloperApplication",
+  "operatingSystem": "macOS, Windows, Linux",
+  "downloadUrl": "https://noxed.app/download",
+  "screenshot": "https://noxed.app/screenshot.png",
+  "image": "https://noxed.app/og.png",
+  "license": "https://opensource.org/licenses/MIT",
+  "isAccessibleForFree": true,
+  "offers": {
+    "@type": "Offer",
+    "price": "0",
+    "priceCurrency": "USD"
+  },
+  "author": {
+    "@type": "Person",
+    "name": "Sean Woodliffe"
+  },
+  "sameAs": [
+    "https://github.com/Meanski/noxed"
+  ]
+}
+</script>
 <link rel="icon" type="image/svg+xml" href='data:image/svg+xml,%3Csvg viewBox="0 0 256 256" xmlns="http://www.w3.org/2000/svg"%3E%3Cdefs%3E%3CclipPath id="s"%3E%3Crect width="256" height="256" rx="58"/%3E%3C/clipPath%3E%3C/defs%3E%3Cg clip-path="url(%23s)"%3E%3Cpath d="M0 0 L148 0 Q138 64 128 128 Q64 118 0 108 Z" fill="%23A78BFA"/%3E%3Cpath d="M148 0 L256 0 L256 148 Q192 138 128 128 Q138 64 148 0 Z" fill="%236D28D9"/%3E%3Cpath d="M256 148 L256 256 L108 256 Q118 192 128 128 Q192 138 256 148 Z" fill="%23312A7D"/%3E%3Cpath d="M108 256 L0 256 L0 108 Q64 118 128 128 Q118 192 108 256 Z" fill="%234C6EF5"/%3E%3C/g%3E%3Cpath d="M128 44 C136 100 156 120 212 128 C156 136 136 156 128 212 C120 156 100 136 44 128 C100 120 120 100 128 44 Z" fill="%23FFFFFF" transform="rotate(14 128 128)"/%3E%3C/svg%3E' />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -509,6 +544,8 @@ h2 {
   max-width: 640px;
 }
 .section-sub { margin-top: 16px; max-width: 560px; color: var(--text-dim); font-size: 16.5px; }
+.section-sub .more { color: var(--violet); white-space: nowrap; }
+.section-sub .more:hover { color: var(--text); }
 
 /* reveal on scroll */
 .reveal { opacity: 0; transform: translateY(34px); transition: opacity 0.8s cubic-bezier(0.22,1,0.36,1), transform 0.8s cubic-bezier(0.22,1,0.36,1); }
@@ -696,7 +733,7 @@ footer {
 }
 .foot-brand { display: flex; align-items: center; gap: 10px; font-weight: 600; color: var(--text-dim); }
 .foot-brand svg { width: 22px; height: 22px; border-radius: 6px; }
-footer nav { display: flex; justify-content: center; gap: 24px; }
+footer nav { display: flex; justify-content: center; flex-wrap: wrap; gap: 8px 22px; }
 footer nav a { color: var(--text-faint); transition: color 0.2s; }
 footer nav a:hover { color: var(--text); }
 footer > span { justify-self: end; }
@@ -721,7 +758,7 @@ footer > span { justify-self: end; }
 
 <!-- ===================== NAV ===================== -->
 <nav class="nav" id="nav">
-  <a class="nav-brand" href="#">
+  <a class="nav-brand" href="/">
     <svg viewBox="0 0 256 256" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
       <defs><clipPath id="sq1"><rect width="256" height="256" rx="58"/></clipPath></defs>
       <g clip-path="url(#sq1)">
@@ -735,9 +772,10 @@ footer > span { justify-self: end; }
     noxed
   </a>
   <div class="nav-links">
-    <a href="#features">Features</a>
-    <a href="#security">Security</a>
-    <a href="#install">Install</a>
+    <a href="/features">Features</a>
+    <a href="/download">Download</a>
+    <a href="/getting-started">Docs</a>
+    <a href="/security">Security</a>
     <a class="nav-gh" href="https://github.com/Meanski/noxed" target="_blank" rel="noopener">
       <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
       Star on GitHub
@@ -754,12 +792,12 @@ footer > span { justify-self: end; }
     </div>
     <h1>Every server.<br /><span class="grad">One window.</span></h1>
     <p class="hero-sub">
-      noxed is a connection manager for people who live in terminals.
+      noxed is a free, open-source SSH client and connection manager for people who live in terminals.
       <strong>SSH, SFTP, databases, Redis, Docker, and Kubernetes</strong> —
       tabs of a single desktop app, with live metrics streamed over the connection you already have.
     </p>
     <div class="hero-ctas">
-      <a class="btn btn-primary" href="https://github.com/Meanski/noxed/releases" target="_blank" rel="noopener">
+      <a class="btn btn-primary" href="/download">
         <svg viewBox="0 0 24 24"><path d="M12 16l-6-6h4V3h4v7h4l-6 6zm-8 2h16v3H4v-3z"/></svg>
         Download
       </a>
@@ -776,6 +814,7 @@ footer > span { justify-self: end; }
   </div>
 </header>
 
+<main>
 <!-- ===================== APP SHOWCASE ===================== -->
 <div class="showcase reveal">
   <div class="appwin">
@@ -958,14 +997,14 @@ footer > span { justify-self: end; }
                 <svg class="i s" viewBox="0 0 24 24"><use href="#i-dl"/></svg>
               </div>
               <div class="aw-tablewrap">
-                <table class="aw-dbgrid">
+                <!--email_off--><table class="aw-dbgrid">
                   <tr><th class="rn">#</th><th>id</th><th>email</th><th>orders</th></tr>
                   <tr><td class="rn">1</td><td>8841</td><td>mira@castell.io</td><td>14</td></tr>
                   <tr><td class="rn">2</td><td>8623</td><td>jon@harlow.dev</td><td>11</td></tr>
                   <tr><td class="rn">3</td><td>8512</td><td>ana@quintero.co</td><td>9</td></tr>
                   <tr><td class="rn">4</td><td>8390</td><td>sam@ferris.net</td><td>8</td></tr>
                   <tr><td class="rn">5</td><td>8217</td><td>kei@tanaka.app</td><td>7</td></tr>
-                </table>
+                </table><!--/email_off-->
               </div>
             </div>
           </div>
@@ -1135,7 +1174,7 @@ footer > span { justify-self: end; }
     <div class="reveal">
       <div class="kicker">features</div>
       <h2>Your whole fleet, without leaving the keyboard.</h2>
-      <p class="section-sub">Everything rides over plain SSH — no agents to install, no daemons to babysit on the remote side.</p>
+      <p class="section-sub">Everything rides over plain SSH — no agents to install, no daemons to babysit on the remote side. <a class="more" href="/features">See every feature →</a></p>
     </div>
 
     <div class="feat-grid">
@@ -1202,7 +1241,7 @@ footer > span { justify-self: end; }
     <div class="reveal">
       <div class="kicker">security</div>
       <h2>Paranoid by design.</h2>
-      <p class="section-sub">The UI is treated as untrusted. Your secrets never touch a config file.</p>
+      <p class="section-sub">The UI is treated as untrusted. Your secrets never touch a config file. <a class="more" href="/security">Read the security overview →</a></p>
     </div>
     <div class="sec-strip">
       <div class="sec-item reveal">
@@ -1231,21 +1270,21 @@ footer > span { justify-self: end; }
     <div class="reveal">
       <div class="kicker">install</div>
       <h2>Up and running in a minute.</h2>
-      <p class="section-sub">Grab a build from the releases page, or compile it yourself — it's your code now.</p>
+      <p class="section-sub">Grab a build from the releases page, or compile it yourself — it's your code now. <a class="more" href="/getting-started">Getting started guide →</a></p>
     </div>
     <div class="install-grid">
       <div class="platforms reveal">
-        <a class="platform" href="https://github.com/Meanski/noxed/releases" target="_blank" rel="noopener">
+        <a class="platform" href="https://github.com/Meanski/noxed/releases/latest" target="_blank" rel="noopener">
           <svg viewBox="0 0 24 24"><path d="M18.7 12.6c0-2 1.7-3 1.7-3-1-1.4-2.4-1.6-2.9-1.6-1.2-.1-2.4.7-3 .7-.7 0-1.6-.7-2.7-.7-1.4 0-2.6.8-3.3 2-1.4 2.5-.4 6.1 1 8.1.7 1 1.5 2.1 2.5 2 1-.1 1.4-.6 2.6-.6s1.6.6 2.6.6c1.1 0 1.8-1 2.5-2 .8-1.1 1.1-2.2 1.1-2.3 0 0-2.1-.8-2.1-3.2ZM16.7 5.7c.5-.7.9-1.6.8-2.6-.8 0-1.8.6-2.4 1.3-.5.6-1 1.6-.8 2.5.9.1 1.8-.5 2.4-1.2Z"/></svg>
           <div><b>macOS</b><span>.dmg · .zip</span></div>
           <span class="arrow">→</span>
         </a>
-        <a class="platform" href="https://github.com/Meanski/noxed/releases" target="_blank" rel="noopener">
+        <a class="platform" href="https://github.com/Meanski/noxed/releases/latest" target="_blank" rel="noopener">
           <svg viewBox="0 0 24 24"><path d="M3 5.5 10.5 4.4v7.1H3V5.5ZM3 12.5h7.5v7.1L3 18.5v-6ZM11.5 4.2 21 3v8.5h-9.5V4.2ZM11.5 12.5H21V21l-9.5-1.3v-7.2Z"/></svg>
           <div><b>Windows</b><span>NSIS installer</span></div>
           <span class="arrow">→</span>
         </a>
-        <a class="platform" href="https://github.com/Meanski/noxed/releases" target="_blank" rel="noopener">
+        <a class="platform" href="https://github.com/Meanski/noxed/releases/latest" target="_blank" rel="noopener">
           <svg viewBox="0 0 24 24"><path d="M12 2c-2.2 0-3.6 1.8-3.6 4 0 1.5.2 2.6-.5 4-1 1.8-2.6 3.4-2.6 6 0 1 .2 1.9.6 2.7.4-.5 1-.8 1.8-.8.5-1.5 1.8-1.5 2.4-3.6.4.2 1.2.4 1.9.4s1.5-.2 1.9-.4c.6 2.1 1.9 2.1 2.4 3.6.8 0 1.4.3 1.8.8.4-.8.6-1.7.6-2.7 0-2.6-1.6-4.2-2.6-6-.7-1.4-.5-2.5-.5-4 0-2.2-1.4-4-3.6-4Zm-2 7a1 1 0 1 1 0-2 1 1 0 0 1 0 2Zm4 0a1 1 0 1 1 0-2 1 1 0 0 1 0 2Z"/><path d="M7 19.5c-.8 0-1.4.7-1.4 1.4 0 .6.5 1.1 1.4 1.1h2.8c.6 0 1.2-.5 1.2-1.2 0-.5-.3-.9-.8-1.3-.9-.7-1.7-1.3-3.2 0ZM17 19.5c-1.5-1.3-2.3-.7-3.2 0-.5.4-.8.8-.8 1.3 0 .7.6 1.2 1.2 1.2H17c.9 0 1.4-.5 1.4-1.1 0-.7-.6-1.4-1.4-1.4Z"/></svg>
           <div><b>Linux</b><span>AppImage · .deb</span></div>
           <span class="arrow">→</span>
@@ -1265,8 +1304,7 @@ footer > span { justify-self: end; }
 <span class="p">$</span> npm run dist   <span class="c"># installers land in dist/</span></pre>
         </div>
         <p class="install-note">
-          Needs Node.js 20+. macOS builds aren't notarized yet — if the app is reported
-          as damaged, run <code>xattr -cr /Applications/noxed.app</code>.
+          Building needs Node.js 20+. Release builds are signed (macOS builds are notarized too).
           On Linux, install a keyring service (e.g. <code>libsecret-1-0</code>).
         </p>
       </div>
@@ -1299,6 +1337,8 @@ footer > span { justify-self: end; }
   </div>
 </section>
 
+</main>
+
 <!-- ===================== FOOTER ===================== -->
 <footer>
   <div class="foot-brand">
@@ -1314,7 +1354,11 @@ footer > span { justify-self: end; }
     </svg>
     noxed
   </div>
-  <nav>
+  <nav aria-label="Footer">
+    <a href="/features">Features</a>
+    <a href="/download">Download</a>
+    <a href="/getting-started">Docs</a>
+    <a href="/security">Security</a>
     <a href="https://github.com/Meanski/noxed" target="_blank" rel="noopener">GitHub</a>
     <a href="https://github.com/Meanski/noxed/releases" target="_blank" rel="noopener">Releases</a>
     <a href="https://github.com/Meanski/noxed/issues" target="_blank" rel="noopener">Issues</a>
