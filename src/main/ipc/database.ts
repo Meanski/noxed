@@ -5,7 +5,7 @@ import { once } from 'node:events'
 import { readFile, rename, rm, stat } from 'node:fs/promises'
 import { NotFoundError, OwnershipError, ValidationError, toMessage } from './errors'
 import { validateHost, validatePort } from './security'
-import { csvToRows, exportChunks, parseCsv, quoteIdentifier, type ExportFormat } from './dbTransfer'
+import { csvToRows, exportChunks, exportSelectList, parseCsv, quoteIdentifier, type ExportFormat } from './dbTransfer'
 import type { DbConnectConfig, DbConnection, QueryParam, SslMode } from './dbTypes'
 import { connectPostgres } from './dbPostgres'
 import { connectMysql } from './dbMysql'
@@ -196,10 +196,11 @@ export function registerDatabaseHandlers(): void {
     })
     if (canceled || !filePath) return { canceled: true, rows: 0, truncated: false }
 
-    const result = await conn.query(`SELECT * FROM ${quoteIdentifier(table, conn.type)} LIMIT ${MAX_EXPORT_ROWS + 1}`)
+    const select = exportSelectList((await conn.getTableInfo(table)).columns, conn.type)
+    const result = await conn.query(`SELECT ${select.sql} FROM ${quoteIdentifier(table, conn.type)} LIMIT ${MAX_EXPORT_ROWS + 1}`)
     const truncated = result.rows.length > MAX_EXPORT_ROWS
     const rows = (truncated ? result.rows.slice(0, MAX_EXPORT_ROWS) : result.rows) as Record<string, unknown>[]
-    await writeChunks(filePath, exportChunks(format, table, result.columns, rows, conn.type, result.jsonColumns))
+    await writeChunks(filePath, exportChunks(format, table, result.columns, rows, conn.type, select.jsonColumns))
     return { canceled: false, rows: rows.length, truncated }
   })
 

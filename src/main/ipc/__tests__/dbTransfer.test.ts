@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { csvToRows, parseCsv, quoteIdentifier, toCsv, toJson, toSqlInserts } from '../dbTransfer'
+import { csvToRows, exportChunks, exportSelectList, parseCsv, quoteIdentifier, toCsv, toJson, toSqlInserts } from '../dbTransfer'
 
 describe('parseCsv', () => {
   it('handles quotes, doubled quotes, embedded newlines, CRLF and a BOM', () => {
@@ -95,5 +95,29 @@ describe('SQL export of PostgreSQL arrays and binary data', () => {
     expect(toSqlInserts('t', ['b'], [{ b: bytes }], 'mysql')).toBe("INSERT INTO `t` (`b`) VALUES (X'6869');\n")
     // MySQL keeps arrays (JSON values) as JSON text.
     expect(toSqlInserts('t', ['j'], [{ j: [1] }], 'mysql')).toBe("INSERT INTO `t` (`j`) VALUES ('[1]');\n")
+  })
+})
+
+describe('JSON columns', () => {
+  it('are selected as text in each dialect', () => {
+    const cols = [{ name: 'id', type: 'integer' }, { name: 'doc', type: 'JSONB' }, { name: 'j', type: 'json' }]
+    expect(exportSelectList(cols, 'postgresql')).toEqual({ sql: '"id", "doc"::text AS "doc", "j"::text AS "j"', jsonColumns: ['doc', 'j'] })
+    expect(exportSelectList(cols, 'mysql').sql).toBe('`id`, CAST(`doc` AS CHAR) AS `doc`, CAST(`j` AS CHAR) AS `j`')
+    expect(exportSelectList([], 'postgresql').sql).toBe('*')
+  })
+
+  it('come back as values in JSON exports', () => {
+    // Without JSON-column info, text stays text.
+    expect(toJson(['doc'], [{ doc: '{"a":1}' }])).toBe(JSON.stringify([{ doc: '{"a":1}' }], null, 2) + '\n')
+    const chunks = [...exportChunks('json', 't', ['doc', 'bad'], [{ doc: '{"a":1}', bad: 'nope' }], 'postgresql', ['doc', 'bad'])].join('')
+    expect(JSON.parse(chunks)).toEqual([{ doc: { a: 1 }, bad: 'nope' }])
+  })
+})
+
+describe('CSV headers', () => {
+  it('match exactly first, refusing case-only ambiguity', () => {
+    expect(csvToRows([['foo'], ['1']], ['foo', 'FOO']).columns).toEqual(['foo'])
+    expect(csvToRows([['Name'], ['x']], ['name']).columns).toEqual(['name'])
+    expect(() => csvToRows([['Foo'], ['1']], ['foo', 'FOO'])).toThrow('could be foo or FOO')
   })
 })

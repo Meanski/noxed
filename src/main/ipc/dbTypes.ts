@@ -12,8 +12,6 @@ export interface QueryResult {
   rows: unknown[]
   rowCount: number
   duration: number
-  /** Columns holding JSON (PostgreSQL json/jsonb), whose arrays aren't SQL arrays. */
-  jsonColumns?: string[]
 }
 
 export type QueryParam = string | number | boolean | null

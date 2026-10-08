@@ -96,15 +96,26 @@ function* csvChunks(columns: readonly string[], rows: readonly Record<string, un
   for (const r of rows) yield columns.map((c) => csvField(r[c])).join(',') + '\r\n'
 }
 
+// JSON-column text goes back to a value; unparseable text is kept as a string.
+function jsonValue(value: unknown, isJson: boolean): unknown {
+  if (!isJson || typeof value !== 'string') return plain(value)
+  try {
+    return JSON.parse(value)
+  } catch {
+    return value // not JSON after all (e.g. a MariaDB alias column); export the text
+  }
+}
+
 // The same text as JSON.stringify(rows, null, 2), one element at a time.
-function* jsonChunks(columns: readonly string[], rows: readonly Record<string, unknown>[]): Generator<string> {
+function* jsonChunks(columns: readonly string[], rows: readonly Record<string, unknown>[], jsonColumns: readonly string[] = []): Generator<string> {
+  const json = new Set(jsonColumns)
   if (rows.length === 0) {
     yield '[]\n'
     return
   }
   yield '[\n'
   for (const [i, r] of rows.entries()) {
-    const element = JSON.stringify(Object.fromEntries(columns.map((c) => [c, plain(r[c])])), null, 2)
+    const element = JSON.stringify(Object.fromEntries(columns.map((c) => [c, jsonValue(r[c], json.has(c))])), null, 2)
     yield element.split('\n').map((line) => `  ${line}`).join('\n') + (i < rows.length - 1 ? ',\n' : '\n')
   }
   yield ']\n'
@@ -135,7 +146,24 @@ function quoteString(text: string, dialect: Dialect): string {
   return `'${escaped.replaceAll("'", "''")}'`
 }
 
+/**
+ * The column list for an export query. JSON columns are read as their JSON
+ * text, so scalars ("x", 1, null) and SQL NULL stay distinct and round-trip.
+ */
+export function exportSelectList(columns: readonly { name: string; type: string }[], dialect: Dialect): { sql: string; jsonColumns: string[] } {
+  const jsonColumns = columns.filter((c) => /^jsonb?$/i.test(c.type)).map((c) => c.name)
+  if (columns.length === 0) return { sql: '*', jsonColumns }
+  const sql = columns.map((c) => {
+    const id = quoteIdentifier(c.name, dialect)
+    if (!jsonColumns.includes(c.name)) return id
+    return isMysqlFamily(dialect) ? `CAST(${id} AS CHAR) AS ${id}` : `${id}::text AS ${id}`
+  }).join(', ')
+  return { sql, jsonColumns }
+}
+
 function sqlLiteral(value: unknown, dialect: Dialect, isJson: boolean): string {
+  // JSON columns arrive as JSON text (see exportSelectList): write it as is.
+  if (isJson && typeof value === 'string') return quoteString(value, dialect)
   // Bytes go back in as bytes, not as the base64 text used for CSV and JSON.
   if (value instanceof Uint8Array) {
     const hex = Buffer.from(value).toString('hex')
@@ -170,7 +198,7 @@ export function exportChunks(
   format: ExportFormat, table: string, columns: readonly string[], rows: readonly Record<string, unknown>[], dialect: Dialect,
   jsonColumns: readonly string[] = [],
 ): Iterable<string> {
-  if (format === 'json') return jsonChunks(columns, rows)
+  if (format === 'json') return jsonChunks(columns, rows, jsonColumns)
   if (format === 'sql') return sqlChunks(table, columns, rows, dialect, jsonColumns)
   return csvChunks(columns, rows)
 }
@@ -179,13 +207,27 @@ export function exportChunks(
  * Lines a CSV header up with a table's columns (case-insensitive) and turns
  * the data rows into bind values; an empty field becomes NULL.
  */
+/**
+ * A header's table column: an exact match, else the only case-insensitive
+ * one. Columns that differ only by case (PostgreSQL "foo" and "FOO") need an
+ * exact header, since guessing could fill the wrong one.
+ */
+function matchColumn(header: string, tableColumns: readonly string[]): string | undefined {
+  if (tableColumns.includes(header)) return header
+  const lower = header.toLowerCase()
+  const candidates = tableColumns.filter((c) => c.toLowerCase() === lower)
+  if (candidates.length > 1) {
+    throw new ValidationError(`CSV column ${header} could be ${candidates.join(' or ')}; name it exactly`)
+  }
+  return candidates[0]
+}
+
 export function csvToRows(records: string[][], tableColumns: readonly string[]): { columns: string[]; rows: CellValue[][] } {
   const [header, ...data] = records
   if (!header || header.length === 0) throw new ValidationError('The CSV file is empty')
-  const byLower = new Map(tableColumns.map((c) => [c.toLowerCase(), c]))
-  const unknown = header.filter((h) => !byLower.has(h.trim().toLowerCase()))
+  const columns = header.map((h) => matchColumn(h.trim(), tableColumns))
+  const unknown = header.filter((_, i) => columns[i] === undefined)
   if (unknown.length > 0) throw new ValidationError(`CSV columns not in the table: ${unknown.join(', ')}`)
-  const columns = header.map((h) => byLower.get(h.trim().toLowerCase()) as string)
   if (new Set(columns).size !== columns.length) throw new ValidationError('The CSV header repeats a column')
   const rows = data.map((record, i) => {
     if (record.length !== columns.length) {
@@ -193,5 +235,5 @@ export function csvToRows(records: string[][], tableColumns: readonly string[]):
     }
     return record.map((v) => (v === '' ? null : v))
   })
-  return { columns, rows }
+  return { columns: columns as string[], rows }
 }

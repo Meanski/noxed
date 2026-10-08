@@ -61,14 +61,6 @@ describe('db:query parameter validation', () => {
     expect(pgQuery).toHaveBeenCalledWith('UPDATE "t" SET "a" = $1 WHERE "id" = $2', ['x', 7])
   })
 
-  it('reports which postgres columns hold JSON', async () => {
-    const id = await connectPg()
-    const pgQuery = (pg as unknown as { __query: Mock }).__query
-    pgQuery.mockResolvedValueOnce({ fields: [{ name: 'ids', dataTypeID: 1007 }, { name: 'doc', dataTypeID: 3802 }, { name: 'raw', dataTypeID: 114 }], rows: [], rowCount: 0 })
-    const result = (await handler('db:query')(event, id, 'SELECT 1')) as { jsonColumns: string[] }
-    expect(result.jsonColumns).toEqual(['doc', 'raw'])
-  })
-
   it('accepts omitted and null params', async () => {
     const id = await connectPg()
     const result = (await handler('db:query')(event, id, 'SELECT 1')) as { rowCount: number }
@@ -227,11 +219,27 @@ describe('import and export', () => {
     const id = await connectPg()
     const out = join(tmpdir(), `noxed-export-${Date.now()}.sql`)
     vi.mocked(dialog.showSaveDialog).mockResolvedValueOnce({ canceled: false, filePath: out })
-    pgQuery().mockResolvedValueOnce({ fields: [{ name: 'id' }, { name: 'name' }], rows: [{ id: 1, name: "o'k" }], rowCount: 1 })
+    pgQuery()
+      .mockResolvedValueOnce({ rows: [
+        { column_name: 'id', data_type: 'integer', is_nullable: 'NO' },
+        { column_name: 'name', data_type: 'text', is_nullable: 'YES' },
+        { column_name: 'doc', data_type: 'jsonb', is_nullable: 'YES' },
+      ] })
+      .mockResolvedValueOnce({ rows: [{ attname: 'id' }] })
+      .mockResolvedValueOnce({
+        fields: [{ name: 'id' }, { name: 'name' }, { name: 'doc' }],
+        rows: [{ id: 1, name: "o'k", doc: '"x"' }, { id: 2, name: null, doc: null }, { id: 3, name: 'n', doc: 'null' }],
+        rowCount: 3,
+      })
     const result = await handler('db:exportTable')(event, id, 'users', 'sql')
-    expect(result).toEqual({ canceled: false, rows: 1, truncated: false })
-    expect(pgQuery()).toHaveBeenLastCalledWith('SELECT * FROM "users" LIMIT 200001', undefined)
-    expect(readFileSync(out, 'utf-8')).toBe(`INSERT INTO "users" ("id", "name") VALUES (1, 'o''k');\n`)
+    expect(result).toEqual({ canceled: false, rows: 3, truncated: false })
+    // JSON columns are read as their text, so JSON scalars and SQL NULL stay distinct.
+    expect(pgQuery()).toHaveBeenLastCalledWith('SELECT "id", "name", "doc"::text AS "doc" FROM "users" LIMIT 200001', undefined)
+    expect(readFileSync(out, 'utf-8')).toBe([
+      `INSERT INTO "users" ("id", "name", "doc") VALUES (1, 'o''k', '"x"');`,
+      `INSERT INTO "users" ("id", "name", "doc") VALUES (2, NULL, NULL);`,
+      `INSERT INTO "users" ("id", "name", "doc") VALUES (3, 'n', 'null');`,
+    ].join('\n') + '\n')
   })
 
   it('streams exports, and a failed one leaves the existing file alone', async () => {
