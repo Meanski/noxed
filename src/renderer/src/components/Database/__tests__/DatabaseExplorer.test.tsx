@@ -652,6 +652,21 @@ describe('DatabaseExplorer — row editing', () => {
   })
 })
 
+describe('DatabaseExplorer — diagram', () => {
+  it('shows the ER diagram and browses a table picked from it', async () => {
+    const schema = vi.fn().mockResolvedValue({
+      tables: [{ name: 'users', columns: [{ name: 'id', type: 'int', nullable: false }], primaryKey: ['id'] }],
+      foreignKeys: [],
+      truncated: false,
+    })
+    const { api } = await renderConnected({}, { schema })
+    fireEvent.click(screen.getByText('Diagram'))
+    fireEvent.click(await screen.findByTitle('Browse users'))
+    await waitFor(() => expect(api.database.query).toHaveBeenCalledWith('db-1', 'SELECT * FROM "users" LIMIT 100'))
+    expect(await screen.findByText('alice')).toBeTruthy()
+  })
+})
+
 describe('DatabaseExplorer — explain', () => {
   const pgPlan = {
     'Node Type': 'Seq Scan',

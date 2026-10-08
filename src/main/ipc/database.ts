@@ -18,6 +18,52 @@ interface DbConnection {
   close: () => Promise<void>
   getTables: () => Promise<string[]>
   getTableInfo: (table: string) => Promise<TableInfo>
+  getSchema: () => Promise<DbSchema>
+}
+
+interface ForeignKey {
+  name: string
+  table: string
+  columns: string[]
+  refTable: string
+  refColumns: string[]
+}
+
+interface DbSchema {
+  tables: Array<TableInfo & { name: string }>
+  foreignKeys: ForeignKey[]
+  /** True when the table list was cut to MAX_SCHEMA_TABLES. */
+  truncated: boolean
+}
+
+// ER diagrams beyond this many tables stop being readable (and slow to lay out).
+const MAX_SCHEMA_TABLES = 300
+
+type SchemaColumnRow = { table_name: string; column_name: string; data_type: string; is_nullable: string }
+
+/** Groups flat catalog rows into per-table metadata, capped to MAX_SCHEMA_TABLES. */
+export function assembleSchema(
+  columnRows: SchemaColumnRow[],
+  pkRows: { table_name: string; column_name: string }[],
+  foreignKeys: ForeignKey[],
+): DbSchema {
+  const tables = new Map<string, TableInfo & { name: string }>()
+  for (const r of columnRows) {
+    let t = tables.get(r.table_name)
+    if (!t) {
+      if (tables.size >= MAX_SCHEMA_TABLES) continue
+      t = { name: r.table_name, columns: [], primaryKey: [] }
+      tables.set(r.table_name, t)
+    }
+    t.columns.push({ name: r.column_name, type: r.data_type, nullable: r.is_nullable === 'YES' })
+  }
+  for (const r of pkRows) tables.get(r.table_name)?.primaryKey.push(r.column_name)
+  const truncated = new Set(columnRows.map((r) => r.table_name)).size > tables.size
+  return {
+    tables: [...tables.values()],
+    foreignKeys: foreignKeys.filter((fk) => tables.has(fk.table) && tables.has(fk.refTable)),
+    truncated,
+  }
 }
 
 interface TableInfo {
@@ -186,6 +232,48 @@ async function connectPostgres(config: DbConnectConfig): Promise<DbConnection> {
         primaryKey: pk.rows.map((r: { attname: string }) => r.attname),
       }
     },
+    async getSchema() {
+      const columns = await pool.query(
+        `SELECT table_name, column_name, data_type, is_nullable FROM information_schema.columns
+         WHERE table_schema = current_schema() ORDER BY table_name, ordinal_position`
+      )
+      // Key columns only (the first indnkeyatts), in key order, as tableInfo does.
+      const pks = await pool.query(
+        `SELECT cl.relname AS table_name, a.attname::text AS column_name
+         FROM pg_index i
+         JOIN pg_class cl ON cl.oid = i.indrelid
+         JOIN pg_namespace ns ON ns.oid = cl.relnamespace
+         CROSS JOIN LATERAL unnest(i.indkey) WITH ORDINALITY AS k(attnum, ord)
+         JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = k.attnum
+         WHERE i.indisprimary AND ns.nspname = current_schema() AND k.ord <= i.indnkeyatts
+         ORDER BY cl.relname, k.ord`
+      )
+      // pg_constraint pairs each local column with its referenced column by
+      // position, so composite keys stay aligned (information_schema can't).
+      const fks = await pool.query(
+        `SELECT con.conname AS name, cl.relname AS table_name, rcl.relname AS ref_table,
+                array_agg(att.attname::text ORDER BY k.ord) AS columns,
+                array_agg(ratt.attname::text ORDER BY k.ord) AS ref_columns
+         FROM pg_constraint con
+         JOIN pg_class cl ON cl.oid = con.conrelid
+         JOIN pg_class rcl ON rcl.oid = con.confrelid
+         JOIN pg_namespace ns ON ns.oid = cl.relnamespace
+         JOIN pg_namespace rns ON rns.oid = rcl.relnamespace
+         CROSS JOIN LATERAL unnest(con.conkey, con.confkey) WITH ORDINALITY AS k(col, refcol, ord)
+         JOIN pg_attribute att ON att.attrelid = con.conrelid AND att.attnum = k.col
+         JOIN pg_attribute ratt ON ratt.attrelid = con.confrelid AND ratt.attnum = k.refcol
+         -- Tables are matched by bare name, so both ends must be in this schema.
+         WHERE con.contype = 'f' AND ns.nspname = current_schema() AND rns.nspname = current_schema()
+         GROUP BY con.conname, cl.relname, rcl.relname`
+      )
+      return assembleSchema(
+        columns.rows,
+        pks.rows,
+        fks.rows.map((r: { name: string; table_name: string; ref_table: string; columns: string[]; ref_columns: string[] }) => ({
+          name: r.name, table: r.table_name, columns: r.columns, refTable: r.ref_table, refColumns: r.ref_columns,
+        })),
+      )
+    },
   }
 }
 
@@ -249,6 +337,35 @@ async function connectMysql(config: DbConnectConfig): Promise<DbConnection> {
           .map(k => k.Column_name),
       }
     },
+    async getSchema() {
+      const [columns] = await pool.query(
+        `SELECT TABLE_NAME AS table_name, COLUMN_NAME AS column_name, COLUMN_TYPE AS data_type, IS_NULLABLE AS is_nullable
+         FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() ORDER BY TABLE_NAME, ORDINAL_POSITION`
+      )
+      const [pks] = await pool.query(
+        `SELECT TABLE_NAME AS table_name, COLUMN_NAME AS column_name FROM information_schema.KEY_COLUMN_USAGE
+         WHERE TABLE_SCHEMA = DATABASE() AND CONSTRAINT_NAME = 'PRIMARY' ORDER BY TABLE_NAME, ORDINAL_POSITION`
+      )
+      const [fkRows] = await pool.query(
+        `SELECT CONSTRAINT_NAME AS name, TABLE_NAME AS table_name, COLUMN_NAME AS column_name,
+                REFERENCED_TABLE_NAME AS ref_table, REFERENCED_COLUMN_NAME AS ref_column
+         FROM information_schema.KEY_COLUMN_USAGE
+         WHERE TABLE_SCHEMA = DATABASE() AND REFERENCED_TABLE_SCHEMA = DATABASE() AND REFERENCED_TABLE_NAME IS NOT NULL
+         ORDER BY TABLE_NAME, CONSTRAINT_NAME, ORDINAL_POSITION`
+      )
+      const fks = new Map<string, ForeignKey>()
+      for (const r of fkRows as { name: string; table_name: string; column_name: string; ref_table: string; ref_column: string }[]) {
+        const id = `${r.table_name}.${r.name}`
+        let fk = fks.get(id)
+        if (!fk) {
+          fk = { name: r.name, table: r.table_name, columns: [], refTable: r.ref_table, refColumns: [] }
+          fks.set(id, fk)
+        }
+        fk.columns.push(r.column_name)
+        fk.refColumns.push(r.ref_column)
+      }
+      return assembleSchema(columns as SchemaColumnRow[], pks as { table_name: string; column_name: string }[], [...fks.values()])
+    },
   }
 }
 
@@ -297,6 +414,10 @@ export function registerDatabaseHandlers(): void {
 
   ipcMain.handle('db:tables', async (event, rawId: unknown) => {
     return requireOwnedConn(event, rawId).getTables()
+  })
+
+  ipcMain.handle('db:schema', async (event, rawId: unknown) => {
+    return requireOwnedConn(event, rawId).getSchema()
   })
 
   ipcMain.handle('db:tableInfo', async (event, rawId: unknown, table: unknown) => {

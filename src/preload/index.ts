@@ -104,6 +104,7 @@ contextBridge.exposeInMainWorld('api', {
       ipcRenderer.invoke('db:query', id, sql, params),
     tables: (id: string) => ipcRenderer.invoke('db:tables', id),
     tableInfo: (id: string, table: string) => ipcRenderer.invoke('db:tableInfo', id, table),
+    schema: (id: string) => ipcRenderer.invoke('db:schema', id),
   },
 
   // Local filesystem

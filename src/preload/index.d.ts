@@ -186,6 +186,11 @@ declare global {
         query: (id: string, sql: string, params?: (string | number | boolean | null)[]) => Promise<{ columns: string[]; rows: any[]; rowCount: number; duration: number }>
         tables: (id: string) => Promise<string[]>
         tableInfo: (id: string, table: string) => Promise<{ columns: { name: string; type: string; nullable: boolean }[]; primaryKey: string[] }>
+        schema: (id: string) => Promise<{
+          tables: { name: string; columns: { name: string; type: string; nullable: boolean }[]; primaryKey: string[] }[]
+          foreignKeys: { name: string; table: string; columns: string[]; refTable: string; refColumns: string[] }[]
+          truncated: boolean
+        }>
       }
       redis: {
         connect: (config: any) => Promise<string>
