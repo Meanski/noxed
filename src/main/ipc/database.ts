@@ -2,7 +2,7 @@ import { BrowserWindow, dialog, ipcMain, IpcMainInvokeEvent } from 'electron'
 import { randomUUID } from 'node:crypto'
 import { createWriteStream } from 'node:fs'
 import { once } from 'node:events'
-import { readFile, rm, stat } from 'node:fs/promises'
+import { readFile, rename, rm, stat } from 'node:fs/promises'
 import { NotFoundError, OwnershipError, ValidationError, toMessage } from './errors'
 import { validateHost, validatePort } from './security'
 import { csvToRows, exportChunks, parseCsv, quoteIdentifier, type ExportFormat } from './dbTransfer'
@@ -23,9 +23,14 @@ const EXPORT_FORMATS = {
   sql: { name: 'SQL', ext: 'sql' },
 } satisfies Record<ExportFormat, { name: string; ext: string }>
 
-/** Writes chunks to `path` as they're produced, honouring backpressure and a size cap. */
+/**
+ * Writes chunks as they're produced (honouring backpressure and a size cap)
+ * to a temporary file beside `path`, then renames it into place. A failure
+ * leaves any existing file at `path` untouched.
+ */
 export async function writeChunks(path: string, chunks: Iterable<string>, maxBytes = MAX_EXPORT_BYTES): Promise<void> {
-  const out = createWriteStream(path, { encoding: 'utf-8' })
+  const temp = `${path}.${randomUUID().slice(0, 8)}.partial`
+  const out = createWriteStream(temp, { encoding: 'utf-8' })
   let bytes = 0
   try {
     for (const chunk of chunks) {
@@ -35,9 +40,10 @@ export async function writeChunks(path: string, chunks: Iterable<string>, maxByt
     }
     out.end()
     await once(out, 'finish')
+    await rename(temp, path)
   } catch (err) {
     out.destroy()
-    await rm(path, { force: true })
+    await rm(temp, { force: true })
     throw err
   }
 }
@@ -193,7 +199,7 @@ export function registerDatabaseHandlers(): void {
     const result = await conn.query(`SELECT * FROM ${quoteIdentifier(table, conn.type)} LIMIT ${MAX_EXPORT_ROWS + 1}`)
     const truncated = result.rows.length > MAX_EXPORT_ROWS
     const rows = (truncated ? result.rows.slice(0, MAX_EXPORT_ROWS) : result.rows) as Record<string, unknown>[]
-    await writeChunks(filePath, exportChunks(format, table, result.columns, rows, conn.type))
+    await writeChunks(filePath, exportChunks(format, table, result.columns, rows, conn.type, result.jsonColumns))
     return { canceled: false, rows: rows.length, truncated }
   })
 

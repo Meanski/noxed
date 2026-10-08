@@ -9,6 +9,7 @@ vi.mock('node:fs/promises', async (importOriginal) => ({
   readFile: vi.fn(),
   stat: vi.fn(),
   rm: (await importOriginal<typeof import('node:fs/promises')>()).rm,
+  rename: (await importOriginal<typeof import('node:fs/promises')>()).rename,
 }))
 vi.mock('pg', () => {
   const query = vi.fn().mockResolvedValue({ fields: [{ name: 'x' }], rows: [{ x: 1 }], rowCount: 1 })
@@ -26,7 +27,7 @@ vi.mock('mysql2/promise', () => ({
 
 import { dialog, ipcMain } from 'electron'
 import { readFile, stat } from 'node:fs/promises'
-import { existsSync, readFileSync } from 'node:fs'
+import { mkdtempSync, readdirSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import * as pg from 'pg'
@@ -58,6 +59,14 @@ describe('db:query parameter validation', () => {
     await handler('db:query')(event, id, 'UPDATE "t" SET "a" = $1 WHERE "id" = $2', ['x', 7])
     const pgQuery = (pg as unknown as { __query: Mock }).__query
     expect(pgQuery).toHaveBeenCalledWith('UPDATE "t" SET "a" = $1 WHERE "id" = $2', ['x', 7])
+  })
+
+  it('reports which postgres columns hold JSON', async () => {
+    const id = await connectPg()
+    const pgQuery = (pg as unknown as { __query: Mock }).__query
+    pgQuery.mockResolvedValueOnce({ fields: [{ name: 'ids', dataTypeID: 1007 }, { name: 'doc', dataTypeID: 3802 }, { name: 'raw', dataTypeID: 114 }], rows: [], rowCount: 0 })
+    const result = (await handler('db:query')(event, id, 'SELECT 1')) as { jsonColumns: string[] }
+    expect(result.jsonColumns).toEqual(['doc', 'raw'])
   })
 
   it('accepts omitted and null params', async () => {
@@ -225,12 +234,14 @@ describe('import and export', () => {
     expect(readFileSync(out, 'utf-8')).toBe(`INSERT INTO "users" ("id", "name") VALUES (1, 'o''k');\n`)
   })
 
-  it('streams exports and removes a file that would grow past the cap', async () => {
-    const out = join(tmpdir(), `noxed-export-cap-${Date.now()}.csv`)
+  it('streams exports, and a failed one leaves the existing file alone', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'noxed-export-'))
+    const out = join(dir, 'table.csv')
     await writeChunks(out, ['a,b\r\n', '1,2\r\n'])
     expect(readFileSync(out, 'utf-8')).toBe('a,b\r\n1,2\r\n')
     await expect(writeChunks(out, ['x'.repeat(10), 'y'.repeat(10)], 15)).rejects.toThrow('larger than')
-    expect(existsSync(out)).toBe(false)
+    expect(readFileSync(out, 'utf-8')).toBe('a,b\r\n1,2\r\n')
+    expect(readdirSync(dir)).toEqual(['table.csv'])
   })
 
   it('validates the export format and honours a cancelled dialog', async () => {

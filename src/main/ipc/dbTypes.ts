@@ -7,7 +7,14 @@ export type DbType = 'postgresql' | 'mysql' | 'mariadb'
 
 export type SslMode = 'disable' | 'require' | 'verify-ca' | 'verify-full'
 
-export interface QueryResult { columns: string[]; rows: unknown[]; rowCount: number; duration: number }
+export interface QueryResult {
+  columns: string[]
+  rows: unknown[]
+  rowCount: number
+  duration: number
+  /** Columns holding JSON (PostgreSQL json/jsonb), whose arrays aren't SQL arrays. */
+  jsonColumns?: string[]
+}
 
 export type QueryParam = string | number | boolean | null
 

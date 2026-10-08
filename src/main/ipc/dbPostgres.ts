@@ -3,6 +3,9 @@ import { ConnectionError, toMessage } from './errors'
 import { quoteIdentifier, type CellValue } from './dbTransfer'
 import { assembleSchema, rowsPerBatch, sslOption, type DbConnectConfig, type DbConnection, type QueryParam } from './dbTypes'
 
+// pg type OIDs for json and jsonb: their arrays are JSON, not PostgreSQL arrays.
+const JSON_TYPE_IDS = new Set([114, 3802])
+
 export async function connectPostgres(config: DbConnectConfig): Promise<DbConnection> {
   const pool = new PgPool({
     host: config.host,
@@ -34,6 +37,7 @@ export async function connectPostgres(config: DbConnectConfig): Promise<DbConnec
       const result = await pool.query(sql, params)
       return {
         columns: result.fields?.map(f => f.name) ?? [],
+        jsonColumns: result.fields?.filter((f) => JSON_TYPE_IDS.has(f.dataTypeID)).map((f) => f.name) ?? [],
         rows: result.rows ?? [],
         rowCount: result.rowCount ?? 0,
         duration: Date.now() - start,

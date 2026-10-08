@@ -16,6 +16,8 @@ describe('parseCsv', () => {
     // A quoted empty field is a real (single-column) record; a blank line isn't.
     expect(parseCsv('value\n""\n\nx\n')).toEqual([['value'], [''], ['x']])
     expect(parseCsv('value\r\n""')).toEqual([['value'], ['']])
+    // A last line of only separators is a row of empty fields.
+    expect(parseCsv('a,b\n,')).toEqual([['a', 'b'], ['', '']])
   })
 
   it('rejects an unterminated quote', () => {
@@ -78,5 +80,20 @@ describe('streamed JSON', () => {
     const rows = [{ id: 1, tags: { a: [1, 2] } }, { id: 2, tags: null }]
     expect(toJson(['id', 'tags'], rows)).toBe(JSON.stringify([{ id: 1, tags: '{"a":[1,2]}' }, { id: 2, tags: null }], null, 2) + '\n')
     expect(toJson(['id'], [])).toBe('[]\n')
+  })
+})
+
+describe('SQL export of PostgreSQL arrays and binary data', () => {
+  it('writes arrays as array literals, except in JSON columns', () => {
+    const sql = toSqlInserts('t', ['ids', 'tags', 'doc'], [{ ids: [1, 2], tags: ['a"b', null, ['x\\y']], doc: [1, 2] }], 'postgresql', ['doc'])
+    expect(sql).toBe(`INSERT INTO "t" ("ids", "tags", "doc") VALUES ('{"1","2"}', '{"a\\"b",NULL,{"x\\\\y"}}', '[1,2]');\n`)
+  })
+
+  it('writes bytes as bytes in each dialect', () => {
+    const bytes = Buffer.from('hi')
+    expect(toSqlInserts('t', ['b'], [{ b: bytes }], 'postgresql')).toBe(`INSERT INTO "t" ("b") VALUES ('\\x6869'::bytea);\n`)
+    expect(toSqlInserts('t', ['b'], [{ b: bytes }], 'mysql')).toBe("INSERT INTO `t` (`b`) VALUES (X'6869');\n")
+    // MySQL keeps arrays (JSON values) as JSON text.
+    expect(toSqlInserts('t', ['j'], [{ j: [1] }], 'mysql')).toBe("INSERT INTO `t` (`j`) VALUES ('[1]');\n")
   })
 })

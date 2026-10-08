@@ -58,6 +58,8 @@ export function parseCsv(text: string): string[][] {
     row.push(field.value)
     i = field.next
     if (src[i] === ',') {
+      // A separator means explicit fields, even if every one is empty.
+      blank = false
       i++
       // A trailing comma means one more, empty, field.
       if (i === src.length) row.push('')
@@ -116,23 +118,49 @@ export function toJson(columns: readonly string[], rows: readonly Record<string,
   return [...jsonChunks(columns, rows)].join('')
 }
 
-function sqlLiteral(value: unknown, dialect: Dialect): string {
+// PostgreSQL's array literal: {"a","b",NULL,{"nested"}}. Elements are always
+// quoted, which every element type accepts.
+function pgArrayLiteral(values: readonly unknown[]): string {
+  const element = (el: unknown): string => {
+    if (el === null || el === undefined) return 'NULL'
+    if (Array.isArray(el)) return pgArrayLiteral(el)
+    return `"${String(plain(el)).replaceAll('\\', '\\\\').replaceAll('"', '\\"')}"`
+  }
+  return `{${values.map(element).join(',')}}`
+}
+
+function quoteString(text: string, dialect: Dialect): string {
+  // MySQL treats backslash as an escape inside string literals by default.
+  const escaped = isMysqlFamily(dialect) ? text.replaceAll('\\', '\\\\') : text
+  return `'${escaped.replaceAll("'", "''")}'`
+}
+
+function sqlLiteral(value: unknown, dialect: Dialect, isJson: boolean): string {
+  // Bytes go back in as bytes, not as the base64 text used for CSV and JSON.
+  if (value instanceof Uint8Array) {
+    const hex = Buffer.from(value).toString('hex')
+    return isMysqlFamily(dialect) ? `X'${hex}'` : `'\\x${hex}'::bytea`
+  }
+  if (Array.isArray(value) && !isJson && !isMysqlFamily(dialect)) return quoteString(pgArrayLiteral(value), dialect)
   const v = plain(value)
   if (v === null) return 'NULL'
   if (typeof v === 'number') return Number.isFinite(v) ? String(v) : 'NULL'
   if (typeof v === 'boolean') return v ? 'TRUE' : 'FALSE'
-  // MySQL treats backslash as an escape inside string literals by default.
-  const escaped = isMysqlFamily(dialect) ? v.replaceAll('\\', '\\\\') : v
-  return `'${escaped.replaceAll("'", "''")}'`
+  return quoteString(v, dialect)
 }
 
-function* sqlChunks(table: string, columns: readonly string[], rows: readonly Record<string, unknown>[], dialect: Dialect): Generator<string> {
+function* sqlChunks(
+  table: string, columns: readonly string[], rows: readonly Record<string, unknown>[], dialect: Dialect, jsonColumns: readonly string[],
+): Generator<string> {
   const target = `${quoteIdentifier(table, dialect)} (${columns.map((c) => quoteIdentifier(c, dialect)).join(', ')})`
-  for (const r of rows) yield `INSERT INTO ${target} VALUES (${columns.map((c) => sqlLiteral(r[c], dialect)).join(', ')});\n`
+  const json = new Set(jsonColumns)
+  for (const r of rows) yield `INSERT INTO ${target} VALUES (${columns.map((c) => sqlLiteral(r[c], dialect, json.has(c))).join(', ')});\n`
 }
 
-export function toSqlInserts(table: string, columns: readonly string[], rows: readonly Record<string, unknown>[], dialect: Dialect): string {
-  return rows.length === 0 ? '\n' : [...sqlChunks(table, columns, rows, dialect)].join('')
+export function toSqlInserts(
+  table: string, columns: readonly string[], rows: readonly Record<string, unknown>[], dialect: Dialect, jsonColumns: readonly string[] = [],
+): string {
+  return rows.length === 0 ? '\n' : [...sqlChunks(table, columns, rows, dialect, jsonColumns)].join('')
 }
 
 export type ExportFormat = 'csv' | 'json' | 'sql'
@@ -140,9 +168,10 @@ export type ExportFormat = 'csv' | 'json' | 'sql'
 /** An export file's text in row-sized pieces, so it can be written without building it whole. */
 export function exportChunks(
   format: ExportFormat, table: string, columns: readonly string[], rows: readonly Record<string, unknown>[], dialect: Dialect,
+  jsonColumns: readonly string[] = [],
 ): Iterable<string> {
   if (format === 'json') return jsonChunks(columns, rows)
-  if (format === 'sql') return sqlChunks(table, columns, rows, dialect)
+  if (format === 'sql') return sqlChunks(table, columns, rows, dialect, jsonColumns)
   return csvChunks(columns, rows)
 }
 
