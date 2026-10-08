@@ -1,3 +1,19 @@
+# Light-touch reviews that stay within CodeRabbit's open-source limits:
+# one review when a PR opens, none on later pushes (ask with
+# `@coderabbitai review` when a re-review is worth it), and no extras.
 reviews:
+  profile: chill
+  high_level_summary: false
+  poem: false
+  review_status: false
+  sequence_diagrams: false
+  collapse_walkthrough: true
   auto_review:
-    enabled: false
+    enabled: true
+    auto_incremental_review: false
+    drafts: false
+  path_filters:
+    - "!package-lock.json"
+    - "!docs/badges/**"
+chat:
+  auto_reply: false
