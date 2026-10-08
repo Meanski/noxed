@@ -2,23 +2,37 @@ import { describe, it, expect, vi, type Mock } from 'vitest'
 
 vi.mock('electron', () => ({
   ipcMain: { handle: vi.fn(), on: vi.fn() },
+  BrowserWindow: { fromWebContents: vi.fn(() => ({})) },
+  dialog: { showSaveDialog: vi.fn(), showOpenDialog: vi.fn() },
+}))
+vi.mock('node:fs/promises', async (importOriginal) => ({
+  readFile: vi.fn(),
+  stat: vi.fn(),
+  rm: (await importOriginal<typeof import('node:fs/promises')>()).rm,
+  rename: (await importOriginal<typeof import('node:fs/promises')>()).rename,
 }))
 vi.mock('pg', () => {
   const query = vi.fn().mockResolvedValue({ fields: [{ name: 'x' }], rows: [{ x: 1 }], rowCount: 1 })
-  const connect = vi.fn().mockResolvedValue({ release: vi.fn() })
+  const clientQuery = vi.fn().mockResolvedValue({ rows: [] })
+  const connect = vi.fn().mockResolvedValue({ release: vi.fn(), query: clientQuery })
   // Regular function so `new Pool(...)` works (arrows are not constructible)
   const PoolCtor = vi.fn(function Pool() {
     return { query, connect, end: vi.fn(), on: vi.fn() }
   })
-  return { Pool: PoolCtor, __query: query }
+  return { Pool: PoolCtor, __query: query, __clientQuery: clientQuery }
 })
 vi.mock('mysql2/promise', () => ({
   default: { createPool: vi.fn() },
 }))
 
-import { ipcMain } from 'electron'
+import { dialog, ipcMain } from 'electron'
+import { readFile, stat } from 'node:fs/promises'
+import { mkdtempSync, readdirSync, readFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import * as pg from 'pg'
-import { assembleSchema, registerDatabaseHandlers } from '../database'
+import { registerDatabaseHandlers, writeChunks } from '../database'
+import { assembleSchema } from '../dbTypes'
 
 registerDatabaseHandlers()
 
@@ -194,5 +208,115 @@ describe('schema for ER diagrams', () => {
     const schema = (await handler('db:schema')(event, id)) as { foreignKeys: unknown[] }
     expect(schema.foreignKeys).toEqual([{ name: 'ab', table: 'a', columns: ['x', 'y'], refTable: 'b', refColumns: ['x', 'y'] }])
     expect(String(mysqlQuery.mock.calls.at(-1)?.[0])).toContain('REFERENCED_TABLE_SCHEMA = DATABASE()')
+  })
+})
+
+describe('import and export', () => {
+  const pgQuery = () => (pg as unknown as { __query: Mock }).__query
+  const pgClientQuery = () => (pg as unknown as { __clientQuery: Mock }).__clientQuery
+
+  it('exports a whole table as SQL to the chosen file', async () => {
+    const id = await connectPg()
+    const out = join(tmpdir(), `noxed-export-${Date.now()}.sql`)
+    vi.mocked(dialog.showSaveDialog).mockResolvedValueOnce({ canceled: false, filePath: out })
+    pgQuery()
+      .mockResolvedValueOnce({ rows: [
+        { column_name: 'id', data_type: 'integer', is_nullable: 'NO' },
+        { column_name: 'name', data_type: 'text', is_nullable: 'YES' },
+        { column_name: 'doc', data_type: 'jsonb', is_nullable: 'YES' },
+      ] })
+      .mockResolvedValueOnce({ rows: [{ attname: 'id' }] })
+      .mockResolvedValueOnce({
+        fields: [{ name: 'id' }, { name: 'name' }, { name: 'doc' }],
+        rows: [{ id: 1, name: "o'k", doc: '"x"' }, { id: 2, name: null, doc: null }, { id: 3, name: 'n', doc: 'null' }],
+        rowCount: 3,
+      })
+    const result = await handler('db:exportTable')(event, id, 'users', 'sql')
+    expect(result).toEqual({ canceled: false, rows: 3, truncated: false })
+    // JSON columns are read as their text, so JSON scalars and SQL NULL stay distinct.
+    expect(pgQuery()).toHaveBeenLastCalledWith('SELECT "id", "name", "doc"::text AS "doc" FROM "users" LIMIT 200001', undefined)
+    expect(readFileSync(out, 'utf-8')).toBe([
+      `INSERT INTO "users" ("id", "name", "doc") VALUES (1, 'o''k', '"x"');`,
+      `INSERT INTO "users" ("id", "name", "doc") VALUES (2, NULL, NULL);`,
+      `INSERT INTO "users" ("id", "name", "doc") VALUES (3, 'n', 'null');`,
+    ].join('\n') + '\n')
+  })
+
+  it('streams exports, and a failed one leaves the existing file alone', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'noxed-export-'))
+    const out = join(dir, 'table.csv')
+    await writeChunks(out, ['a,b\r\n', '1,2\r\n'])
+    expect(readFileSync(out, 'utf-8')).toBe('a,b\r\n1,2\r\n')
+    await expect(writeChunks(out, ['x'.repeat(10), 'y'.repeat(10)], 15)).rejects.toThrow('larger than')
+    expect(readFileSync(out, 'utf-8')).toBe('a,b\r\n1,2\r\n')
+    expect(readdirSync(dir)).toEqual(['table.csv'])
+  })
+
+  it('validates the export format and honours a cancelled dialog', async () => {
+    const id = await connectPg()
+    for (const bad of ['xml', 'toString', '__proto__', 42]) {
+      await expect(handler('db:exportTable')(event, id, 'users', bad)).rejects.toThrow('Invalid export format')
+    }
+    vi.mocked(dialog.showSaveDialog).mockResolvedValueOnce({ canceled: true, filePath: '' })
+    expect(await handler('db:exportTable')(event, id, 'users', 'csv')).toEqual({ canceled: true, rows: 0, truncated: false })
+  })
+
+  it('imports a CSV in one transaction', async () => {
+    const id = await connectPg()
+    vi.mocked(dialog.showOpenDialog).mockResolvedValueOnce({ canceled: false, filePaths: ['/tmp/u.csv'] })
+    vi.mocked(stat).mockResolvedValueOnce({ size: 20 } as never)
+    vi.mocked(readFile).mockResolvedValueOnce('name,id\nbob,7\n,8\n' as never)
+    pgQuery()
+      .mockResolvedValueOnce({ rows: [{ column_name: 'id', data_type: 'int', is_nullable: 'NO' }, { column_name: 'name', data_type: 'text', is_nullable: 'YES' }] })
+      .mockResolvedValueOnce({ rows: [{ attname: 'id' }] })
+    pgClientQuery().mockClear()
+    expect(await handler('db:importCsv')(event, id, 'users')).toEqual({ canceled: false, rows: 2 })
+    expect(pgClientQuery().mock.calls.map((c) => c[0])).toEqual([
+      'BEGIN',
+      'INSERT INTO "users" ("name", "id") VALUES ($1, $2), ($3, $4)',
+      'COMMIT',
+    ])
+    expect(pgClientQuery().mock.calls[1][1]).toEqual(['bob', '7', null, '8'])
+  })
+
+  it('rolls the import back when an insert fails', async () => {
+    const id = await connectPg()
+    vi.mocked(dialog.showOpenDialog).mockResolvedValueOnce({ canceled: false, filePaths: ['/tmp/u.csv'] })
+    vi.mocked(stat).mockResolvedValueOnce({ size: 20 } as never)
+    vi.mocked(readFile).mockResolvedValueOnce('id\n1\n' as never)
+    pgQuery()
+      .mockResolvedValueOnce({ rows: [{ column_name: 'id', data_type: 'int', is_nullable: 'NO' }] })
+      .mockResolvedValueOnce({ rows: [] })
+    pgClientQuery().mockClear()
+    pgClientQuery().mockResolvedValueOnce({}).mockRejectedValueOnce(new Error('duplicate key'))
+    await expect(handler('db:importCsv')(event, id, 'users')).rejects.toThrow('duplicate key')
+    expect(pgClientQuery().mock.calls.map((c) => c[0])).toEqual(['BEGIN', 'INSERT INTO "users" ("id") VALUES ($1)', 'ROLLBACK'])
+  })
+
+  it('refuses oversized files and honours a cancelled dialog', async () => {
+    const id = await connectPg()
+    vi.mocked(dialog.showOpenDialog).mockResolvedValueOnce({ canceled: true, filePaths: [] })
+    expect(await handler('db:importCsv')(event, id, 'users')).toEqual({ canceled: true, rows: 0 })
+    vi.mocked(dialog.showOpenDialog).mockResolvedValueOnce({ canceled: false, filePaths: ['/tmp/big.csv'] })
+    vi.mocked(stat).mockResolvedValueOnce({ size: 60 * 1024 * 1024 } as never)
+    await expect(handler('db:importCsv')(event, id, 'users')).rejects.toThrow('larger than 50 MB')
+  })
+
+  it('imports into mysql inside a transaction with a multi-row VALUES', async () => {
+    const { id } = await connectMysql([
+      [[{ Field: 'id', Type: 'int', Null: 'NO' }]],
+      [[]],
+    ])
+    const mysql = (await import('mysql2/promise')).default
+    const pool = (mysql.createPool as Mock).mock.results.at(-1)!.value
+    const conn = { beginTransaction: vi.fn(), query: vi.fn(), commit: vi.fn(), rollback: vi.fn(), release: vi.fn() }
+    pool.getConnection = vi.fn().mockResolvedValue(conn)
+    vi.mocked(dialog.showOpenDialog).mockResolvedValueOnce({ canceled: false, filePaths: ['/tmp/u.csv'] })
+    vi.mocked(stat).mockResolvedValueOnce({ size: 10 } as never)
+    vi.mocked(readFile).mockResolvedValueOnce('id\n1\n2\n' as never)
+    expect(await handler('db:importCsv')(event, id, 'users')).toEqual({ canceled: false, rows: 2 })
+    expect(conn.query).toHaveBeenCalledWith('INSERT INTO `users` (`id`) VALUES ?', [[['1'], ['2']]])
+    expect(conn.commit).toHaveBeenCalled()
+    expect(conn.release).toHaveBeenCalled()
   })
 })

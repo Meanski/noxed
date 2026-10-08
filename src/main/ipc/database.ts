@@ -1,88 +1,61 @@
-import { ipcMain, IpcMainInvokeEvent } from 'electron'
+import { BrowserWindow, dialog, ipcMain, IpcMainInvokeEvent } from 'electron'
 import { randomUUID } from 'node:crypto'
-import { Pool as PgPool } from 'pg'
-import mysql from 'mysql2/promise'
-import { ConnectionError, NotFoundError, OwnershipError, ValidationError, toMessage } from './errors'
+import { createWriteStream } from 'node:fs'
+import { once } from 'node:events'
+import { readFile, rename, rm, stat } from 'node:fs/promises'
+import { NotFoundError, OwnershipError, ValidationError, toMessage } from './errors'
 import { validateHost, validatePort } from './security'
+import { csvToRows, exportChunks, exportSelectList, parseCsv, quoteIdentifier, type ExportFormat } from './dbTransfer'
+import type { DbConnectConfig, DbConnection, QueryParam, SslMode } from './dbTypes'
+import { connectPostgres } from './dbPostgres'
+import { connectMysql } from './dbMysql'
 
-type DbType = 'postgresql' | 'mysql' | 'mariadb'
-type SslMode = 'disable' | 'require' | 'verify-ca' | 'verify-full'
+const MAX_IMPORT_BYTES = 50 * 1024 * 1024
+const MAX_IMPORT_ROWS = 200_000
+const MAX_EXPORT_ROWS = 200_000
+// Rows are capped above, but a few huge text or BLOB values can still make a
+// file no one meant to write; stop there rather than fill the disk.
+const MAX_EXPORT_BYTES = 512 * 1024 * 1024
 
-interface QueryResult { columns: string[]; rows: unknown[]; rowCount: number; duration: number }
+const EXPORT_FORMATS = {
+  csv: { name: 'CSV', ext: 'csv' },
+  json: { name: 'JSON', ext: 'json' },
+  sql: { name: 'SQL', ext: 'sql' },
+} satisfies Record<ExportFormat, { name: string; ext: string }>
 
-type QueryParam = string | number | boolean | null
-
-interface DbConnection {
-  type: DbType
-  query: (sql: string, params?: QueryParam[]) => Promise<QueryResult>
-  close: () => Promise<void>
-  getTables: () => Promise<string[]>
-  getTableInfo: (table: string) => Promise<TableInfo>
-  getSchema: () => Promise<DbSchema>
-}
-
-interface ForeignKey {
-  name: string
-  table: string
-  columns: string[]
-  refTable: string
-  refColumns: string[]
-}
-
-interface DbSchema {
-  tables: Array<TableInfo & { name: string }>
-  foreignKeys: ForeignKey[]
-  /** True when the table list was cut to MAX_SCHEMA_TABLES. */
-  truncated: boolean
-}
-
-// ER diagrams beyond this many tables stop being readable (and slow to lay out).
-const MAX_SCHEMA_TABLES = 300
-
-type SchemaColumnRow = { table_name: string; column_name: string; data_type: string; is_nullable: string }
-
-/** Groups flat catalog rows into per-table metadata, capped to MAX_SCHEMA_TABLES. */
-export function assembleSchema(
-  columnRows: SchemaColumnRow[],
-  pkRows: { table_name: string; column_name: string }[],
-  foreignKeys: ForeignKey[],
-): DbSchema {
-  const tables = new Map<string, TableInfo & { name: string }>()
-  for (const r of columnRows) {
-    let t = tables.get(r.table_name)
-    if (!t) {
-      if (tables.size >= MAX_SCHEMA_TABLES) continue
-      t = { name: r.table_name, columns: [], primaryKey: [] }
-      tables.set(r.table_name, t)
+/**
+ * Writes chunks as they're produced (honouring backpressure and a size cap)
+ * to a temporary file beside `path`, then renames it into place. A failure
+ * leaves any existing file at `path` untouched.
+ */
+export async function writeChunks(path: string, chunks: Iterable<string>, maxBytes = MAX_EXPORT_BYTES): Promise<void> {
+  const temp = `${path}.${randomUUID().slice(0, 8)}.partial`
+  const out = createWriteStream(temp, { encoding: 'utf-8' })
+  let bytes = 0
+  try {
+    for (const chunk of chunks) {
+      bytes += Buffer.byteLength(chunk)
+      if (bytes > maxBytes) throw new ValidationError(`The export would be larger than ${Math.round(maxBytes / 1024 / 1024)} MB`)
+      if (!out.write(chunk)) await once(out, 'drain')
     }
-    t.columns.push({ name: r.column_name, type: r.data_type, nullable: r.is_nullable === 'YES' })
-  }
-  for (const r of pkRows) tables.get(r.table_name)?.primaryKey.push(r.column_name)
-  const truncated = new Set(columnRows.map((r) => r.table_name)).size > tables.size
-  return {
-    tables: [...tables.values()],
-    foreignKeys: foreignKeys.filter((fk) => tables.has(fk.table) && tables.has(fk.refTable)),
-    truncated,
+    out.end()
+    await once(out, 'finish')
+    await rename(temp, path)
+  } catch (err) {
+    out.destroy()
+    await rm(temp, { force: true })
+    throw err
   }
 }
 
-interface TableInfo {
-  columns: { name: string; type: string; nullable: boolean }[]
-  /** Primary-key columns in key order; empty when the table has none. */
-  primaryKey: string[]
+function validateTableName(table: unknown): string {
+  if (typeof table !== 'string' || table.length === 0 || table.length > MAX_IDENTIFIER_LENGTH) {
+    throw new ValidationError('Table name is required')
+  }
+  return table
 }
 
 interface DbEntry { conn: DbConnection; senderId: number }
-
-interface DbConnectConfig {
-  dbType: DbType
-  host: string
-  port: number
-  username: string
-  password?: string
-  database: string
-  ssl?: SslMode
-}
 
 const connections = new Map<string, DbEntry>()
 const UUID_RE = /^db-[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
@@ -151,224 +124,6 @@ function validateConnectConfig(raw: unknown): DbConnectConfig {
   }
 }
 
-// Shared by pg and mysql2 — both accept { rejectUnauthorized } for their ssl option.
-function sslOption(mode: SslMode | undefined): { rejectUnauthorized: boolean } | undefined {
-  if (mode === 'verify-full' || mode === 'verify-ca') return { rejectUnauthorized: true }
-  if (mode === 'require') return { rejectUnauthorized: false }
-  return undefined
-}
-
-async function connectPostgres(config: DbConnectConfig): Promise<DbConnection> {
-  const pool = new PgPool({
-    host: config.host,
-    port: config.port,
-    user: config.username,
-    password: config.password,
-    database: config.database,
-    ssl: sslOption(config.ssl),
-    connectionTimeoutMillis: 20_000,
-    idleTimeoutMillis: 30_000,
-    max: 4,
-  })
-
-  // Surface pool-level errors instead of letting Node throw.
-  pool.on('error', (err) => console.error(`[db:pg] pool error: ${toMessage(err)}`))
-
-  try {
-    const testClient = await pool.connect()
-    testClient.release()
-  } catch (err) {
-    await pool.end().catch(() => undefined)
-    throw new ConnectionError(toMessage(err))
-  }
-
-  return {
-    type: 'postgresql',
-    async query(sql: string, params?: QueryParam[]) {
-      const start = Date.now()
-      const result = await pool.query(sql, params)
-      return {
-        columns: result.fields?.map(f => f.name) ?? [],
-        rows: result.rows ?? [],
-        rowCount: result.rowCount ?? 0,
-        duration: Date.now() - start,
-      }
-    },
-    async close() {
-      await pool.end()
-    },
-    async getTables() {
-      const result = await pool.query(
-        `SELECT table_name FROM information_schema.tables WHERE table_schema = current_schema() ORDER BY table_name`
-      )
-      return result.rows.map((r: { table_name: string }) => r.table_name)
-    },
-    async getTableInfo(table: string) {
-      const result = await pool.query(
-        `SELECT column_name, data_type, is_nullable FROM information_schema.columns
-         WHERE table_schema = current_schema() AND table_name = $1 ORDER BY ordinal_position`,
-        [table]
-      )
-      // The schema the connection works in (search_path's first), as for the
-      // table list. quote_ident keeps mixed-case names intact; to_regclass
-      // returns NULL (no rows) instead of erroring for a missing table. Only
-      // the first indnkeyatts columns are the key: the rest are INCLUDE
-      // columns stored alongside it.
-      const pk = await pool.query(
-        `SELECT a.attname FROM pg_index i
-         CROSS JOIN LATERAL unnest(i.indkey) WITH ORDINALITY AS k(attnum, ord)
-         JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = k.attnum
-         WHERE i.indrelid = to_regclass(quote_ident(current_schema()) || '.' || quote_ident($1))
-           AND i.indisprimary AND k.ord <= i.indnkeyatts
-         ORDER BY k.ord`,
-        [table]
-      )
-      return {
-        columns: result.rows.map((r: { column_name: string; data_type: string; is_nullable: string }) => ({
-          name: r.column_name,
-          type: r.data_type,
-          nullable: r.is_nullable === 'YES',
-        })),
-        primaryKey: pk.rows.map((r: { attname: string }) => r.attname),
-      }
-    },
-    async getSchema() {
-      const columns = await pool.query(
-        `SELECT table_name, column_name, data_type, is_nullable FROM information_schema.columns
-         WHERE table_schema = current_schema() ORDER BY table_name, ordinal_position`
-      )
-      // Key columns only (the first indnkeyatts), in key order, as tableInfo does.
-      const pks = await pool.query(
-        `SELECT cl.relname AS table_name, a.attname::text AS column_name
-         FROM pg_index i
-         JOIN pg_class cl ON cl.oid = i.indrelid
-         JOIN pg_namespace ns ON ns.oid = cl.relnamespace
-         CROSS JOIN LATERAL unnest(i.indkey) WITH ORDINALITY AS k(attnum, ord)
-         JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = k.attnum
-         WHERE i.indisprimary AND ns.nspname = current_schema() AND k.ord <= i.indnkeyatts
-         ORDER BY cl.relname, k.ord`
-      )
-      // pg_constraint pairs each local column with its referenced column by
-      // position, so composite keys stay aligned (information_schema can't).
-      const fks = await pool.query(
-        `SELECT con.conname AS name, cl.relname AS table_name, rcl.relname AS ref_table,
-                array_agg(att.attname::text ORDER BY k.ord) AS columns,
-                array_agg(ratt.attname::text ORDER BY k.ord) AS ref_columns
-         FROM pg_constraint con
-         JOIN pg_class cl ON cl.oid = con.conrelid
-         JOIN pg_class rcl ON rcl.oid = con.confrelid
-         JOIN pg_namespace ns ON ns.oid = cl.relnamespace
-         JOIN pg_namespace rns ON rns.oid = rcl.relnamespace
-         CROSS JOIN LATERAL unnest(con.conkey, con.confkey) WITH ORDINALITY AS k(col, refcol, ord)
-         JOIN pg_attribute att ON att.attrelid = con.conrelid AND att.attnum = k.col
-         JOIN pg_attribute ratt ON ratt.attrelid = con.confrelid AND ratt.attnum = k.refcol
-         -- Tables are matched by bare name, so both ends must be in this schema.
-         WHERE con.contype = 'f' AND ns.nspname = current_schema() AND rns.nspname = current_schema()
-         GROUP BY con.conname, cl.relname, rcl.relname`
-      )
-      return assembleSchema(
-        columns.rows,
-        pks.rows,
-        fks.rows.map((r: { name: string; table_name: string; ref_table: string; columns: string[]; ref_columns: string[] }) => ({
-          name: r.name, table: r.table_name, columns: r.columns, refTable: r.ref_table, refColumns: r.ref_columns,
-        })),
-      )
-    },
-  }
-}
-
-async function connectMysql(config: DbConnectConfig): Promise<DbConnection> {
-  const pool = mysql.createPool({
-    host: config.host,
-    port: config.port,
-    user: config.username,
-    password: config.password,
-    database: config.database,
-    ssl: sslOption(config.ssl),
-    connectionLimit: 4,
-    connectTimeout: 20_000,
-    enableKeepAlive: true,
-    keepAliveInitialDelay: 10_000,
-  })
-
-  try {
-    const testConn = await pool.getConnection()
-    testConn.release()
-  } catch (err) {
-    await pool.end().catch(() => undefined)
-    throw new ConnectionError(toMessage(err))
-  }
-
-  return {
-    type: config.dbType === 'mariadb' ? 'mariadb' : 'mysql',
-    async query(sql: string, params?: QueryParam[]) {
-      const start = Date.now()
-      const [rows, fields] = await pool.query(sql, params)
-      const resultRows = Array.isArray(rows) ? rows as unknown[] : []
-      const resultFields = Array.isArray(fields) ? fields : []
-      // Writes return a ResultSetHeader instead of rows; report how many rows
-      // they touched, as pg does, so callers can verify an edit hit one row.
-      const affected = Array.isArray(rows) ? resultRows.length : (rows as { affectedRows?: number }).affectedRows ?? 0
-      return {
-        columns: resultFields.map((f: { name: string }) => f.name),
-        rows: resultRows,
-        rowCount: affected,
-        duration: Date.now() - start,
-      }
-    },
-    async close() {
-      await pool.end()
-    },
-    async getTables() {
-      const [rows] = await pool.query('SHOW TABLES')
-      return (rows as Record<string, unknown>[]).map(r => Object.values(r)[0] as string)
-    },
-    async getTableInfo(table: string) {
-      const [rows] = await pool.query('DESCRIBE ??', [table])
-      const [keys] = await pool.query("SHOW KEYS FROM ?? WHERE Key_name = 'PRIMARY'", [table])
-      return {
-        columns: (rows as { Field: string; Type: string; Null: string }[]).map(r => ({
-          name: r.Field,
-          type: r.Type,
-          nullable: r.Null === 'YES',
-        })),
-        primaryKey: (keys as { Column_name: string; Seq_in_index: number }[])
-          .sort((a, b) => a.Seq_in_index - b.Seq_in_index)
-          .map(k => k.Column_name),
-      }
-    },
-    async getSchema() {
-      const [columns] = await pool.query(
-        `SELECT TABLE_NAME AS table_name, COLUMN_NAME AS column_name, COLUMN_TYPE AS data_type, IS_NULLABLE AS is_nullable
-         FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() ORDER BY TABLE_NAME, ORDINAL_POSITION`
-      )
-      const [pks] = await pool.query(
-        `SELECT TABLE_NAME AS table_name, COLUMN_NAME AS column_name FROM information_schema.KEY_COLUMN_USAGE
-         WHERE TABLE_SCHEMA = DATABASE() AND CONSTRAINT_NAME = 'PRIMARY' ORDER BY TABLE_NAME, ORDINAL_POSITION`
-      )
-      const [fkRows] = await pool.query(
-        `SELECT CONSTRAINT_NAME AS name, TABLE_NAME AS table_name, COLUMN_NAME AS column_name,
-                REFERENCED_TABLE_NAME AS ref_table, REFERENCED_COLUMN_NAME AS ref_column
-         FROM information_schema.KEY_COLUMN_USAGE
-         WHERE TABLE_SCHEMA = DATABASE() AND REFERENCED_TABLE_SCHEMA = DATABASE() AND REFERENCED_TABLE_NAME IS NOT NULL
-         ORDER BY TABLE_NAME, CONSTRAINT_NAME, ORDINAL_POSITION`
-      )
-      const fks = new Map<string, ForeignKey>()
-      for (const r of fkRows as { name: string; table_name: string; column_name: string; ref_table: string; ref_column: string }[]) {
-        const id = `${r.table_name}.${r.name}`
-        let fk = fks.get(id)
-        if (!fk) {
-          fk = { name: r.name, table: r.table_name, columns: [], refTable: r.ref_table, refColumns: [] }
-          fks.set(id, fk)
-        }
-        fk.columns.push(r.column_name)
-        fk.refColumns.push(r.ref_column)
-      }
-      return assembleSchema(columns as SchemaColumnRow[], pks as { table_name: string; column_name: string }[], [...fks.values()])
-    },
-  }
-}
-
 export function disposeDatabaseConnectionsForSender(senderId: number): void {
   for (const [id, entry] of connections) {
     if (entry.senderId === senderId) {
@@ -421,9 +176,52 @@ export function registerDatabaseHandlers(): void {
   })
 
   ipcMain.handle('db:tableInfo', async (event, rawId: unknown, table: unknown) => {
-    if (typeof table !== 'string' || table.length === 0 || table.length > MAX_IDENTIFIER_LENGTH) {
-      throw new ValidationError('Table name is required')
-    }
-    return requireOwnedConn(event, rawId).getTableInfo(table)
+    return requireOwnedConn(event, rawId).getTableInfo(validateTableName(table))
+  })
+
+  // Main picks the file and writes it, so table data never round-trips
+  // through the renderer and the renderer never gets a filesystem path.
+  ipcMain.handle('db:exportTable', async (event, rawId: unknown, rawTable: unknown, rawFormat: unknown) => {
+    const conn = requireOwnedConn(event, rawId)
+    const table = validateTableName(rawTable)
+    if (typeof rawFormat !== 'string' || !Object.hasOwn(EXPORT_FORMATS, rawFormat)) throw new ValidationError('Invalid export format')
+    const format = rawFormat as ExportFormat
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (!win) throw new Error('No window for export dialog')
+    const { name, ext } = EXPORT_FORMATS[format]
+    const { canceled, filePath } = await dialog.showSaveDialog(win, {
+      title: `Export ${table}`,
+      defaultPath: `${table}.${ext}`,
+      filters: [{ name, extensions: [ext] }],
+    })
+    if (canceled || !filePath) return { canceled: true, rows: 0, truncated: false }
+
+    const select = exportSelectList((await conn.getTableInfo(table)).columns, conn.type)
+    const result = await conn.query(`SELECT ${select.sql} FROM ${quoteIdentifier(table, conn.type)} LIMIT ${MAX_EXPORT_ROWS + 1}`)
+    const truncated = result.rows.length > MAX_EXPORT_ROWS
+    const rows = (truncated ? result.rows.slice(0, MAX_EXPORT_ROWS) : result.rows) as Record<string, unknown>[]
+    await writeChunks(filePath, exportChunks(format, table, result.columns, rows, conn.type, select.jsonColumns))
+    return { canceled: false, rows: rows.length, truncated }
+  })
+
+  ipcMain.handle('db:importCsv', async (event, rawId: unknown, rawTable: unknown) => {
+    const conn = requireOwnedConn(event, rawId)
+    const table = validateTableName(rawTable)
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (!win) throw new Error('No window for import dialog')
+    const { canceled, filePaths } = await dialog.showOpenDialog(win, {
+      title: `Import CSV into ${table}`,
+      filters: [{ name: 'CSV', extensions: ['csv'] }],
+      properties: ['openFile'],
+    })
+    if (canceled || filePaths.length === 0) return { canceled: true, rows: 0 }
+
+    if ((await stat(filePaths[0])).size > MAX_IMPORT_BYTES) throw new ValidationError('CSV file is larger than 50 MB')
+    const records = parseCsv(await readFile(filePaths[0], 'utf-8'))
+    if (records.length - 1 > MAX_IMPORT_ROWS) throw new ValidationError(`CSV has more than ${MAX_IMPORT_ROWS} rows`)
+    const info = await conn.getTableInfo(table)
+    const { columns, rows } = csvToRows(records, info.columns.map((c) => c.name))
+    if (rows.length === 0) return { canceled: false, rows: 0 }
+    return { canceled: false, rows: await conn.insertRows(table, columns, rows) }
   })
 }
