@@ -178,10 +178,12 @@ describe('schema for ER diagrams', () => {
     // The connection's schema, not 'public'; key columns without INCLUDE ones.
     expect(sql.every((q) => q.includes('current_schema()'))).toBe(true)
     expect(sql[1]).toContain('k.ord <= i.indnkeyatts')
+    // Both ends of a foreign key are in this schema, since tables match by name.
+    expect(sql[2]).toContain('rns.nspname = current_schema()')
   })
 
   it('groups mysql composite foreign keys by constraint', async () => {
-    const { id } = await connectMysql([
+    const { id, query: mysqlQuery } = await connectMysql([
       [[col('a', 'x'), col('a', 'y'), col('b', 'x'), col('b', 'y')]],
       [[]],
       [[
@@ -191,5 +193,6 @@ describe('schema for ER diagrams', () => {
     ])
     const schema = (await handler('db:schema')(event, id)) as { foreignKeys: unknown[] }
     expect(schema.foreignKeys).toEqual([{ name: 'ab', table: 'a', columns: ['x', 'y'], refTable: 'b', refColumns: ['x', 'y'] }])
+    expect(String(mysqlQuery.mock.calls.at(-1)?.[0])).toContain('REFERENCED_TABLE_SCHEMA = DATABASE()')
   })
 })

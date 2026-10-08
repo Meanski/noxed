@@ -258,10 +258,12 @@ async function connectPostgres(config: DbConnectConfig): Promise<DbConnection> {
          JOIN pg_class cl ON cl.oid = con.conrelid
          JOIN pg_class rcl ON rcl.oid = con.confrelid
          JOIN pg_namespace ns ON ns.oid = cl.relnamespace
+         JOIN pg_namespace rns ON rns.oid = rcl.relnamespace
          CROSS JOIN LATERAL unnest(con.conkey, con.confkey) WITH ORDINALITY AS k(col, refcol, ord)
          JOIN pg_attribute att ON att.attrelid = con.conrelid AND att.attnum = k.col
          JOIN pg_attribute ratt ON ratt.attrelid = con.confrelid AND ratt.attnum = k.refcol
-         WHERE con.contype = 'f' AND ns.nspname = current_schema()
+         -- Tables are matched by bare name, so both ends must be in this schema.
+         WHERE con.contype = 'f' AND ns.nspname = current_schema() AND rns.nspname = current_schema()
          GROUP BY con.conname, cl.relname, rcl.relname`
       )
       return assembleSchema(
@@ -348,7 +350,7 @@ async function connectMysql(config: DbConnectConfig): Promise<DbConnection> {
         `SELECT CONSTRAINT_NAME AS name, TABLE_NAME AS table_name, COLUMN_NAME AS column_name,
                 REFERENCED_TABLE_NAME AS ref_table, REFERENCED_COLUMN_NAME AS ref_column
          FROM information_schema.KEY_COLUMN_USAGE
-         WHERE TABLE_SCHEMA = DATABASE() AND REFERENCED_TABLE_NAME IS NOT NULL
+         WHERE TABLE_SCHEMA = DATABASE() AND REFERENCED_TABLE_SCHEMA = DATABASE() AND REFERENCED_TABLE_NAME IS NOT NULL
          ORDER BY TABLE_NAME, CONSTRAINT_NAME, ORDINAL_POSITION`
       )
       const fks = new Map<string, ForeignKey>()

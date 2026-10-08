@@ -93,7 +93,7 @@ export default function ErDiagram({ clientId, onOpenTable }: Readonly<ErDiagramP
     if (!layout) return
     const boxes = layout.nodes.map((n) => {
       const rows = n.shownColumns.map((c, i) =>
-        `<text x="${n.x + 10}" y="${n.y + ER_HEADER_HEIGHT + ER_ROW_HEIGHT * i + 14}" font-size="10" font-family="monospace">${escapeXml(c.name)} ${escapeXml(c.type)}</text>`).join('')
+        `<text x="${n.x + 10}" y="${n.y + ER_HEADER_HEIGHT + ER_ROW_HEIGHT * i + 14}" font-size="10" font-family="monospace">${keyMarker(n, c.name)}${escapeXml(c.name)} ${escapeXml(c.type)}</text>`).join('')
       return `<rect x="${n.x}" y="${n.y}" width="${n.width}" height="${n.height}" rx="4" fill="#fff" stroke="#999"/>` +
         `<text x="${n.x + 10}" y="${n.y + 19}" font-size="12" font-weight="bold" font-family="sans-serif">${escapeXml(n.name)}</text>${rows}`
     }).join('')
@@ -193,6 +193,12 @@ export default function ErDiagram({ clientId, onOpenTable }: Readonly<ErDiagramP
       )}
     </div>
   )
+}
+
+// The exported diagram's stand-in for the key icons: PK, else FK, else nothing.
+function keyMarker(node: ErNode, column: string): string {
+  if (node.primaryKey.includes(column)) return 'PK '
+  return node.foreignKeyColumns.has(column) ? 'FK ' : ''
 }
 
 function escapeXml(s: string): string {

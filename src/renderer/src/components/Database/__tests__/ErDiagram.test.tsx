@@ -69,11 +69,17 @@ describe('ErDiagram', () => {
   it('exports an SVG and reloads the schema', async () => {
     const { api } = setup()
     await screen.findByText('100%')
-    ;(URL as unknown as { createObjectURL: unknown }).createObjectURL = vi.fn(() => 'blob:x')
+    const blobs: Blob[] = []
+    ;(URL as unknown as { createObjectURL: unknown }).createObjectURL = vi.fn((b: Blob) => { blobs.push(b); return 'blob:x' })
     ;(URL as unknown as { revokeObjectURL: unknown }).revokeObjectURL = vi.fn()
     const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
     fireEvent.click(screen.getByTitle('Export SVG'))
     expect(click).toHaveBeenCalled()
+    // Keys survive the export as text markers.
+    const svg = await blobs[0].text()
+    expect(svg).toContain('PK id int')
+    expect(svg).toContain('FK user_id int')
+    expect(svg).toContain('>email text<')
     fireEvent.click(screen.getByTitle('Reload schema'))
     await waitFor(() => expect(api.database.schema).toHaveBeenCalledTimes(2))
   })
