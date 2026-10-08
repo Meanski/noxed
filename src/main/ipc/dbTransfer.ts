@@ -47,9 +47,14 @@ export function parseCsv(text: string): string[][] {
   const src = text.startsWith('\uFEFF') ? text.slice(1) : text // drop a UTF-8 BOM
   const rows: string[][] = []
   let row: string[] = []
+  // A record that was physically nothing (a blank line), as opposed to one
+  // holding an explicitly quoted empty field.
+  let blank = true
   let i = 0
   while (i < src.length) {
-    const field = src[i] === '"' ? readQuotedField(src, i + 1) : readPlainField(src, i)
+    const quoted = src[i] === '"'
+    const field = quoted ? readQuotedField(src, i + 1) : readPlainField(src, i)
+    if (quoted || field.value !== '' || row.length > 0) blank = false
     row.push(field.value)
     i = field.next
     if (src[i] === ',') {
@@ -58,12 +63,13 @@ export function parseCsv(text: string): string[][] {
       if (i === src.length) row.push('')
       continue
     }
-    rows.push(row)
+    if (!blank) rows.push(row)
     row = []
+    blank = true
     i += src[i] === '\r' && src[i + 1] === '\n' ? 2 : 1
   }
-  if (row.length > 0) rows.push(row)
-  return rows.filter((r) => !(r.length === 1 && r[0] === ''))
+  if (row.length > 0 && !blank) rows.push(row)
+  return rows
 }
 
 /** Normalises a driver value for writing to a file. */
@@ -83,13 +89,31 @@ function csvField(value: unknown): string {
   return /[",\r\n]/.test(s) || s !== s.trim() ? `"${s.replaceAll('"', '""')}"` : s
 }
 
+function* csvChunks(columns: readonly string[], rows: readonly Record<string, unknown>[]): Generator<string> {
+  yield columns.map(csvField).join(',') + '\r\n'
+  for (const r of rows) yield columns.map((c) => csvField(r[c])).join(',') + '\r\n'
+}
+
+// The same text as JSON.stringify(rows, null, 2), one element at a time.
+function* jsonChunks(columns: readonly string[], rows: readonly Record<string, unknown>[]): Generator<string> {
+  if (rows.length === 0) {
+    yield '[]\n'
+    return
+  }
+  yield '[\n'
+  for (const [i, r] of rows.entries()) {
+    const element = JSON.stringify(Object.fromEntries(columns.map((c) => [c, plain(r[c])])), null, 2)
+    yield element.split('\n').map((line) => `  ${line}`).join('\n') + (i < rows.length - 1 ? ',\n' : '\n')
+  }
+  yield ']\n'
+}
+
 export function toCsv(columns: readonly string[], rows: readonly Record<string, unknown>[]): string {
-  const lines = [columns.map(csvField).join(','), ...rows.map((r) => columns.map((c) => csvField(r[c])).join(','))]
-  return lines.join('\r\n') + '\r\n'
+  return [...csvChunks(columns, rows)].join('')
 }
 
 export function toJson(columns: readonly string[], rows: readonly Record<string, unknown>[]): string {
-  return JSON.stringify(rows.map((r) => Object.fromEntries(columns.map((c) => [c, plain(r[c])]))), null, 2) + '\n'
+  return [...jsonChunks(columns, rows)].join('')
 }
 
 function sqlLiteral(value: unknown, dialect: Dialect): string {
@@ -102,9 +126,24 @@ function sqlLiteral(value: unknown, dialect: Dialect): string {
   return `'${escaped.replaceAll("'", "''")}'`
 }
 
-export function toSqlInserts(table: string, columns: readonly string[], rows: readonly Record<string, unknown>[], dialect: Dialect): string {
+function* sqlChunks(table: string, columns: readonly string[], rows: readonly Record<string, unknown>[], dialect: Dialect): Generator<string> {
   const target = `${quoteIdentifier(table, dialect)} (${columns.map((c) => quoteIdentifier(c, dialect)).join(', ')})`
-  return rows.map((r) => `INSERT INTO ${target} VALUES (${columns.map((c) => sqlLiteral(r[c], dialect)).join(', ')});`).join('\n') + '\n'
+  for (const r of rows) yield `INSERT INTO ${target} VALUES (${columns.map((c) => sqlLiteral(r[c], dialect)).join(', ')});\n`
+}
+
+export function toSqlInserts(table: string, columns: readonly string[], rows: readonly Record<string, unknown>[], dialect: Dialect): string {
+  return rows.length === 0 ? '\n' : [...sqlChunks(table, columns, rows, dialect)].join('')
+}
+
+export type ExportFormat = 'csv' | 'json' | 'sql'
+
+/** An export file's text in row-sized pieces, so it can be written without building it whole. */
+export function exportChunks(
+  format: ExportFormat, table: string, columns: readonly string[], rows: readonly Record<string, unknown>[], dialect: Dialect,
+): Iterable<string> {
+  if (format === 'json') return jsonChunks(columns, rows)
+  if (format === 'sql') return sqlChunks(table, columns, rows, dialect)
+  return csvChunks(columns, rows)
 }
 
 /**

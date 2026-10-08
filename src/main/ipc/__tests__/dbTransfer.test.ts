@@ -13,6 +13,9 @@ describe('parseCsv', () => {
   it('keeps empty fields and skips blank lines', () => {
     expect(parseCsv('a,,c\n\n,b,\n')).toEqual([['a', '', 'c'], ['', 'b', '']])
     expect(parseCsv('a,b')).toEqual([['a', 'b']])
+    // A quoted empty field is a real (single-column) record; a blank line isn't.
+    expect(parseCsv('value\n""\n\nx\n')).toEqual([['value'], [''], ['x']])
+    expect(parseCsv('value\r\n""')).toEqual([['value'], ['']])
   })
 
   it('rejects an unterminated quote', () => {
@@ -67,5 +70,13 @@ describe('parseCsv edge cases', () => {
     expect(parseCsv('"ab"c,d')).toEqual([['abc', 'd']])
     expect(parseCsv('x\r\ny\rz')).toEqual([['x'], ['y'], ['z']])
     expect(toCsv(['b'], [{ b: Buffer.from('hi') }])).toBe('b\r\naGk=\r\n')
+  })
+})
+
+describe('streamed JSON', () => {
+  it('matches JSON.stringify exactly, including an empty table', () => {
+    const rows = [{ id: 1, tags: { a: [1, 2] } }, { id: 2, tags: null }]
+    expect(toJson(['id', 'tags'], rows)).toBe(JSON.stringify([{ id: 1, tags: '{"a":[1,2]}' }, { id: 2, tags: null }], null, 2) + '\n')
+    expect(toJson(['id'], [])).toBe('[]\n')
   })
 })

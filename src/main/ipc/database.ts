@@ -1,9 +1,11 @@
 import { BrowserWindow, dialog, ipcMain, IpcMainInvokeEvent } from 'electron'
 import { randomUUID } from 'node:crypto'
-import { readFile, stat, writeFile } from 'node:fs/promises'
+import { createWriteStream } from 'node:fs'
+import { once } from 'node:events'
+import { readFile, rm, stat } from 'node:fs/promises'
 import { NotFoundError, OwnershipError, ValidationError, toMessage } from './errors'
 import { validateHost, validatePort } from './security'
-import { csvToRows, parseCsv, quoteIdentifier, toCsv, toJson, toSqlInserts } from './dbTransfer'
+import { csvToRows, exportChunks, parseCsv, quoteIdentifier, type ExportFormat } from './dbTransfer'
 import type { DbConnectConfig, DbConnection, QueryParam, SslMode } from './dbTypes'
 import { connectPostgres } from './dbPostgres'
 import { connectMysql } from './dbMysql'
@@ -11,13 +13,34 @@ import { connectMysql } from './dbMysql'
 const MAX_IMPORT_BYTES = 50 * 1024 * 1024
 const MAX_IMPORT_ROWS = 200_000
 const MAX_EXPORT_ROWS = 200_000
+// Rows are capped above, but a few huge text or BLOB values can still make a
+// file no one meant to write; stop there rather than fill the disk.
+const MAX_EXPORT_BYTES = 512 * 1024 * 1024
 
 const EXPORT_FORMATS = {
   csv: { name: 'CSV', ext: 'csv' },
   json: { name: 'JSON', ext: 'json' },
   sql: { name: 'SQL', ext: 'sql' },
-} as const
-type ExportFormat = keyof typeof EXPORT_FORMATS
+} satisfies Record<ExportFormat, { name: string; ext: string }>
+
+/** Writes chunks to `path` as they're produced, honouring backpressure and a size cap. */
+export async function writeChunks(path: string, chunks: Iterable<string>, maxBytes = MAX_EXPORT_BYTES): Promise<void> {
+  const out = createWriteStream(path, { encoding: 'utf-8' })
+  let bytes = 0
+  try {
+    for (const chunk of chunks) {
+      bytes += Buffer.byteLength(chunk)
+      if (bytes > maxBytes) throw new ValidationError(`The export would be larger than ${Math.round(maxBytes / 1024 / 1024)} MB`)
+      if (!out.write(chunk)) await once(out, 'drain')
+    }
+    out.end()
+    await once(out, 'finish')
+  } catch (err) {
+    out.destroy()
+    await rm(path, { force: true })
+    throw err
+  }
+}
 
 function validateTableName(table: unknown): string {
   if (typeof table !== 'string' || table.length === 0 || table.length > MAX_IDENTIFIER_LENGTH) {
@@ -155,7 +178,7 @@ export function registerDatabaseHandlers(): void {
   ipcMain.handle('db:exportTable', async (event, rawId: unknown, rawTable: unknown, rawFormat: unknown) => {
     const conn = requireOwnedConn(event, rawId)
     const table = validateTableName(rawTable)
-    if (typeof rawFormat !== 'string' || !(rawFormat in EXPORT_FORMATS)) throw new ValidationError('Invalid export format')
+    if (typeof rawFormat !== 'string' || !Object.hasOwn(EXPORT_FORMATS, rawFormat)) throw new ValidationError('Invalid export format')
     const format = rawFormat as ExportFormat
     const win = BrowserWindow.fromWebContents(event.sender)
     if (!win) throw new Error('No window for export dialog')
@@ -170,10 +193,7 @@ export function registerDatabaseHandlers(): void {
     const result = await conn.query(`SELECT * FROM ${quoteIdentifier(table, conn.type)} LIMIT ${MAX_EXPORT_ROWS + 1}`)
     const truncated = result.rows.length > MAX_EXPORT_ROWS
     const rows = (truncated ? result.rows.slice(0, MAX_EXPORT_ROWS) : result.rows) as Record<string, unknown>[]
-    let content = toCsv(result.columns, rows)
-    if (format === 'json') content = toJson(result.columns, rows)
-    if (format === 'sql') content = toSqlInserts(table, result.columns, rows, conn.type)
-    await writeFile(filePath, content, 'utf-8')
+    await writeChunks(filePath, exportChunks(format, table, result.columns, rows, conn.type))
     return { canceled: false, rows: rows.length, truncated }
   })
 

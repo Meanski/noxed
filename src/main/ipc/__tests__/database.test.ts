@@ -5,7 +5,11 @@ vi.mock('electron', () => ({
   BrowserWindow: { fromWebContents: vi.fn(() => ({})) },
   dialog: { showSaveDialog: vi.fn(), showOpenDialog: vi.fn() },
 }))
-vi.mock('node:fs/promises', () => ({ readFile: vi.fn(), writeFile: vi.fn(), stat: vi.fn() }))
+vi.mock('node:fs/promises', async (importOriginal) => ({
+  readFile: vi.fn(),
+  stat: vi.fn(),
+  rm: (await importOriginal<typeof import('node:fs/promises')>()).rm,
+}))
 vi.mock('pg', () => {
   const query = vi.fn().mockResolvedValue({ fields: [{ name: 'x' }], rows: [{ x: 1 }], rowCount: 1 })
   const clientQuery = vi.fn().mockResolvedValue({ rows: [] })
@@ -21,9 +25,12 @@ vi.mock('mysql2/promise', () => ({
 }))
 
 import { dialog, ipcMain } from 'electron'
-import { readFile, stat, writeFile } from 'node:fs/promises'
+import { readFile, stat } from 'node:fs/promises'
+import { existsSync, readFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import * as pg from 'pg'
-import { registerDatabaseHandlers } from '../database'
+import { registerDatabaseHandlers, writeChunks } from '../database'
 import { assembleSchema } from '../dbTypes'
 
 registerDatabaseHandlers()
@@ -209,17 +216,28 @@ describe('import and export', () => {
 
   it('exports a whole table as SQL to the chosen file', async () => {
     const id = await connectPg()
-    vi.mocked(dialog.showSaveDialog).mockResolvedValueOnce({ canceled: false, filePath: '/tmp/users.sql' })
+    const out = join(tmpdir(), `noxed-export-${Date.now()}.sql`)
+    vi.mocked(dialog.showSaveDialog).mockResolvedValueOnce({ canceled: false, filePath: out })
     pgQuery().mockResolvedValueOnce({ fields: [{ name: 'id' }, { name: 'name' }], rows: [{ id: 1, name: "o'k" }], rowCount: 1 })
     const result = await handler('db:exportTable')(event, id, 'users', 'sql')
     expect(result).toEqual({ canceled: false, rows: 1, truncated: false })
     expect(pgQuery()).toHaveBeenLastCalledWith('SELECT * FROM "users" LIMIT 200001', undefined)
-    expect(writeFile).toHaveBeenCalledWith('/tmp/users.sql', `INSERT INTO "users" ("id", "name") VALUES (1, 'o''k');\n`, 'utf-8')
+    expect(readFileSync(out, 'utf-8')).toBe(`INSERT INTO "users" ("id", "name") VALUES (1, 'o''k');\n`)
+  })
+
+  it('streams exports and removes a file that would grow past the cap', async () => {
+    const out = join(tmpdir(), `noxed-export-cap-${Date.now()}.csv`)
+    await writeChunks(out, ['a,b\r\n', '1,2\r\n'])
+    expect(readFileSync(out, 'utf-8')).toBe('a,b\r\n1,2\r\n')
+    await expect(writeChunks(out, ['x'.repeat(10), 'y'.repeat(10)], 15)).rejects.toThrow('larger than')
+    expect(existsSync(out)).toBe(false)
   })
 
   it('validates the export format and honours a cancelled dialog', async () => {
     const id = await connectPg()
-    await expect(handler('db:exportTable')(event, id, 'users', 'xml')).rejects.toThrow('Invalid export format')
+    for (const bad of ['xml', 'toString', '__proto__', 42]) {
+      await expect(handler('db:exportTable')(event, id, 'users', bad)).rejects.toThrow('Invalid export format')
+    }
     vi.mocked(dialog.showSaveDialog).mockResolvedValueOnce({ canceled: true, filePath: '' })
     expect(await handler('db:exportTable')(event, id, 'users', 'csv')).toEqual({ canceled: true, rows: 0, truncated: false })
   })

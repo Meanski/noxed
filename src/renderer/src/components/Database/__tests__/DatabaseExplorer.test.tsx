@@ -717,6 +717,8 @@ describe('DatabaseExplorer — import and export', () => {
     fireEvent.click(screen.getByTitle('Import CSV into table'))
     expect(await screen.findByText('Imported 12 rows')).toBeTruthy()
     expect(api.database.query).toHaveBeenCalledWith('db-1', 'SELECT * FROM "users" LIMIT 100')
+    // Still browsing users, so the table actions stay available.
+    await waitFor(() => expect(screen.getByTitle('Import CSV into table')).toBeTruthy())
   })
 
   it('reports import failures and ignores a cancelled picker', async () => {

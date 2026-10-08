@@ -198,7 +198,7 @@ export default function DatabaseExplorer({ tab }: Readonly<{ tab: Tab }>) {
       const result = await window.api.database.importCsv(clientId, table)
       if (result.canceled) return
       showToast(`Imported ${result.rows} rows`)
-      runQuery(selectRows(table, sqlDialect, BROWSE_LIMIT), false)
+      runQuery(selectRows(table, sqlDialect, BROWSE_LIMIT), false, table)
     } catch (err) { showToast(`Import failed: ${ipcErrorMessage(err)}`) }
   }
 
