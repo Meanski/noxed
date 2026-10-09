@@ -1,7 +1,7 @@
 import sql from 'mssql'
 import { ConnectionError, toMessage } from './errors'
 import { quoteIdentifier, type CellValue } from './dbTransfer'
-import { assembleSchema, type DbConnection, type ForeignKey, type QueryParam, type SchemaColumnRow, type ServerDbConfig } from './dbTypes'
+import { assembleSchema, valuesPlaceholders, type DbConnection, type ForeignKey, type QueryParam, type SchemaColumnRow, type ServerDbConfig } from './dbTypes'
 
 // SQL Server allows 2100 parameters per request; leave headroom.
 const MAX_REQUEST_PARAMS = 2000
@@ -130,7 +130,7 @@ export async function connectMssql(config: ServerDbConfig): Promise<DbConnection
       try {
         for (let i = 0; i < rows.length; i += perBatch) {
           const batch = rows.slice(i, i + perBatch)
-          const values = batch.map((row, r) => `(${row.map((_, c) => `@p${r * columns.length + c + 1}`).join(', ')})`).join(', ')
+          const values = valuesPlaceholders(batch.length, columns.length, (n) => `@p${n}`)
           await bindAll(new sql.Request(tx), batch.flat()).query(`INSERT INTO ${target} VALUES ${values}`)
         }
         await tx.commit()

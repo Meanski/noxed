@@ -36,6 +36,20 @@ const TYPE_OPTIONS: { type: ConnectionType; label: string; icon: any; desc: stri
   { type: 'rdp', label: 'Remote Desktop', icon: Monitor, desc: 'Graphical Windows desktop over RDP', color: '#06B6D4' },
 ]
 
+function validateDatabaseFields(form: Readonly<{ dbType: string; filePath: string; username: string; databaseName: string }>): string | null {
+  if (form.dbType === 'sqlite') return form.filePath.trim() ? null : 'Choose a database file'
+  // MongoDB may have no login, and picks a database after connecting.
+  if (form.dbType === 'mongodb') return null
+  if (!form.username.trim()) return 'Username is required'
+  if (!form.databaseName.trim()) return 'Database name is required'
+  return null
+}
+
+function validateRedisDb(raw: string): string | null {
+  const db = Number.parseInt(raw)
+  return Number.isInteger(db) && db >= 0 && db <= 15 ? null : 'DB index must be 0–15'
+}
+
 export default function AddConnectionModal({ onClose }: Props) {
   const { addSession, sessions, editingConnectionId, setEditingConnectionId, pendingConnectionGroup, setPendingConnectionGroup } = useAppStore()
   const [step, setStep] = useState<Step>('type')
@@ -240,17 +254,9 @@ export default function AddConnectionModal({ onClose }: Props) {
         if (form.authType === 'key' && !form.keyPath.trim()) return 'Private key path is required'
         return null
       case 'database':
-        if (form.dbType === 'sqlite') return form.filePath.trim() ? null : 'Choose a database file'
-        // MongoDB may have no login, and picks a database after connecting.
-        if (form.dbType === 'mongodb') return null
-        if (!form.username.trim()) return 'Username is required'
-        if (!form.databaseName.trim()) return 'Database name is required'
-        return null
-      case 'redis': {
-        const db = Number.parseInt(form.redisDb)
-        if (!Number.isInteger(db) || db < 0 || db > 15) return 'DB index must be 0–15'
-        return null
-      }
+        return validateDatabaseFields(form)
+      case 'redis':
+        return validateRedisDb(form.redisDb)
       case 'rdp':
         return form.username.trim() ? null : 'Username is required'
       default:
@@ -286,6 +292,48 @@ export default function AddConnectionModal({ onClose }: Props) {
     return undefined
   }
 
+  // Opens and closes the connection the form describes, throwing if it fails.
+  const probeSsh = async (host: string, port: number, password: string | undefined) => {
+    const target = {
+      host,
+      port,
+      username: form.username.trim(),
+      password: form.authType === 'password' ? password : undefined,
+      privateKey: form.authType === 'key' ? await readPrivateKey(form.keyPath.trim()) : undefined,
+      jumpHostId: form.jumpHostId || undefined,
+    }
+    if (selectedType === 'ssh') {
+      await window.api.ssh.disconnect(await window.api.ssh.connect(target))
+    } else {
+      await window.api.sftp.disconnect(await window.api.sftp.connect(target))
+    }
+  }
+
+  const probeDatabase = async (host: string, port: number, password: string | undefined) => {
+    if (isMongo) {
+      await window.api.mongo.disconnect(await window.api.mongo.connect(mongoTarget(host, port, password)))
+      return
+    }
+    const id = await window.api.database.connect(isSqlite ? { dbType: 'sqlite', filePath: form.filePath.trim() } : {
+      dbType: form.dbType,
+      host,
+      port,
+      username: form.username.trim(),
+      password,
+      database: form.databaseName.trim(),
+      ssl: form.sslMode,
+    })
+    await window.api.database.disconnect(id)
+  }
+
+  const probeConnection = async (host: string, port: number, password: string | undefined) => {
+    if (selectedType === 'ssh' || selectedType === 'sftp') return probeSsh(host, port, password)
+    if (selectedType === 'database') return probeDatabase(host, port, password)
+    if (selectedType === 'redis') {
+      await window.api.redis.disconnect(await window.api.redis.connect({ host, port, password, db: Number.parseInt(form.redisDb) }))
+    }
+  }
+
   const handleTest = async () => {
     const invalid = validateConfigForm()
     if (invalid) {
@@ -303,44 +351,7 @@ export default function AddConnectionModal({ onClose }: Props) {
     try {
       const password = await effectivePassword()
 
-      if (selectedType === 'ssh' || selectedType === 'sftp') {
-        let privateKey: string | undefined
-        if (form.authType === 'key') {
-          privateKey = await readPrivateKey(form.keyPath.trim())
-        }
-        const target = {
-          host,
-          port,
-          username: form.username.trim(),
-          password: form.authType === 'password' ? password : undefined,
-          privateKey,
-          jumpHostId: form.jumpHostId || undefined,
-        }
-        if (selectedType === 'ssh') {
-          const streamId = await window.api.ssh.connect(target)
-          await window.api.ssh.disconnect(streamId)
-        } else {
-          const clientId = await window.api.sftp.connect(target)
-          await window.api.sftp.disconnect(clientId)
-        }
-      } else if (selectedType === 'redis') {
-        const id = await window.api.redis.connect({ host, port, password, db: Number.parseInt(form.redisDb) })
-        await window.api.redis.disconnect(id)
-      } else if (selectedType === 'database' && form.dbType === 'mongodb') {
-        const id = await window.api.mongo.connect(mongoTarget(host, port, password))
-        await window.api.mongo.disconnect(id)
-      } else if (selectedType === 'database') {
-        const id = await window.api.database.connect(isSqlite ? { dbType: 'sqlite', filePath: form.filePath.trim() } : {
-          dbType: form.dbType,
-          host,
-          port,
-          username: form.username.trim(),
-          password,
-          database: form.databaseName.trim(),
-          ssl: form.sslMode,
-        })
-        await window.api.database.disconnect(id)
-      }
+      await probeConnection(host, port, password)
 
       setTestResult('success')
     } catch (err: any) {
@@ -369,6 +380,8 @@ export default function AddConnectionModal({ onClose }: Props) {
 
   const sessionData = (): any => {
     const includePassword = !editingConnectionId || passwordDirty
+    const forSsh = <T,>(value: T) => (selectedType === 'ssh' ? value : undefined)
+    const forDb = <T,>(value: T) => (selectedType === 'database' ? value : undefined)
     return {
       type: selectedType,
       label: form.label.trim() || undefined,
@@ -384,13 +397,13 @@ export default function AddConnectionModal({ onClose }: Props) {
       group: form.group || undefined,
       color: form.color,
       tags: parsedTags(),
-      pollingEnabled: selectedType === 'ssh' ? form.pollingEnabled : undefined,
-      pollingIntervalSeconds: selectedType === 'ssh' ? Number.parseInt(form.pollingIntervalSeconds) : undefined,
-      connectOnStart: selectedType === 'ssh' ? form.connectOnStart : undefined,
-      agentForward: selectedType === 'ssh' ? form.agentForward : undefined,
-      dbType: selectedType === 'database' ? form.dbType : undefined,
-      databaseName: selectedType === 'database' ? form.databaseName : undefined,
-      sslMode: selectedType === 'database' ? form.sslMode : undefined,
+      pollingEnabled: forSsh(form.pollingEnabled),
+      pollingIntervalSeconds: forSsh(Number.parseInt(form.pollingIntervalSeconds)),
+      connectOnStart: forSsh(form.connectOnStart),
+      agentForward: forSsh(form.agentForward),
+      dbType: forDb(form.dbType),
+      databaseName: forDb(form.databaseName),
+      sslMode: forDb(form.sslMode),
       authSource: isMongo && form.authSource.trim() ? form.authSource.trim() : undefined,
       mongoSrv: isMongo ? form.mongoSrv : undefined,
       redisDb: selectedType === 'redis' ? Number.parseInt(form.redisDb) : undefined,

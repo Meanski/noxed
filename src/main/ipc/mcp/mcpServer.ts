@@ -46,6 +46,29 @@ function isRequest(value: unknown): value is JsonRpcRequest {
   return !!v && typeof v === 'object' && v.jsonrpc === '2.0' && typeof v.method === 'string'
 }
 
+function initializeResult(params: Record<string, unknown>) {
+  const asked = typeof params.protocolVersion === 'string' ? params.protocolVersion : ''
+  return {
+    protocolVersion: SUPPORTED_VERSIONS.includes(asked) ? asked : SUPPORTED_VERSIONS[0],
+    capabilities: { tools: { listChanged: false } },
+    serverInfo: SERVER_INFO,
+    instructions: INSTRUCTIONS,
+  }
+}
+
+async function callTool(id: string | number | null, params: Record<string, unknown>, tools: readonly McpTool[]): Promise<JsonRpcResponse> {
+  const tool = tools.find((t) => t.name === params.name)
+  if (!tool) return failure(id, INVALID_PARAMS, `Unknown tool: ${typeof params.name === 'string' ? params.name : JSON.stringify(params.name)}`)
+  const args = params.arguments && typeof params.arguments === 'object' ? (params.arguments as Record<string, unknown>) : {}
+  try {
+    return { jsonrpc: '2.0', id, result: { content: [{ type: 'text', text: await tool.run(args) }], isError: false } }
+  } catch (err) {
+    // Tool failures (including a user's denial) are results the model
+    // should read, not protocol errors.
+    return { jsonrpc: '2.0', id, result: { content: [{ type: 'text', text: toMessage(err) }], isError: true } }
+  }
+}
+
 /** Answers one JSON-RPC message; null for notifications, which get no reply. */
 export async function handleMcpMessage(message: unknown, tools: readonly McpTool[]): Promise<JsonRpcResponse | null> {
   if (!isRequest(message)) return failure(null, INVALID_REQUEST, 'Invalid JSON-RPC request')
@@ -53,19 +76,8 @@ export async function handleMcpMessage(message: unknown, tools: readonly McpTool
   if (id === undefined) return null
 
   switch (method) {
-    case 'initialize': {
-      const asked = typeof params.protocolVersion === 'string' ? params.protocolVersion : ''
-      return {
-        jsonrpc: '2.0',
-        id,
-        result: {
-          protocolVersion: SUPPORTED_VERSIONS.includes(asked) ? asked : SUPPORTED_VERSIONS[0],
-          capabilities: { tools: { listChanged: false } },
-          serverInfo: SERVER_INFO,
-          instructions: INSTRUCTIONS,
-        },
-      }
-    }
+    case 'initialize':
+      return { jsonrpc: '2.0', id, result: initializeResult(params) }
     case 'ping':
       return { jsonrpc: '2.0', id, result: {} }
     case 'tools/list':
@@ -74,18 +86,8 @@ export async function handleMcpMessage(message: unknown, tools: readonly McpTool
         id,
         result: { tools: tools.map(({ name, title, description, inputSchema, annotations }) => ({ name, title, description, inputSchema, annotations })) },
       }
-    case 'tools/call': {
-      const tool = tools.find((t) => t.name === params.name)
-      if (!tool) return failure(id, INVALID_PARAMS, `Unknown tool: ${typeof params.name === 'string' ? params.name : JSON.stringify(params.name)}`)
-      const args = params.arguments && typeof params.arguments === 'object' ? (params.arguments as Record<string, unknown>) : {}
-      try {
-        return { jsonrpc: '2.0', id, result: { content: [{ type: 'text', text: await tool.run(args) }], isError: false } }
-      } catch (err) {
-        // Tool failures (including a user's denial) are results the model
-        // should read, not protocol errors.
-        return { jsonrpc: '2.0', id, result: { content: [{ type: 'text', text: toMessage(err) }], isError: true } }
-      }
-    }
+    case 'tools/call':
+      return callTool(id, params, tools)
     default:
       return failure(id, METHOD_NOT_FOUND, `Method not found: ${method}`)
   }

@@ -33,7 +33,7 @@ export default function ExportTableModal({ table, onExport, onClose }: Readonly<
         <legend className="sr-only">Format</legend>
         {FORMATS.map((f) => (
           <label key={f.value} className="flex items-start gap-2 text-[12px]" style={{ color: 'var(--nox-text)' }}>
-            <input type="radio" name="export-format" className="mt-0.5" checked={format === f.value} onChange={() => setFormat(f.value)} />
+            <input type="radio" name="export-format" aria-label={f.label} className="mt-0.5" checked={format === f.value} onChange={() => setFormat(f.value)} />
             <span>
               <span className="font-medium">{f.label}</span>
               <span className="ml-1.5 text-[11px]" style={{ color: 'var(--nox-text-2)' }}>{f.description}</span>

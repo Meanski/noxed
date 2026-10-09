@@ -60,6 +60,7 @@ export default function InsertRowModal({ table, columns, onInsert, onClose }: Re
             </span>
             <input
               data-autofocus={i === 0 ? '' : undefined}
+              aria-label={col.name}
               value={values[col.name] ?? ''}
               onChange={(e) => setValues((v) => ({ ...v, [col.name]: e.target.value }))}
               placeholder="default"

@@ -37,7 +37,8 @@ const grants = new Set<string>()
  */
 export function resetApprovals(): void {
   grants.clear()
-  for (const entry of [...pending.values()]) entry.cancel()
+  // Deleting entries while iterating a Map is safe: each is visited once.
+  for (const entry of pending.values()) entry.cancel()
 }
 
 /** Resolves once the user approves; throws AuthError when they don't (or can't). */

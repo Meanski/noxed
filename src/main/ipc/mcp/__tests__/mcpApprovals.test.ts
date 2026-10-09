@@ -70,15 +70,15 @@ describe('requestApproval', () => {
     await first
     const asked = sent().length
     await requestApproval('read', 's1', 'web-01', 'read /etc/motd')
-    expect(sent().length).toBe(asked)
+    expect(sent()).toHaveLength(asked)
     const other = requestApproval('command', 's1', 'web-01', 'ls')
     await flush()
-    expect(sent().length).toBe(asked + 1)
+    expect(sent()).toHaveLength(asked + 1)
     respond('deny')
     await expect(other).rejects.toThrow(AuthError)
     resetApprovals()
     const afterClear = requestApproval('read', 's1', 'web-01', 'read x')
-    expect(sent().length).toBe(asked + 2)
+    expect(sent()).toHaveLength(asked + 2)
     respond('deny')
     await expect(afterClear).rejects.toThrow(AuthError)
   })

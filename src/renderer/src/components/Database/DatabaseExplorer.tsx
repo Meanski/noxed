@@ -8,7 +8,7 @@ import ExplainTreeView, { parseExplainJson, type ExplainNode } from './ExplainTr
 import type { ActivePanel, QueryResult, ResultSort, TableColumn } from './types'
 import ExplorerToolbar from './ExplorerToolbar'
 import ResultsTabsBar from './ResultsTabsBar'
-import { selectRows } from '../../lib/dbSql'
+import { selectRows, toEditable } from '../../lib/dbSql'
 import { useTableEditing } from './useTableEditing'
 import InsertRowModal from './InsertRowModal'
 import DeleteRowModal from './DeleteRowModal'
@@ -32,7 +32,7 @@ function computeRowDiff(prev: QueryResult | null, next: QueryResult): Set<string
       next.columns.forEach(col => changes.add(`${i}-${col}`))
     } else if (oldRow && newRow) {
       for (const col of next.columns) {
-        if (String(newRow[col] ?? '') !== String(oldRow[col] ?? '')) changes.add(`${i}-${col}`)
+        if (toEditable(newRow[col]) !== toEditable(oldRow[col])) changes.add(`${i}-${col}`)
       }
     }
   }
@@ -222,7 +222,7 @@ export default function DatabaseExplorer({ tab }: Readonly<{ tab: Tab }>) {
   function copyResults() {
     if (!results) return
     const h = results.columns.join('\t')
-    const rows = results.rows.map(r => results.columns.map(c => r[c] ?? '').join('\t')).join('\n')
+    const rows = results.rows.map(r => results.columns.map(c => toEditable(r[c])).join('\t')).join('\n')
     navigator.clipboard.writeText(`${h}\n${rows}`); showToast('Copied')
   }
 
@@ -230,9 +230,7 @@ export default function DatabaseExplorer({ tab }: Readonly<{ tab: Tab }>) {
     if (!results) return
     const h = results.columns.join(',')
     const rows = results.rows.map(r => results.columns.map(c => {
-      const v = r[c]
-      if (v == null) return ''
-      const s = String(v)
+      const s = toEditable(r[c])
       return s.includes(',') || s.includes('"') || s.includes('\n') ? `"${s.replaceAll('"', '""')}"` : s
     }).join(',')).join('\n')
     const blob = new Blob([`${h}\n${rows}`], { type: 'text/csv' }); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `${browsingTable || 'query'}-results.csv`; a.click(); URL.revokeObjectURL(a.href); showToast('Exported')
@@ -297,7 +295,7 @@ export default function DatabaseExplorer({ tab }: Readonly<{ tab: Tab }>) {
       if (av == null && bv == null) return 0
       if (av == null) return 1
       if (bv == null) return -1
-      const cmp = typeof av === 'number' && typeof bv === 'number' ? av - bv : String(av).localeCompare(String(bv))
+      const cmp = typeof av === 'number' && typeof bv === 'number' ? av - bv : toEditable(av).localeCompare(toEditable(bv))
       return dir === 'asc' ? cmp : -cmp
     })
   }, [results, resultSort])

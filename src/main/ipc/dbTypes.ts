@@ -105,6 +105,15 @@ export function rowsPerBatch(columnCount: number): number {
   return Math.max(1, Math.floor(MAX_BIND_PARAMS / Math.max(1, columnCount)))
 }
 
+/**
+ * `(p1, p2), (p3, p4)` for a multi-row INSERT, numbering placeholders across
+ * rows; `marker` renders the driver's syntax for parameter n ($n, @pn).
+ */
+export function valuesPlaceholders(rowCount: number, columnCount: number, marker: (n: number) => string): string {
+  const row = (r: number) => Array.from({ length: columnCount }, (_, c) => marker(r * columnCount + c + 1)).join(', ')
+  return Array.from({ length: rowCount }, (_, r) => `(${row(r)})`).join(', ')
+}
+
 // Shared by pg and mysql2 — both accept { rejectUnauthorized } for their ssl option.
 export function sslOption(mode: SslMode | undefined): { rejectUnauthorized: boolean } | undefined {
   if (mode === 'verify-full' || mode === 'verify-ca') return { rejectUnauthorized: true }

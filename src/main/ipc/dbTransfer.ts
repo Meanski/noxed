@@ -52,6 +52,15 @@ function readQuotedField(src: string, start: number): Field {
   throw new ValidationError('CSV ends inside a quoted field')
 }
 
+/** The field starting at `start`; `explicit` when it was quoted or non-empty. */
+function readField(src: string, start: number): { value: string; next: number; explicit: boolean } {
+  const quoted = src[start] === '"'
+  const field = quoted ? readQuotedField(src, start + 1) : readPlainField(src, start)
+  return { ...field, explicit: quoted || field.value !== '' }
+}
+
+const lineBreakLength = (src: string, i: number) => (src[i] === '\r' && src[i + 1] === '\n' ? 2 : 1)
+
 /** RFC 4180 CSV: quoted fields, doubled quotes, CRLF or LF, newlines inside quotes. */
 export function parseCsv(text: string): string[][] {
   const src = text.startsWith('\uFEFF') ? text.slice(1) : text // drop a UTF-8 BOM
@@ -62,9 +71,8 @@ export function parseCsv(text: string): string[][] {
   let blank = true
   let i = 0
   while (i < src.length) {
-    const quoted = src[i] === '"'
-    const field = quoted ? readQuotedField(src, i + 1) : readPlainField(src, i)
-    if (quoted || field.value !== '' || row.length > 0) blank = false
+    const field = readField(src, i)
+    if (field.explicit || row.length > 0) blank = false
     row.push(field.value)
     i = field.next
     if (src[i] === ',') {
@@ -78,7 +86,7 @@ export function parseCsv(text: string): string[][] {
     if (!blank) rows.push(row)
     row = []
     blank = true
-    i += src[i] === '\r' && src[i + 1] === '\n' ? 2 : 1
+    i += lineBreakLength(src, i)
   }
   if (row.length > 0 && !blank) rows.push(row)
   return rows
@@ -145,7 +153,7 @@ function pgArrayLiteral(values: readonly unknown[]): string {
   const element = (el: unknown): string => {
     if (el === null || el === undefined) return 'NULL'
     if (Array.isArray(el)) return pgArrayLiteral(el)
-    return `"${String(plain(el)).replaceAll('\\', '\\\\').replaceAll('"', '\\"')}"`
+    return `"${String(plain(el)).replaceAll('\\', String.raw`\\`).replaceAll('"', String.raw`\"`)}"`
   }
   return `{${values.map(element).join(',')}}`
 }
@@ -160,7 +168,7 @@ function quoteString(text: string, dialect: Dialect): string {
 /** A dialect's literal for raw bytes. */
 function bytesLiteral(bytes: Uint8Array, dialect: Dialect): string {
   const hex = Buffer.from(bytes).toString('hex')
-  if (dialect === 'postgresql') return `'\\x${hex}'::bytea`
+  if (dialect === 'postgresql') return String.raw`'\x${hex}'::bytea`
   if (dialect === 'mssql') return `0x${hex}`
   return `X'${hex}'`
 }
@@ -189,15 +197,16 @@ function sqlLiteral(value: unknown, dialect: Dialect, isJson: boolean): string {
   if (value instanceof Uint8Array) return bytesLiteral(value, dialect)
   // Only PostgreSQL has array columns; elsewhere an array is JSON.
   if (Array.isArray(value) && !isJson && dialect === 'postgresql') return quoteString(pgArrayLiteral(value), dialect)
-  const v = plain(value)
+  return scalarLiteral(plain(value), dialect)
+}
+
+function scalarLiteral(v: CellValue, dialect: Dialect): string {
   if (v === null) return 'NULL'
   if (typeof v === 'number') return Number.isFinite(v) ? String(v) : 'NULL'
+  if (typeof v === 'string') return quoteString(v, dialect)
   // SQLite and SQL Server have no boolean literals; both store bits as 1/0.
-  if (typeof v === 'boolean') {
-    if (dialect === 'sqlite' || dialect === 'mssql') return v ? '1' : '0'
-    return v ? 'TRUE' : 'FALSE'
-  }
-  return quoteString(v, dialect)
+  if (dialect === 'sqlite' || dialect === 'mssql') return v ? '1' : '0'
+  return v ? 'TRUE' : 'FALSE'
 }
 
 function* sqlChunks(
