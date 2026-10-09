@@ -1,9 +1,9 @@
 import mysql from 'mysql2/promise'
 import { ConnectionError, toMessage } from './errors'
 import { quoteIdentifier, type CellValue } from './dbTransfer'
-import { assembleSchema, rowsPerBatch, sslOption, type DbConnectConfig, type DbConnection, type ForeignKey, type QueryParam, type SchemaColumnRow } from './dbTypes'
+import { assembleSchema, rowsPerBatch, sslOption, type ServerDbConfig, type DbConnection, type ForeignKey, type QueryParam, type SchemaColumnRow } from './dbTypes'
 
-export async function connectMysql(config: DbConnectConfig): Promise<DbConnection> {
+export async function connectMysql(config: ServerDbConfig): Promise<DbConnection> {
   const pool = mysql.createPool({
     host: config.host,
     port: config.port,

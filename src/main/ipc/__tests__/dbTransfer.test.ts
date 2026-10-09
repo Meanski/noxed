@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { csvToRows, exportChunks, exportSelectList, parseCsv, quoteIdentifier, toCsv, toJson, toSqlInserts } from '../dbTransfer'
+import { csvToRows, exportChunks, exportSelectList, parseCsv, quoteIdentifier, selectAll, toCsv, toJson, toSqlInserts } from '../dbTransfer'
 
 describe('parseCsv', () => {
   it('handles quotes, doubled quotes, embedded newlines, CRLF and a BOM', () => {
@@ -119,5 +119,18 @@ describe('CSV headers', () => {
     expect(csvToRows([['foo'], ['1']], ['foo', 'FOO']).columns).toEqual(['foo'])
     expect(csvToRows([['Name'], ['x']], ['name']).columns).toEqual(['name'])
     expect(() => csvToRows([['Foo'], ['1']], ['foo', 'FOO'])).toThrow('could be foo or FOO')
+  })
+})
+
+describe('dialects', () => {
+  it('quotes and limits per engine', () => {
+    expect(quoteIdentifier('a]b', 'mssql')).toBe('[a]]b]')
+    expect(selectAll('t', 'mssql', 5)).toBe('SELECT TOP 5 * FROM [t]')
+    expect(selectAll('t', 'sqlite', 5)).toBe('SELECT * FROM "t" LIMIT 5')
+  })
+
+  it('writes booleans as bits and Unicode strings for SQL Server', () => {
+    expect(toSqlInserts('t', ['ok', 's'], [{ ok: true, s: 'é' }], 'mssql')).toBe("INSERT INTO [t] ([ok], [s]) VALUES (1, N'é');\n")
+    expect(toSqlInserts('t', ['ok'], [{ ok: false }], 'sqlite')).toBe('INSERT INTO "t" ("ok") VALUES (0);\n')
   })
 })

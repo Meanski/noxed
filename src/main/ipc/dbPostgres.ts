@@ -1,9 +1,9 @@
 import { Pool as PgPool } from 'pg'
 import { ConnectionError, toMessage } from './errors'
 import { quoteIdentifier, type CellValue } from './dbTransfer'
-import { assembleSchema, rowsPerBatch, sslOption, type DbConnectConfig, type DbConnection, type QueryParam } from './dbTypes'
+import { assembleSchema, rowsPerBatch, sslOption, valuesPlaceholders, type ServerDbConfig, type DbConnection, type QueryParam } from './dbTypes'
 
-export async function connectPostgres(config: DbConnectConfig): Promise<DbConnection> {
+export async function connectPostgres(config: ServerDbConfig): Promise<DbConnection> {
   const pool = new PgPool({
     host: config.host,
     port: config.port,
@@ -127,9 +127,7 @@ export async function connectPostgres(config: DbConnectConfig): Promise<DbConnec
         await client.query('BEGIN')
         for (let i = 0; i < rows.length; i += perBatch) {
           const batch = rows.slice(i, i + perBatch)
-          const values = batch
-            .map((row, r) => `(${row.map((_, c) => `$${r * columns.length + c + 1}`).join(', ')})`)
-            .join(', ')
+          const values = valuesPlaceholders(batch.length, columns.length, (n) => `$${n}`)
           await client.query(`INSERT INTO ${target} VALUES ${values}`, batch.flat())
         }
         await client.query('COMMIT')

@@ -29,6 +29,7 @@ import { registerLocalFsHandlers } from './ipc/localfs'
 import { registerRdpHandlers, disposeRdpSessionsForSender } from './ipc/rdp'
 import { registerHostKeyHandlers } from './ipc/hostKeys'
 import { registerKeyFileHandlers } from './ipc/keyFiles'
+import { registerMongoHandlers, disposeMongoClientsForSender } from './ipc/mongo'
 import { registerMcpHandlers, startMcpIfEnabled } from './ipc/mcp/mcp'
 import { buildAppMenu } from './menu'
 import { registerUpdaterHandlers, checkForUpdatesOnStartup } from './updater'
@@ -82,6 +83,7 @@ function createWindow(): void {
     disposeDockerSessionsForSender(senderId)
     disposeRunsForSender(senderId)
     disposeLocalPtysForSender(senderId)
+    disposeMongoClientsForSender(senderId)
     disposeRdpSessionsForSender(senderId)
   })
 
@@ -143,6 +145,7 @@ app.whenReady().then(() => {
   registerLocalFsHandlers()
   registerRdpHandlers()
   registerHostKeyHandlers()
+  registerMongoHandlers()
   registerMcpHandlers()
   registerUpdaterHandlers()
 

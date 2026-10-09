@@ -12,12 +12,15 @@ const isMysqlFamily = (dbType: string) => dbType === 'mysql' || dbType === 'mari
 
 export function quoteIdent(name: string, dbType: string): string {
   if (isMysqlFamily(dbType)) return '`' + name.replaceAll('`', '``') + '`'
+  if (dbType === 'mssql') return '[' + name.replaceAll(']', ']]') + ']'
   return '"' + name.replaceAll('"', '""') + '"'
 }
 
-/** The n-th (1-based) bind placeholder: `?` for MySQL/MariaDB, `$n` for Postgres. */
+/** The n-th (1-based) bind placeholder: `$n` Postgres, `@pn` SQL Server, `?` MySQL/MariaDB/SQLite. */
 export function bindPlaceholder(dbType: string, n: number): string {
-  return isMysqlFamily(dbType) ? '?' : `$${n}`
+  if (dbType === 'postgresql') return `$${n}`
+  if (dbType === 'mssql') return `@p${n}`
+  return '?'
 }
 
 /** JSON for display or binding; values JSON can't encode (cycles, bigints) fall back to String(). */
@@ -65,7 +68,11 @@ export function toParam(value: unknown): QueryParam {
 }
 
 export function selectRows(table: string, dbType: string, limit: number): string {
-  return `SELECT * FROM ${quoteIdent(table, dbType)} LIMIT ${Math.max(1, Math.floor(limit))}`
+  const n = Math.max(1, Math.floor(limit))
+  // SQL Server spells LIMIT as TOP.
+  return dbType === 'mssql'
+    ? `SELECT TOP ${n} * FROM ${quoteIdent(table, dbType)}`
+    : `SELECT * FROM ${quoteIdent(table, dbType)} LIMIT ${n}`
 }
 
 // `WHERE pk1 = $n AND pk2 = $n+1` identifying exactly one row by its key.

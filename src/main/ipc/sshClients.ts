@@ -151,6 +151,13 @@ export interface ExecResult {
   truncated: boolean
 }
 
+function appendCapped(out: Omit<ExecResult, 'code'>, key: 'stdout' | 'stderr', maxBytes: number) {
+  return (d: Buffer) => {
+    if (out[key].length < maxBytes) out[key] += d.toString('utf8')
+    else out.truncated = true
+  }
+}
+
 /**
  * Runs one command on a connected client and collects its output, keeping at
  * most `maxBytes` of each stream and giving up after `timeoutMs`.
@@ -160,10 +167,7 @@ export function execCapture(client: Client, command: string, { timeoutMs, maxByt
     client.exec(command, (err, stream) => {
       if (err) return reject(new ConnectionError(toMessage(err)))
       const out = { stdout: '', stderr: '', truncated: false }
-      const collect = (key: 'stdout' | 'stderr') => (d: Buffer) => {
-        if (out[key].length < maxBytes) out[key] += d.toString('utf8')
-        else out.truncated = true
-      }
+      const collect = (key: 'stdout' | 'stderr') => appendCapped(out, key, maxBytes)
       const timer = setTimeout(() => {
         stream.close()
         reject(new ConnectionError('Remote command timed out'))

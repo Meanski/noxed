@@ -8,7 +8,7 @@ import ExplainTreeView, { parseExplainJson, type ExplainNode } from './ExplainTr
 import type { ActivePanel, QueryResult, ResultSort, TableColumn } from './types'
 import ExplorerToolbar from './ExplorerToolbar'
 import ResultsTabsBar from './ResultsTabsBar'
-import { selectRows } from '../../lib/dbSql'
+import { selectRows, toEditable } from '../../lib/dbSql'
 import { useTableEditing } from './useTableEditing'
 import InsertRowModal from './InsertRowModal'
 import DeleteRowModal from './DeleteRowModal'
@@ -32,7 +32,7 @@ function computeRowDiff(prev: QueryResult | null, next: QueryResult): Set<string
       next.columns.forEach(col => changes.add(`${i}-${col}`))
     } else if (oldRow && newRow) {
       for (const col of next.columns) {
-        if (String(newRow[col] ?? '') !== String(oldRow[col] ?? '')) changes.add(`${i}-${col}`)
+        if (toEditable(newRow[col]) !== toEditable(oldRow[col])) changes.add(`${i}-${col}`)
       }
     }
   }
@@ -100,13 +100,16 @@ export default function DatabaseExplorer({ tab }: Readonly<{ tab: Tab }>) {
     if (!session) return
     setConnecting(true); setError(null)
     try {
-      const creds = tab.sessionId
+      // SQLite is a local file: no server, credentials or keychain lookup.
+      const creds = tab.sessionId && session.dbType !== 'sqlite'
         ? await window.api.sessions.getCredentials(tab.sessionId).catch((err: any) => {
             const msg = err?.message ?? 'Failed to retrieve credentials'
             throw new Error(msg.includes('locked') ? 'App is locked — unlock noxed to reconnect' : msg)
           })
         : null
-      const id = await window.api.database.connect({ dbType: session.dbType || 'postgresql', host: session.host, port: session.port, username: session.username || '', password: creds?.password, database: session.databaseName || session.host, ssl: session.sslMode })
+      const id = await window.api.database.connect(session.dbType === 'sqlite'
+        ? { dbType: 'sqlite', filePath: session.filePath }
+        : { dbType: session.dbType || 'postgresql', host: session.host, port: session.port, username: session.username || '', password: creds?.password, database: session.databaseName || session.host, ssl: session.sslMode })
       setClientId(id); clientRef.current = id; updateTab(tab.id, { status: 'connected' }); setConnecting(false)
       refreshTables(id)
     } catch (err: any) { setError(err?.message ?? 'Connection failed'); updateTab(tab.id, { status: 'error', errorMessage: err?.message }); setConnecting(false) }
@@ -163,6 +166,7 @@ export default function DatabaseExplorer({ tab }: Readonly<{ tab: Tab }>) {
 
   async function runExplain() {
     const q = sql.trim(); if (!clientId || !q) return
+    if (!EXPLAIN_DIALECTS.has(sqlDialect)) { showToast('The plan view supports PostgreSQL, MySQL and MariaDB'); return }
     setExplainRunning(true); setExplainTree(null); setActivePanel('explain')
     try {
       const isPostgres = (session?.dbType || 'postgresql') === 'postgresql'
@@ -218,7 +222,7 @@ export default function DatabaseExplorer({ tab }: Readonly<{ tab: Tab }>) {
   function copyResults() {
     if (!results) return
     const h = results.columns.join('\t')
-    const rows = results.rows.map(r => results.columns.map(c => r[c] ?? '').join('\t')).join('\n')
+    const rows = results.rows.map(r => results.columns.map(c => toEditable(r[c])).join('\t')).join('\n')
     navigator.clipboard.writeText(`${h}\n${rows}`); showToast('Copied')
   }
 
@@ -226,9 +230,7 @@ export default function DatabaseExplorer({ tab }: Readonly<{ tab: Tab }>) {
     if (!results) return
     const h = results.columns.join(',')
     const rows = results.rows.map(r => results.columns.map(c => {
-      const v = r[c]
-      if (v == null) return ''
-      const s = String(v)
+      const s = toEditable(r[c])
       return s.includes(',') || s.includes('"') || s.includes('\n') ? `"${s.replaceAll('"', '""')}"` : s
     }).join(',')).join('\n')
     const blob = new Blob([`${h}\n${rows}`], { type: 'text/csv' }); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `${browsingTable || 'query'}-results.csv`; a.click(); URL.revokeObjectURL(a.href); showToast('Exported')
@@ -293,7 +295,7 @@ export default function DatabaseExplorer({ tab }: Readonly<{ tab: Tab }>) {
       if (av == null && bv == null) return 0
       if (av == null) return 1
       if (bv == null) return -1
-      const cmp = typeof av === 'number' && typeof bv === 'number' ? av - bv : String(av).localeCompare(String(bv))
+      const cmp = typeof av === 'number' && typeof bv === 'number' ? av - bv : toEditable(av).localeCompare(toEditable(bv))
       return dir === 'asc' ? cmp : -cmp
     })
   }, [results, resultSort])
@@ -314,7 +316,7 @@ export default function DatabaseExplorer({ tab }: Readonly<{ tab: Tab }>) {
     <div className="flex h-full w-full min-w-0 min-h-0 overflow-hidden" style={{ background: 'var(--nox-bg)' }}>
       <SchemaSidebar
         dbLabel={session?.databaseName || 'Database'}
-        footer={`${dbType} · ${session?.host}:${session?.port}`}
+        footer={session?.dbType === 'sqlite' ? `${dbType} · ${session.filePath ?? ''}` : `${dbType} · ${session?.host}:${session?.port}`}
         tables={filteredTables}
         tableFilter={tableFilter}
         setTableFilter={setTableFilter}
@@ -432,7 +434,8 @@ export default function DatabaseExplorer({ tab }: Readonly<{ tab: Tab }>) {
 
 const BROWSE_LIMIT = 100
 
-const DB_TYPE_LABELS: Record<string, string> = { mysql: 'MySQL', mariadb: 'MariaDB', postgresql: 'PostgreSQL' }
+const DB_TYPE_LABELS: Record<string, string> = { mysql: 'MySQL', mariadb: 'MariaDB', postgresql: 'PostgreSQL', sqlite: 'SQLite', mssql: 'SQL Server' }
+const EXPLAIN_DIALECTS = new Set(['postgresql', 'mysql', 'mariadb'])
 
 function HistoryPanel({ history, onPick }: Readonly<{
   history: { sql: string; ts: number; duration?: number; rows?: number }[]; onPick: (sql: string) => void

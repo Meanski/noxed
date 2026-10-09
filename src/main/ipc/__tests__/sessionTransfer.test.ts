@@ -49,6 +49,14 @@ describe('serializeSessions', () => {
       isFavorite: true,
     })
   })
+
+  it('round-trips SQLite and MongoDB settings', () => {
+    const sqlite = makeSession({ type: 'database', dbType: 'sqlite', host: 'app.sqlite', filePath: '/Users/me/data/app.sqlite' })
+    const mongo = makeSession({ type: 'database', dbType: 'mongodb', host: 'cluster0.example.net', authSource: 'admin', mongoSrv: true })
+    const [a, b] = parseSessionsExport(serializeSessions([sqlite, mongo]))
+    expect(a).toMatchObject({ dbType: 'sqlite', host: 'app.sqlite', filePath: '/Users/me/data/app.sqlite' })
+    expect(b).toMatchObject({ dbType: 'mongodb', authSource: 'admin', mongoSrv: true })
+  })
 })
 
 describe('parseSessionsExport', () => {

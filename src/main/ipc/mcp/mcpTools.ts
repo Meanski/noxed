@@ -44,14 +44,14 @@ function timeoutSeconds(args: Record<string, unknown>): number {
   return raw as number
 }
 
-/** Runs `use` with an SFTP view of the session, closing the connection after. */
-async function withFiles<T>(session: Session, use: (sftp: SFTPWrapper) => Promise<T>): Promise<T> {
+/** Runs `action` with an SFTP view of the session, closing the connection after. */
+async function withFiles<T>(session: Session, action: (sftp: SFTPWrapper) => Promise<T>): Promise<T> {
   const conn: ManagedSshConnection = await connectSessionClient(session.id)
   try {
     const sftp = await new Promise<SFTPWrapper>((resolve, reject) => {
       conn.client.sftp((err, channel) => (err ? reject(new ConnectionError(toMessage(err))) : resolve(channel)))
     })
-    return await use(sftp)
+    return await action(sftp)
   } finally {
     conn.dispose()
   }

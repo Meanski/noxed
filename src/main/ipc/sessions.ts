@@ -26,6 +26,8 @@ export interface Session {
   dbType?: string
   databaseName?: string
   sslMode?: string
+  // SQLite connections: the database file (inside the home folder)
+  filePath?: string
   redisDb?: number
   connectOnStart?: boolean
   // Kubernetes-specific
@@ -35,6 +37,8 @@ export interface Session {
   jumpHostId?: string
   // Forward the local SSH agent to this host (opt-in: the host can use your keys)
   agentForward?: boolean
+  authSource?: string
+  mongoSrv?: boolean
   // UI hint: a credential exists in the keychain for this session
   hasPassword?: boolean
 }

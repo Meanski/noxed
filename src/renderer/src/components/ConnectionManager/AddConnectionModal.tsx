@@ -8,7 +8,8 @@ import { ipcErrorMessage } from '../../lib/format'
 import { readPrivateKey } from '../../lib/sshCredentials'
 import { rdpSupported } from '../../lib/platform'
 import SshFields, { PasswordInput } from './SshFields'
-import { FormField, FormInput, FormSelect, storedPasswordPlaceholder } from './FormControls'
+import { FormField, FormInput, storedPasswordPlaceholder } from './FormControls'
+import DatabaseFields, { defaultDatabasePort } from './DatabaseFields'
 import SshOptions from './SshOptions'
 
 interface K8sContextEntry {
@@ -34,6 +35,20 @@ const TYPE_OPTIONS: { type: ConnectionType; label: string; icon: any; desc: stri
   { type: 'redis', label: 'Redis', icon: Layers, desc: 'Key-value store browser and CLI', color: '#DC382D' },
   { type: 'rdp', label: 'Remote Desktop', icon: Monitor, desc: 'Graphical Windows desktop over RDP', color: '#06B6D4' },
 ]
+
+function validateDatabaseFields(form: Readonly<{ dbType: string; filePath: string; username: string; databaseName: string }>): string | null {
+  if (form.dbType === 'sqlite') return form.filePath.trim() ? null : 'Choose a database file'
+  // MongoDB may have no login, and picks a database after connecting.
+  if (form.dbType === 'mongodb') return null
+  if (!form.username.trim()) return 'Username is required'
+  if (!form.databaseName.trim()) return 'Database name is required'
+  return null
+}
+
+function validateRedisDb(raw: string): string | null {
+  const db = Number.parseInt(raw)
+  return Number.isInteger(db) && db >= 0 && db <= 15 ? null : 'DB index must be 0–15'
+}
 
 export default function AddConnectionModal({ onClose }: Props) {
   const { addSession, sessions, editingConnectionId, setEditingConnectionId, pendingConnectionGroup, setPendingConnectionGroup } = useAppStore()
@@ -72,9 +87,12 @@ export default function AddConnectionModal({ onClose }: Props) {
     connectOnStart: false,
     agentForward: false,
     dbType: 'postgresql',
+    filePath: '',
     databaseName: '',
     sslMode: 'disable',
     redisDb: '0',
+    authSource: '',
+    mongoSrv: false,
     showPassword: false,
   })
 
@@ -101,9 +119,12 @@ export default function AddConnectionModal({ onClose }: Props) {
         connectOnStart: editingSession.connectOnStart ?? false,
         agentForward: editingSession.agentForward ?? false,
         dbType: editingSession.dbType ?? 'postgresql',
+        filePath: editingSession.filePath ?? '',
         databaseName: editingSession.databaseName ?? '',
         sslMode: editingSession.sslMode ?? 'disable',
         redisDb: String(editingSession.redisDb ?? 0),
+        authSource: editingSession.authSource ?? '',
+        mongoSrv: editingSession.mongoSrv ?? false,
       }))
       if (type === 'kubernetes') {
         loadDefaultK8sContexts().then(() => {
@@ -137,14 +158,21 @@ export default function AddConnectionModal({ onClose }: Props) {
     setError('')
     setTestResult(null)
     if (field === 'password') setPasswordDirty(true)
-    setForm(f => ({ ...f, [field]: value }))
+    setForm(f => {
+      // Switching engines moves an untouched default port along with it
+      // (5432 → 1433 for SQL Server), but never overrides a port you typed.
+      if (field === 'dbType' && (f.port === '' || f.port === defaultDatabasePort(f.dbType))) {
+        return { ...f, dbType: value, port: defaultDatabasePort(value) }
+      }
+      return { ...f, [field]: value }
+    })
   }
 
   const getDefaultPort = (type: ConnectionType) => {
     switch (type) {
       case 'ssh': return '22'
       case 'sftp': return '22'
-      case 'database': return form.dbType === 'mysql' || form.dbType === 'mariadb' ? '3306' : '5432'
+      case 'database': return defaultDatabasePort(form.dbType)
       case 'redis': return '6379'
       case 'rdp': return '3389'
       default: return '443'
@@ -197,6 +225,19 @@ export default function AddConnectionModal({ onClose }: Props) {
     }
   }
 
+  const isSqlite = selectedType === 'database' && form.dbType === 'sqlite'
+  const isMongo = selectedType === 'database' && form.dbType === 'mongodb'
+
+  const mongoTarget = (host: string, port: number, password: string | undefined) => ({
+    host,
+    port,
+    username: form.username.trim() || undefined,
+    password,
+    authSource: form.authSource.trim() || undefined,
+    srv: form.mongoSrv,
+    tls: form.sslMode !== 'disable',
+  })
+
   const parsedPort = (): number => {
     const raw = form.port.trim()
     if (!raw) return Number.parseInt(getDefaultPort(selectedType))
@@ -213,14 +254,9 @@ export default function AddConnectionModal({ onClose }: Props) {
         if (form.authType === 'key' && !form.keyPath.trim()) return 'Private key path is required'
         return null
       case 'database':
-        if (!form.username.trim()) return 'Username is required'
-        if (!form.databaseName.trim()) return 'Database name is required'
-        return null
-      case 'redis': {
-        const db = Number.parseInt(form.redisDb)
-        if (!Number.isInteger(db) || db < 0 || db > 15) return 'DB index must be 0–15'
-        return null
-      }
+        return validateDatabaseFields(form)
+      case 'redis':
+        return validateRedisDb(form.redisDb)
       case 'rdp':
         return form.username.trim() ? null : 'Username is required'
       default:
@@ -232,6 +268,8 @@ export default function AddConnectionModal({ onClose }: Props) {
     if (selectedType === 'kubernetes') {
       return k8sSelected ? null : 'Select a context to continue'
     }
+    // SQLite is a local file: no host or port to check.
+    if (isSqlite) return validateTypeFields()
     if (!form.host.trim()) return 'Host is required'
     const port = parsedPort()
     if (!Number.isInteger(port) || port < 1 || port > 65535) return 'Port must be between 1 and 65535'
@@ -254,6 +292,48 @@ export default function AddConnectionModal({ onClose }: Props) {
     return undefined
   }
 
+  // Opens and closes the connection the form describes, throwing if it fails.
+  const probeSsh = async (host: string, port: number, password: string | undefined) => {
+    const target = {
+      host,
+      port,
+      username: form.username.trim(),
+      password: form.authType === 'password' ? password : undefined,
+      privateKey: form.authType === 'key' ? await readPrivateKey(form.keyPath.trim()) : undefined,
+      jumpHostId: form.jumpHostId || undefined,
+    }
+    if (selectedType === 'ssh') {
+      await window.api.ssh.disconnect(await window.api.ssh.connect(target))
+    } else {
+      await window.api.sftp.disconnect(await window.api.sftp.connect(target))
+    }
+  }
+
+  const probeDatabase = async (host: string, port: number, password: string | undefined) => {
+    if (isMongo) {
+      await window.api.mongo.disconnect(await window.api.mongo.connect(mongoTarget(host, port, password)))
+      return
+    }
+    const id = await window.api.database.connect(isSqlite ? { dbType: 'sqlite', filePath: form.filePath.trim() } : {
+      dbType: form.dbType,
+      host,
+      port,
+      username: form.username.trim(),
+      password,
+      database: form.databaseName.trim(),
+      ssl: form.sslMode,
+    })
+    await window.api.database.disconnect(id)
+  }
+
+  const probeConnection = async (host: string, port: number, password: string | undefined) => {
+    if (selectedType === 'ssh' || selectedType === 'sftp') return probeSsh(host, port, password)
+    if (selectedType === 'database') return probeDatabase(host, port, password)
+    if (selectedType === 'redis') {
+      await window.api.redis.disconnect(await window.api.redis.connect({ host, port, password, db: Number.parseInt(form.redisDb) }))
+    }
+  }
+
   const handleTest = async () => {
     const invalid = validateConfigForm()
     if (invalid) {
@@ -271,41 +351,7 @@ export default function AddConnectionModal({ onClose }: Props) {
     try {
       const password = await effectivePassword()
 
-      if (selectedType === 'ssh' || selectedType === 'sftp') {
-        let privateKey: string | undefined
-        if (form.authType === 'key') {
-          privateKey = await readPrivateKey(form.keyPath.trim())
-        }
-        const target = {
-          host,
-          port,
-          username: form.username.trim(),
-          password: form.authType === 'password' ? password : undefined,
-          privateKey,
-          jumpHostId: form.jumpHostId || undefined,
-        }
-        if (selectedType === 'ssh') {
-          const streamId = await window.api.ssh.connect(target)
-          await window.api.ssh.disconnect(streamId)
-        } else {
-          const clientId = await window.api.sftp.connect(target)
-          await window.api.sftp.disconnect(clientId)
-        }
-      } else if (selectedType === 'redis') {
-        const id = await window.api.redis.connect({ host, port, password, db: Number.parseInt(form.redisDb) })
-        await window.api.redis.disconnect(id)
-      } else if (selectedType === 'database') {
-        const id = await window.api.database.connect({
-          dbType: form.dbType,
-          host,
-          port,
-          username: form.username.trim(),
-          password,
-          database: form.databaseName.trim(),
-          ssl: form.sslMode,
-        })
-        await window.api.database.disconnect(id)
-      }
+      await probeConnection(host, port, password)
 
       setTestResult('success')
     } catch (err: any) {
@@ -334,11 +380,15 @@ export default function AddConnectionModal({ onClose }: Props) {
 
   const sessionData = (): any => {
     const includePassword = !editingConnectionId || passwordDirty
+    const forSsh = <T,>(value: T) => (selectedType === 'ssh' ? value : undefined)
+    const forDb = <T,>(value: T) => (selectedType === 'database' ? value : undefined)
     return {
       type: selectedType,
       label: form.label.trim() || undefined,
-      host: form.host.trim(),
-      port: parsedPort(),
+      // A SQLite session shows its file name where others show a host.
+      host: isSqlite ? fileName(form.filePath.trim()) : form.host.trim(),
+      port: isSqlite ? 0 : parsedPort(),
+      filePath: isSqlite ? form.filePath.trim() : undefined,
       username: form.username.trim() || undefined,
       authType: form.authType,
       password: includePassword && form.authType === 'password' ? form.password : undefined,
@@ -347,13 +397,15 @@ export default function AddConnectionModal({ onClose }: Props) {
       group: form.group || undefined,
       color: form.color,
       tags: parsedTags(),
-      pollingEnabled: selectedType === 'ssh' ? form.pollingEnabled : undefined,
-      pollingIntervalSeconds: selectedType === 'ssh' ? Number.parseInt(form.pollingIntervalSeconds) : undefined,
-      connectOnStart: selectedType === 'ssh' ? form.connectOnStart : undefined,
-      agentForward: selectedType === 'ssh' ? form.agentForward : undefined,
-      dbType: selectedType === 'database' ? form.dbType : undefined,
-      databaseName: selectedType === 'database' ? form.databaseName : undefined,
-      sslMode: selectedType === 'database' ? form.sslMode : undefined,
+      pollingEnabled: forSsh(form.pollingEnabled),
+      pollingIntervalSeconds: forSsh(Number.parseInt(form.pollingIntervalSeconds)),
+      connectOnStart: forSsh(form.connectOnStart),
+      agentForward: forSsh(form.agentForward),
+      dbType: forDb(form.dbType),
+      databaseName: forDb(form.databaseName),
+      sslMode: forDb(form.sslMode),
+      authSource: isMongo && form.authSource.trim() ? form.authSource.trim() : undefined,
+      mongoSrv: isMongo ? form.mongoSrv : undefined,
       redisDb: selectedType === 'redis' ? Number.parseInt(form.redisDb) : undefined,
     }
   }
@@ -600,58 +652,13 @@ function TypeSelector({ selected, onSelect }: Readonly<{
 }
 
 /* ── Config form ─────────────────────────────────────────────────────────── */
+function fileName(path: string): string {
+  return path.split(/[\\/]/).pop() || path
+}
+
 function saveButtonLabel(saving: boolean, editing: boolean): string {
   if (saving) return 'Saving…'
   return editing ? 'Save Changes' : 'Save Connection'
-}
-
-function DatabaseFields({ form, set, isEditing, hasExistingPassword }: Readonly<{
-  form: any
-  set: (f: string, v: any) => void
-  isEditing: boolean
-  hasExistingPassword: boolean
-}>) {
-  return (
-    <>
-      <FormField label="Database Type">
-        <FormSelect value={form.dbType} onChange={e => set('dbType', e.target.value)}>
-          <option value="postgresql">PostgreSQL</option>
-          <option value="mysql">MySQL</option>
-          <option value="mariadb">MariaDB</option>
-        </FormSelect>
-      </FormField>
-      <FormField label="Database Name">
-        <FormInput
-          placeholder="mydb"
-          value={form.databaseName}
-          onChange={e => set('databaseName', e.target.value)}
-        />
-      </FormField>
-      <FormField label="Username">
-        <FormInput
-          placeholder="postgres"
-          value={form.username}
-          onChange={e => set('username', e.target.value)}
-        />
-      </FormField>
-      <FormField label="Password">
-        <FormInput
-          type="password"
-          placeholder={storedPasswordPlaceholder(isEditing, hasExistingPassword, 'Enter password')}
-          value={form.password}
-          onChange={e => set('password', e.target.value)}
-        />
-      </FormField>
-      <FormField label="SSL Mode">
-        <FormSelect value={form.sslMode} onChange={e => set('sslMode', e.target.value)}>
-          <option value="disable">Disable</option>
-          <option value="require">Require</option>
-          <option value="verify-ca">Verify CA</option>
-          <option value="verify-full">Verify Full</option>
-        </FormSelect>
-      </FormField>
-    </>
-  )
 }
 
 function K8sContextList({ k8sContexts, k8sLoading, k8sSelected, dropActive, onK8sSelect }: Readonly<{
@@ -874,8 +881,8 @@ function ConfigForm({ type, form, set, error, testResult, isEditing, hasExisting
         />
       </FormField>
 
-      {/* Host + Port */}
-      <div className="grid grid-cols-3 gap-3">
+      {/* Host + Port (a SQLite database is a file instead) */}
+      {!(type === 'database' && form.dbType === 'sqlite') && <div className="grid grid-cols-3 gap-3">
         <div className="col-span-2">
           <FormField label="Hostname / IP">
             <FormInput
@@ -893,7 +900,7 @@ function ConfigForm({ type, form, set, error, testResult, isEditing, hasExisting
             className="font-mono"
           />
         </FormField>
-      </div>
+      </div>}
 
       {/* Type-specific fields */}
       {(type === 'ssh' || type === 'sftp') && (

@@ -318,6 +318,72 @@ describe('AddConnectionModal — Database', () => {
   })
 })
 
+describe('AddConnectionModal — more database engines', () => {
+  it('moves the default port with the engine but keeps a custom one', async () => {
+    renderModal()
+    goToConfig('Database')
+    const port = screen.getByPlaceholderText('22') as HTMLInputElement
+    fireEvent.change(screen.getByDisplayValue('PostgreSQL'), { target: { value: 'mssql' } })
+    expect(port.value).toBe('1433')
+    expect(screen.getByPlaceholderText('sa')).toBeTruthy()
+    fireEvent.change(port, { target: { value: '14330' } })
+    fireEvent.change(screen.getByDisplayValue('SQL Server'), { target: { value: 'mysql' } })
+    expect(port.value).toBe('14330')
+  })
+
+  it('sets up MongoDB with an optional login, SRV and TLS, and tests it', async () => {
+    renderModal()
+    goToConfig('Database')
+    fireEvent.change(screen.getByDisplayValue('PostgreSQL'), { target: { value: 'mongodb' } })
+    expect((screen.getByPlaceholderText('22') as HTMLInputElement).value).toBe('27017')
+    fireEvent.change(screen.getByPlaceholderText('192.168.1.30'), { target: { value: 'cluster0.example.net' } })
+    fireEvent.click(screen.getByLabelText(/DNS seed list/))
+    fireEvent.change(screen.getByPlaceholderText('admin'), { target: { value: 'admin' } })
+    fireEvent.change(screen.getByDisplayValue('Off'), { target: { value: 'require' } })
+    fireEvent.click(screen.getByText('Test Connection'))
+    await waitFor(() => expect(api.mongo.disconnect).toHaveBeenCalledWith('mongo-1'))
+    expect(api.mongo.connect).toHaveBeenCalledWith({ host: 'cluster0.example.net', port: 27017, username: undefined, password: undefined, authSource: 'admin', srv: true, tls: true })
+    fireEvent.click(saveButton())
+    await waitFor(() => expect(api.sessions.create).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'database', dbType: 'mongodb', host: 'cluster0.example.net', authSource: 'admin', mongoSrv: true, sslMode: 'require',
+    })))
+  })
+
+  it('connects to a SQLite file: no host, port or credentials', async () => {
+    api.database.pickSqliteFile.mockResolvedValue('/Users/me/data/app.sqlite')
+    renderModal()
+    goToConfig('Database')
+    fireEvent.change(screen.getByDisplayValue('PostgreSQL'), { target: { value: 'sqlite' } })
+    expect(screen.queryByPlaceholderText('192.168.1.30')).toBeNull()
+    expect(screen.queryByPlaceholderText('postgres')).toBeNull()
+
+    fireEvent.click(saveButton())
+    expect(await screen.findByText('Choose a database file')).toBeTruthy()
+
+    fireEvent.click(screen.getByText('Browse…'))
+    await waitFor(() => expect((screen.getByPlaceholderText('~/data/app.sqlite') as HTMLInputElement).value).toBe('/Users/me/data/app.sqlite'))
+
+    fireEvent.click(screen.getByText('Test Connection'))
+    expect(await screen.findByText('Connection successful!')).toBeTruthy()
+    expect(api.database.connect).toHaveBeenCalledWith({ dbType: 'sqlite', filePath: '/Users/me/data/app.sqlite' })
+
+    fireEvent.click(saveButton())
+    await waitFor(() => expect(api.sessions.create).toHaveBeenCalled())
+    expect(api.sessions.create).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'database', dbType: 'sqlite', filePath: '/Users/me/data/app.sqlite', host: 'app.sqlite', port: 0,
+    }))
+  })
+
+  it('reports a failing file picker', async () => {
+    api.database.pickSqliteFile.mockRejectedValue(new Error('dialog unavailable'))
+    renderModal()
+    goToConfig('Database')
+    fireEvent.change(screen.getByDisplayValue('PostgreSQL'), { target: { value: 'sqlite' } })
+    fireEvent.click(screen.getByText('Browse…'))
+    await waitFor(() => expect(useAppStore.getState().notifications.some((n) => n.message === 'dialog unavailable')).toBe(true))
+  })
+})
+
 describe('AddConnectionModal — Redis', () => {
   it('rejects an out-of-range db index and saves a valid one', async () => {
     renderModal()

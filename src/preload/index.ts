@@ -97,7 +97,7 @@ contextBridge.exposeInMainWorld('api', {
 
   // Database
   database: {
-    connect: (config: { dbType: string; host: string; port: number; username: string; password?: string; database: string; ssl?: string }) =>
+    connect: (config: { dbType: string; host?: string; port?: number; username?: string; password?: string; database?: string; ssl?: string; filePath?: string }) =>
       ipcRenderer.invoke('db:connect', config),
     disconnect: (id: string) => ipcRenderer.invoke('db:disconnect', id),
     query: (id: string, sql: string, params?: (string | number | boolean | null)[]) =>
@@ -107,6 +107,7 @@ contextBridge.exposeInMainWorld('api', {
     schema: (id: string) => ipcRenderer.invoke('db:schema', id),
     exportTable: (id: string, table: string, format: 'csv' | 'json' | 'sql') => ipcRenderer.invoke('db:exportTable', id, table, format),
     importCsv: (id: string, table: string) => ipcRenderer.invoke('db:importCsv', id, table),
+    pickSqliteFile: () => ipcRenderer.invoke('db:pickSqliteFile') as Promise<string | null>,
   },
 
   // Local filesystem
@@ -228,6 +229,20 @@ contextBridge.exposeInMainWorld('api', {
       ipcRenderer.on('localpty:exit', handler)
       return () => ipcRenderer.off('localpty:exit', handler)
     },
+  },
+
+  mongo: {
+    connect: (config: { host: string; port: number; username?: string; password?: string; authSource?: string; srv?: boolean; tls?: boolean }) =>
+      ipcRenderer.invoke('mongo:connect', config),
+    databases: (id: string) => ipcRenderer.invoke('mongo:databases', id),
+    collections: (id: string, db: string) => ipcRenderer.invoke('mongo:collections', id, db),
+    find: (id: string, db: string, collection: string, options: { filter?: string; sort?: string; limit?: number; skip?: number }) =>
+      ipcRenderer.invoke('mongo:find', id, db, collection, options),
+    insert: (id: string, db: string, collection: string, doc: string) => ipcRenderer.invoke('mongo:insert', id, db, collection, doc),
+    replace: (id: string, db: string, collection: string, docId: string, doc: string) =>
+      ipcRenderer.invoke('mongo:replace', id, db, collection, docId, doc),
+    delete: (id: string, db: string, collection: string, docId: string) => ipcRenderer.invoke('mongo:delete', id, db, collection, docId),
+    disconnect: (id: string) => ipcRenderer.invoke('mongo:disconnect', id),
   },
 
   // Claude Code (MCP) access: settings and per-request approvals

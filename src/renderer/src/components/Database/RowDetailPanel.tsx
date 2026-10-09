@@ -1,4 +1,5 @@
 import { X } from 'lucide-react'
+import { toEditable } from '../../lib/dbSql'
 
 export default function RowDetailPanel({ columns, row, rowNumber, onClose }: Readonly<{
   columns: string[]; row: Record<string, unknown>; rowNumber: number; onClose: () => void
@@ -20,7 +21,7 @@ export default function RowDetailPanel({ columns, row, rowNumber, onClose }: Rea
               </div>
             )
           }
-          const str = typeof val === 'object' ? JSON.stringify(val, null, 2) : String(val)
+          const str = typeof val === 'object' ? JSON.stringify(val, null, 2) : toEditable(val)
           return (
             <div key={col} className="mb-3">
               <p className="text-[9px] uppercase tracking-wider font-semibold mb-0.5" style={{ color: 'var(--nox-text-3)' }}>{col}</p>

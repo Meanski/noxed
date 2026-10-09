@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Download, KeyRound, Link2, Loader2, Maximize2, Minus, Plus, RefreshCw } from 'lucide-react'
 import { computeErLayout, edgePath, ER_HEADER_HEIGHT, ER_ROW_HEIGHT, fitTransform, type ErLayout, type ErNode } from '../../lib/erLayout'
 import { ipcErrorMessage } from '../../lib/format'
@@ -76,7 +76,9 @@ export default function ErDiagram({ clientId, onOpenTable }: Readonly<ErDiagramP
     const el = viewportRef.current
     if (layout && el) setView(fitTransform(layout, el.clientWidth, el.clientHeight))
   }, [layout])
-  useEffect(fit, [fit])
+  // Layout effect: fit in the same commit the diagram first appears, so it
+  // never flashes at 100% and can't override a zoom made right after.
+  useLayoutEffect(fit, [fit])
 
   const zoomBy = (factor: number, cx?: number, cy?: number) => {
     setView((v) => {

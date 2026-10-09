@@ -82,6 +82,7 @@ export function buildWindowApi() {
       schema: vi.fn().mockResolvedValue({ tables: [], foreignKeys: [], truncated: false }),
       exportTable: vi.fn().mockResolvedValue({ canceled: false, rows: 0, truncated: false }),
       importCsv: vi.fn().mockResolvedValue({ canceled: false, rows: 0 }),
+      pickSqliteFile: vi.fn().mockResolvedValue(null),
     },
     localfs: {
       home: vi.fn().mockResolvedValue('/home/user'),
@@ -137,6 +138,16 @@ export function buildWindowApi() {
       kill: vi.fn().mockResolvedValue(undefined),
       onData: vi.fn().mockImplementation(unsub),
       onExit: vi.fn().mockImplementation(unsub),
+    },
+    mongo: {
+      connect: vi.fn().mockResolvedValue('mongo-1'),
+      databases: vi.fn().mockResolvedValue([{ name: 'shop', sizeOnDisk: 2048 }]),
+      collections: vi.fn().mockResolvedValue(['orders']),
+      find: vi.fn().mockResolvedValue({ documents: [], total: 0 }),
+      insert: vi.fn().mockResolvedValue('{"$oid":"1"}'),
+      replace: vi.fn().mockResolvedValue(undefined),
+      delete: vi.fn().mockResolvedValue(undefined),
+      disconnect: vi.fn().mockResolvedValue(undefined),
     },
     mcp: {
       status: vi.fn().mockResolvedValue({ enabled: false, running: false, port: 39847, error: null }),

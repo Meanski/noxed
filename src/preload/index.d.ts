@@ -78,6 +78,18 @@ declare global {
         onData: (cb: (id: string, data: string) => void) => () => void
         onExit: (cb: (id: string, exitCode: number) => void) => () => void
       }
+      mongo: {
+        connect: (config: { host: string; port: number; username?: string; password?: string; authSource?: string; srv?: boolean; tls?: boolean }) => Promise<string>
+        databases: (id: string) => Promise<Array<{ name: string; sizeOnDisk: number }>>
+        collections: (id: string, db: string) => Promise<string[]>
+        /** Documents come back as relaxed Extended JSON strings. */
+        find: (id: string, db: string, collection: string, options: { filter?: string; sort?: string; limit?: number; skip?: number }) => Promise<{ documents: Array<{ json: string; display: string }>; total: number }>
+        insert: (id: string, db: string, collection: string, doc: string) => Promise<string>
+        /** `docId` is Extended JSON of `{ "_id": … }`. */
+        replace: (id: string, db: string, collection: string, docId: string, doc: string) => Promise<void>
+        delete: (id: string, db: string, collection: string, docId: string) => Promise<void>
+        disconnect: (id: string) => Promise<void>
+      }
       mcp: {
         status: () => Promise<McpStatus>
         setEnabled: (enabled: boolean) => Promise<McpStatus>
@@ -205,7 +217,7 @@ declare global {
         reset: () => Promise<Record<string, unknown>>
       }
       database: {
-        connect: (config: { dbType: string; host: string; port: number; username: string; password?: string; database: string; ssl?: string }) => Promise<string>
+        connect: (config: { dbType: string; host?: string; port?: number; username?: string; password?: string; database?: string; ssl?: string; filePath?: string }) => Promise<string>
         disconnect: (id: string) => Promise<void>
         query: (id: string, sql: string, params?: (string | number | boolean | null)[]) => Promise<{ columns: string[]; rows: any[]; rowCount: number; duration: number }>
         tables: (id: string) => Promise<string[]>
@@ -217,6 +229,7 @@ declare global {
         }>
         exportTable: (id: string, table: string, format: 'csv' | 'json' | 'sql') => Promise<{ canceled: boolean; rows: number; truncated: boolean }>
         importCsv: (id: string, table: string) => Promise<{ canceled: boolean; rows: number }>
+        pickSqliteFile: () => Promise<string | null>
       }
       redis: {
         connect: (config: any) => Promise<string>
