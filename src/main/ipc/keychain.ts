@@ -53,6 +53,18 @@ function resetAttempts(): void {
 
 export const isUnlocked = (): boolean => _unlocked
 
+const lockListeners = new Set<() => void>()
+
+/** Runs `listener` whenever noxed locks, whether by the user or auto-lock. */
+export function onLock(listener: () => void): void {
+  lockListeners.add(listener)
+}
+
+function lock(): void {
+  _unlocked = false
+  for (const listener of lockListeners) listener()
+}
+
 let _autoLockTimer: ReturnType<typeof setTimeout> | null = null
 
 function parseTimeoutMs(setting: string): number {
@@ -77,7 +89,7 @@ function startAutoLock(): void {
   }
   if (timeoutMs <= 0) return
   _autoLockTimer = setTimeout(() => {
-    _unlocked = false
+    lock()
     for (const win of BrowserWindow.getAllWindows()) {
       win.webContents.send('auth:locked')
     }
@@ -204,7 +216,7 @@ export function registerKeychainHandlers(): void {
   })
 
   ipcMain.handle('auth:lock', () => {
-    _unlocked = false
+    lock()
     clearAutoLock()
   })
 

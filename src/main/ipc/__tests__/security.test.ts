@@ -170,6 +170,12 @@ describe('blockedShellCommandReason', () => {
     ':(){ :|:& };:',
     'chmod -R 777 /',
     'ls; sudo halt',
+    'echo $(rm -rf /)',
+    'echo `sudo reboot`',
+    '(cd / && rm -rf *)',
+    '{ rm -rf ~; }',
+    'nohup shutdown -h now &',
+    'sleep 1 & exec mkfs.ext4 /dev/sdb',
   ])('blocks %j', (cmd) => {
     expect(blockedShellCommandReason(cmd)).not.toBeNull()
   })
@@ -184,6 +190,9 @@ describe('blockedShellCommandReason', () => {
     'chmod -R 755 ./public',
     'systemctl status nginx',
     'grep -r "init 0" .',
+    'kill $(pgrep -f old-worker)',
+    'echo `date` && uptime',
+    'time ls -R ./src',
   ])('allows %j', (cmd) => {
     expect(blockedShellCommandReason(cmd)).toBeNull()
   })

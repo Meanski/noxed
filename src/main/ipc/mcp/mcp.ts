@@ -4,7 +4,7 @@ import { randomBytes } from 'node:crypto'
 import { AuthError, ValidationError, toMessage } from '../errors'
 import { getAppSecret, isUnlocked, saveAppSecret } from '../keychain'
 import { getStoredSettings, setStoredSetting } from '../settings'
-import { clearApprovalGrants, registerMcpApprovalHandlers } from './mcpApprovals'
+import { registerMcpApprovalHandlers, resetApprovals } from './mcpApprovals'
 import { startMcpServer, type McpTool } from './mcpServer'
 import { MCP_TOOLS } from './mcpTools'
 
@@ -47,10 +47,14 @@ function status(): McpStatus {
 }
 
 async function stop(): Promise<void> {
-  clearApprovalGrants()
+  resetApprovals()
   const running = server
   server = null
-  if (running) await new Promise<void>((resolve) => running.close(() => resolve()))
+  if (!running) return
+  const closed = new Promise<void>((resolve) => running.close(() => resolve()))
+  // close() waits for open keep-alive and in-flight requests; end them now.
+  running.closeAllConnections()
+  await closed
 }
 
 async function start(): Promise<void> {

@@ -18,18 +18,18 @@ vi.mock('../../settings', () => ({
   getStoredSettings: () => env.settings,
   setStoredSetting: (key: 'mcpEnabled', value: boolean) => { env.settings[key] = value },
 }))
-vi.mock('../mcpApprovals', () => ({ clearApprovalGrants: vi.fn(), registerMcpApprovalHandlers: vi.fn() }))
+vi.mock('../mcpApprovals', () => ({ resetApprovals: vi.fn(), registerMcpApprovalHandlers: vi.fn() }))
 vi.mock('../mcpTools', () => ({ MCP_TOOLS: [{ name: 'list_connections', run: async () => '[]' }] }))
 vi.mock('../mcpServer', () => ({
   startMcpServer: vi.fn(async (port: number, token: string, tools: never) => {
     if (env.startError) throw env.startError
     env.started.push({ port, token, tools })
-    return { close: (cb: () => void) => cb() }
+    return { close: (cb: () => void) => cb(), closeAllConnections: vi.fn() }
   }),
 }))
 
 import { registerMcpHandlers, startMcpIfEnabled } from '../mcp'
-import { clearApprovalGrants } from '../mcpApprovals'
+import { resetApprovals } from '../mcpApprovals'
 
 registerMcpHandlers()
 const call = (ch: string, ...args: unknown[]) => handlers.get(ch)!({}, ...args) as Promise<Record<string, unknown>>
@@ -73,9 +73,9 @@ describe('MCP access', () => {
     const before = env.started[0].token
     await call('mcp:regenerateToken')
     expect(env.started[1].token).not.toBe(before)
-    vi.mocked(clearApprovalGrants).mockClear()
+    vi.mocked(resetApprovals).mockClear()
     expect(await call('mcp:setEnabled', false)).toMatchObject({ enabled: false, running: false })
-    expect(clearApprovalGrants).toHaveBeenCalled()
+    expect(resetApprovals).toHaveBeenCalled()
   })
 
   it('reports a port that is already taken', async () => {

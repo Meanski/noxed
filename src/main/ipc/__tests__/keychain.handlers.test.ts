@@ -63,6 +63,7 @@ import {
   getCredential,
   deleteCredentials,
   isUnlocked,
+  onLock,
   canUseTouchID,
   getAuthRateLimitState,
   resetAutoLockTimer,
@@ -330,6 +331,20 @@ describe('auth:unlock — brute-force lockout', () => {
     vi.advanceTimersByTime(300_001)
     await failTimes(1) // 8th failure -> still capped at 5min
     expect(getAuthRateLimitState().lockedUntil - Date.now()).toBe(300_000)
+  })
+})
+
+describe('onLock', () => {
+  it('runs listeners when the user locks and when auto-lock fires', async () => {
+    const listener = vi.fn()
+    onLock(listener)
+    await unlock()
+    lock()
+    expect(listener).toHaveBeenCalledTimes(1)
+    vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([])
+    await unlock()
+    vi.advanceTimersByTime(15 * 60_000)
+    expect(listener).toHaveBeenCalledTimes(2)
   })
 })
 

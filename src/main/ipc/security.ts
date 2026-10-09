@@ -115,10 +115,14 @@ const BINARY_EXTENSIONS = new Set([
 const ALWAYS_BLOCKED = new Set(['mkfs', 'wipefs', 'shutdown', 'reboot', 'halt', 'poweroff'])
 const PRECIOUS_TARGETS = new Set(['/', '/*', '~', '~/', '~/*', '$HOME', '${HOME}', '*', '.', '..'])
 
+// Words that run the command after them (`sudo rm …`, `{ rm …; }`).
+const COMMAND_PREFIXES = new Set(['sudo', 'exec', 'command', 'nohup', 'time', 'nice', '{', '!'])
+
 function blockedSegmentReason(segment: string): string | null {
   const tokens = segment.trim().split(/\s+/).filter(Boolean)
-  const args = tokens[0] === 'sudo' ? tokens.slice(1) : tokens
-  const [cmd = '', ...rest] = args
+  let start = 0
+  while (start < tokens.length - 1 && COMMAND_PREFIXES.has(tokens[start])) start++
+  const [cmd = '', ...rest] = tokens.slice(start)
   const base = cmd.split('/').pop() ?? ''
   if (ALWAYS_BLOCKED.has(base) || base.startsWith('mkfs.')) return `${base} is never allowed`
   if (base === 'init' && (rest[0] === '0' || rest[0] === '6')) return 'changing the runlevel is never allowed'
@@ -132,12 +136,13 @@ function blockedSegmentReason(segment: string): string | null {
 
 /**
  * Why a shell command must not run, or null. Each part of a pipeline or
- * command list is checked, as is a classic fork bomb.
+ * command list is checked, including the insides of `$(…)`, backticks and
+ * subshells, as is a classic fork bomb.
  */
 export function blockedShellCommandReason(command: string): string | null {
   if (command.includes(':(){') || command.includes(':() {')) return 'fork bomb'
   if (/>\s*\/dev\/(sd|nvme|disk|hd|xvd|vd)/.test(command)) return 'writing straight to a disk device'
-  for (const segment of command.split(/&&|\|\||[;|\n]/)) {
+  for (const segment of command.split(/&&|\|\||[;|&\n`()]/)) {
     const reason = blockedSegmentReason(segment)
     if (reason) return reason
   }

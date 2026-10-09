@@ -2,16 +2,39 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
 const handlers = vi.hoisted(() => new Map<string, (...args: unknown[]) => unknown>())
 const win = vi.hoisted(() => ({
-  current: null as null | { isDestroyed: () => boolean; webContents: { id: number; send: ReturnType<typeof vi.fn> } },
+  current: null as null | { isDestroyed: () => boolean; webContents: FakeContents },
 }))
+type Listener = (...args: unknown[]) => void
+interface FakeContents {
+  id: number
+  send: ReturnType<typeof vi.fn>
+  isDestroyed: () => boolean
+  listeners: Map<string, Set<Listener>>
+  on: (event: string, fn: Listener) => void
+  off: (event: string, fn: Listener) => void
+  emit: (event: string, ...args: unknown[]) => void
+}
+function fakeContents(): FakeContents {
+  const listeners = new Map<string, Set<Listener>>()
+  return {
+    id: 5,
+    send: vi.fn(),
+    isDestroyed: () => false,
+    listeners,
+    on: (event, fn) => { listeners.set(event, (listeners.get(event) ?? new Set()).add(fn)) },
+    off: (event, fn) => { listeners.get(event)?.delete(fn) },
+    emit: (event, ...args) => { for (const fn of listeners.get(event) ?? []) fn(...args) },
+  }
+}
 vi.mock('electron', () => ({
   ipcMain: { handle: (ch: string, fn: (...args: unknown[]) => unknown) => handlers.set(ch, fn) },
   BrowserWindow: { getFocusedWindow: () => win.current, getAllWindows: () => (win.current ? [win.current] : []) },
 }))
 const unlocked = vi.hoisted(() => ({ value: true }))
-vi.mock('../../keychain', () => ({ isUnlocked: () => unlocked.value }))
+const lockListeners = vi.hoisted(() => [] as Array<() => void>)
+vi.mock('../../keychain', () => ({ isUnlocked: () => unlocked.value, onLock: (fn: () => void) => lockListeners.push(fn) }))
 
-import { APPROVAL_TIMEOUT_MS, clearApprovalGrants, registerMcpApprovalHandlers, requestApproval } from '../mcpApprovals'
+import { APPROVAL_TIMEOUT_MS, registerMcpApprovalHandlers, requestApproval, resetApprovals } from '../mcpApprovals'
 import { AuthError, ValidationError } from '../../errors'
 
 registerMcpApprovalHandlers()
@@ -23,8 +46,8 @@ const flush = () => new Promise((r) => setImmediate(r))
 
 beforeEach(() => {
   unlocked.value = true
-  clearApprovalGrants()
-  win.current = { isDestroyed: () => false, webContents: { id: 5, send: vi.fn() } }
+  resetApprovals()
+  win.current = { isDestroyed: () => false, webContents: fakeContents() }
 })
 afterEach(() => vi.useRealTimers())
 
@@ -53,7 +76,7 @@ describe('requestApproval', () => {
     expect(sent().length).toBe(asked + 1)
     respond('deny')
     await expect(other).rejects.toThrow(AuthError)
-    clearApprovalGrants()
+    resetApprovals()
     const afterClear = requestApproval('read', 's1', 'web-01', 'read x')
     expect(sent().length).toBe(asked + 2)
     respond('deny')
@@ -74,6 +97,44 @@ describe('requestApproval', () => {
     unlocked.value = true
     win.current = null
     await expect(requestApproval('read', 's1', 'w', 'x')).rejects.toThrow('no open window')
+  })
+})
+
+describe('cancelling waiting requests', () => {
+  const dismissed = () => sent().filter((c) => c[0] === 'mcp:approvalDismiss').length
+
+  it('denies and withdraws them on reset, and drops their window listeners', async () => {
+    const pending = requestApproval('command', 's1', 'web-01', 'uptime')
+    resetApprovals()
+    await expect(pending).rejects.toThrow('declined')
+    expect(dismissed()).toBe(1)
+    expect([...win.current!.webContents.listeners.values()].every((set) => set.size === 0)).toBe(true)
+  })
+
+  it('denies them and forgets session approvals when noxed locks', async () => {
+    const first = requestApproval('read', 's1', 'web-01', 'read a')
+    respond('session')
+    await first
+    const waiting = requestApproval('command', 's1', 'web-01', 'ls')
+    for (const fn of lockListeners) fn()
+    await expect(waiting).rejects.toThrow('declined')
+    const again = requestApproval('read', 's1', 'web-01', 'read b')
+    expect(lastRequest().detail).toBe('read b')
+    respond('deny')
+    await expect(again).rejects.toThrow('declined')
+  })
+
+  it('denies them when the window closes or loads a new page', async () => {
+    const closed = requestApproval('command', 's1', 'web-01', 'uptime')
+    win.current!.webContents.emit('destroyed')
+    await expect(closed).rejects.toThrow('declined')
+
+    const reloaded = requestApproval('command', 's1', 'web-01', 'uptime')
+    win.current!.webContents.emit('did-start-navigation', { isMainFrame: true, isSameDocument: true })
+    win.current!.webContents.emit('did-start-navigation', { isMainFrame: false, isSameDocument: false })
+    win.current!.webContents.emit('did-start-navigation', { isMainFrame: true, isSameDocument: false })
+    await expect(reloaded).rejects.toThrow('declined')
+    expect(dismissed()).toBe(0)
   })
 })
 
