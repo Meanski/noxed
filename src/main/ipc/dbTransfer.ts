@@ -153,7 +153,8 @@ function pgArrayLiteral(values: readonly unknown[]): string {
   const element = (el: unknown): string => {
     if (el === null || el === undefined) return 'NULL'
     if (Array.isArray(el)) return pgArrayLiteral(el)
-    return `"${String(plain(el)).replaceAll('\\', String.raw`\\`).replaceAll('"', String.raw`\"`)}"`
+    const escaped = String(plain(el)).replaceAll('\\', String.raw`\\`).replaceAll('"', String.raw`\"`)
+    return `"${escaped}"`
   }
   return `{${values.map(element).join(',')}}`
 }
