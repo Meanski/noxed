@@ -7,6 +7,8 @@ export interface AppSettings {
   sidebarDefault: 'expanded' | 'collapsed'
   sidebarWidth: number
   recentConnections: Array<{ id: string; at: number }>
+  mcpEnabled: boolean
+  mcpPort: number
   confirmClose: boolean
   dashboardView: 'grid' | 'compact' | 'list'
   connAlerts: boolean
@@ -34,6 +36,8 @@ const DEFAULTS: Omit<AppSettings, `snippets:${string}`> = {
   sidebarDefault: 'expanded',
   sidebarWidth: 220,
   recentConnections: [],
+  mcpEnabled: false,
+  mcpPort: 39_847,
   confirmClose: true,
   dashboardView: 'compact',
   connAlerts: true,
@@ -68,6 +72,8 @@ const VALUE_VALIDATORS: Partial<Record<keyof AppSettings, (value: unknown) => bo
     Array.isArray(v) &&
     v.length <= MAX_RECENT_CONNECTIONS &&
     v.every((r) => typeof r?.id === 'string' && r.id.length <= 128 && typeof r.at === 'number' && Number.isFinite(r.at)),
+  mcpEnabled: (v) => typeof v === 'boolean',
+  mcpPort: (v) => typeof v === 'number' && Number.isInteger(v) && v >= 1024 && v <= 65_535,
 }
 
 function isValidKey(key: string): boolean {
@@ -83,11 +89,21 @@ export function getStoredSettings(): AppSettings {
   return { ...DEFAULTS, ...settingsStore.get('settings') }
 }
 
+// Settings that grant capabilities change only through their own handlers
+// (which check the lock screen), never through the generic settings:set.
+const MAIN_ONLY_KEYS = new Set<keyof AppSettings>(['mcpEnabled', 'mcpPort'])
+
+/** For main-process modules that own a MAIN_ONLY setting. */
+export function setStoredSetting<K extends keyof AppSettings>(key: K, value: AppSettings[K]): void {
+  settingsStore.set('settings', { ...settingsStore.get('settings'), [key]: value })
+}
+
 export function registerSettingsHandlers(): void {
   ipcMain.handle('settings:get', () => settingsStore.get('settings'))
 
   ipcMain.handle('settings:set', (_e, key: string, value: unknown) => {
     if (!isValidKey(key)) throw new Error(`Unknown setting: ${key}`)
+    if (MAIN_ONLY_KEYS.has(key as keyof AppSettings)) throw new ValidationError(`${key} can only be changed from its own settings section`)
     const validate = VALUE_VALIDATORS[key as keyof AppSettings]
     if (validate && !validate(value)) throw new ValidationError(`Invalid value for setting: ${key}`)
     const settings = settingsStore.get('settings')
@@ -97,7 +113,10 @@ export function registerSettingsHandlers(): void {
   })
 
   ipcMain.handle('settings:reset', () => {
-    settingsStore.set('settings', DEFAULTS as AppSettings)
-    return DEFAULTS
+    const current = getStoredSettings()
+    const kept = Object.fromEntries([...MAIN_ONLY_KEYS].map((k) => [k, current[k]]))
+    const reset = { ...DEFAULTS, ...kept } as AppSettings
+    settingsStore.set('settings', reset)
+    return reset
   })
 }

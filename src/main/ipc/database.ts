@@ -42,7 +42,10 @@ export async function writeChunks(path: string, chunks: Iterable<string>, maxByt
     await once(out, 'finish')
     await rename(temp, path)
   } catch (err) {
+    // The stream opens its file asynchronously; wait for it to close so the
+    // temp file exists (if it ever will) before it's removed.
     out.destroy()
+    if (!out.closed) await once(out, 'close')
     await rm(temp, { force: true })
     throw err
   }

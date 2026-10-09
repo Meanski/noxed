@@ -230,6 +230,25 @@ contextBridge.exposeInMainWorld('api', {
     },
   },
 
+  // Claude Code (MCP) access: settings and per-request approvals
+  mcp: {
+    status: () => ipcRenderer.invoke('mcp:status'),
+    setEnabled: (enabled: boolean) => ipcRenderer.invoke('mcp:setEnabled', enabled),
+    connectionInfo: () => ipcRenderer.invoke('mcp:connectionInfo'),
+    regenerateToken: () => ipcRenderer.invoke('mcp:regenerateToken'),
+    respond: (requestId: string, decision: 'once' | 'session' | 'deny') => ipcRenderer.invoke('mcp:respond', requestId, decision),
+    onApproval: (cb: (request: { requestId: string; kind: 'command' | 'read'; connection: string; detail: string }) => void) => {
+      const handler = (_e: unknown, request: { requestId: string; kind: 'command' | 'read'; connection: string; detail: string }) => cb(request)
+      ipcRenderer.on('mcp:approval', handler)
+      return () => ipcRenderer.off('mcp:approval', handler)
+    },
+    onApprovalDismiss: (cb: (requestId: string) => void) => {
+      const handler = (_e: unknown, requestId: string) => cb(requestId)
+      ipcRenderer.on('mcp:approvalDismiss', handler)
+      return () => ipcRenderer.off('mcp:approvalDismiss', handler)
+    },
+  },
+
   // Multi-host command runner
   runner: {
     run: (sessionIds: string[], command: string) => ipcRenderer.invoke('runner:run', sessionIds, command),

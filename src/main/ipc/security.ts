@@ -109,6 +109,46 @@ const BINARY_EXTENSIONS = new Set([
   'dmg', 'iso', 'img', 'pkg', 'deb', 'rpm',
 ])
 
+// Commands an AI agent may never run, even with approval: they destroy a
+// system faster than a person can read the prompt. A guard rail, not a
+// sandbox; the per-command approval is the real control.
+const ALWAYS_BLOCKED = new Set(['mkfs', 'wipefs', 'shutdown', 'reboot', 'halt', 'poweroff'])
+const PRECIOUS_TARGETS = new Set(['/', '/*', '~', '~/', '~/*', '$HOME', '${HOME}', '*', '.', '..'])
+
+// Words that run the command after them (`sudo rm …`, `{ rm …; }`).
+const COMMAND_PREFIXES = new Set(['sudo', 'exec', 'command', 'nohup', 'time', 'nice', '{', '!'])
+
+function blockedSegmentReason(segment: string): string | null {
+  const tokens = segment.trim().split(/\s+/).filter(Boolean)
+  let start = 0
+  while (start < tokens.length - 1 && COMMAND_PREFIXES.has(tokens[start])) start++
+  const [cmd = '', ...rest] = tokens.slice(start)
+  const base = cmd.split('/').pop() ?? ''
+  if (ALWAYS_BLOCKED.has(base) || base.startsWith('mkfs.')) return `${base} is never allowed`
+  if (base === 'init' && (rest[0] === '0' || rest[0] === '6')) return 'changing the runlevel is never allowed'
+  const flags = rest.filter((t) => t.startsWith('-') && !t.startsWith('--')).join('')
+  const recursive = /[rR]/.test(flags) || rest.includes('--recursive')
+  if (base === 'rm' && recursive && rest.some((t) => PRECIOUS_TARGETS.has(t))) return 'recursive delete of a root or home directory'
+  if ((base === 'chmod' || base === 'chown') && recursive && rest.includes('/')) return `recursive ${base} of /`
+  if (base === 'dd' && rest.some((t) => t.startsWith('of=/dev/'))) return 'writing straight to a device'
+  return null
+}
+
+/**
+ * Why a shell command must not run, or null. Each part of a pipeline or
+ * command list is checked, including the insides of `$(…)`, backticks and
+ * subshells, as is a classic fork bomb.
+ */
+export function blockedShellCommandReason(command: string): string | null {
+  if (command.includes(':(){') || command.includes(':() {')) return 'fork bomb'
+  if (/>\s*\/dev\/(sd|nvme|disk|hd|xvd|vd)/.test(command)) return 'writing straight to a disk device'
+  for (const segment of command.split(/&&|\|\||[;|&\n`()]/)) {
+    const reason = blockedSegmentReason(segment)
+    if (reason) return reason
+  }
+  return null
+}
+
 export function isLikelyTextFile(filename: string, sizeBytes: number): boolean {
   if (sizeBytes > 10 * 1024 * 1024) return false
 

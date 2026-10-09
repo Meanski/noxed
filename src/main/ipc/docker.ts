@@ -1,7 +1,7 @@
 import { ipcMain, IpcMainInvokeEvent, WebContents } from 'electron'
 import { ClientChannel } from 'ssh2'
 import { randomUUID } from 'node:crypto'
-import { connectSessionClient, ManagedSshConnection } from './sshClients'
+import { connectSessionClient, execCapture, ManagedSshConnection } from './sshClients'
 import { ConnectionError, NotFoundError, OwnershipError, ValidationError, toMessage } from './errors'
 
 // Docker support works over the plain SSH connection — no agent, no exposed
@@ -92,41 +92,12 @@ function requireSession(event: IpcMainInvokeEvent, rawId: unknown): DockerSessio
   return entry
 }
 
-function execCollect(entry: DockerSession, command: string): Promise<string> {
-  return new Promise((resolve, reject) => {
-    entry.conn.client.exec(command, (err, stream) => {
-      if (err) return reject(new ConnectionError(toMessage(err)))
-
-      let stdout = ''
-      let stderr = ''
-      const timer = setTimeout(() => {
-        stream.close()
-        reject(new ConnectionError('Remote command timed out'))
-      }, EXEC_TIMEOUT_MS)
-
-      stream.on('data', (d: Buffer) => {
-        // Over-limit output is dropped; parseJsonLines skips the partial tail line.
-        if (stdout.length < MAX_OUTPUT_BYTES) stdout += d.toString('utf8')
-      })
-      stream.stderr.on('data', (d: Buffer) => {
-        if (stderr.length < 16 * 1024) stderr += d.toString('utf8')
-      })
-      stream.on('close', (code: number | null) => {
-        clearTimeout(timer)
-        if (code === 0 || (code === null && stdout)) {
-          resolve(stdout)
-        } else if (code === 127) {
-          reject(new ConnectionError('Docker CLI not found on this host'))
-        } else {
-          reject(new ConnectionError(stderr.trim() || `Command failed (exit ${code})`))
-        }
-      })
-      stream.on('error', (e: unknown) => {
-        clearTimeout(timer)
-        reject(new ConnectionError(toMessage(e)))
-      })
-    })
-  })
+async function execCollect(entry: DockerSession, command: string): Promise<string> {
+  const { stdout, stderr, code } = await execCapture(entry.conn.client, command, { timeoutMs: EXEC_TIMEOUT_MS, maxBytes: MAX_OUTPUT_BYTES })
+  // Over-limit output is dropped; parseJsonLines skips the partial tail line.
+  if (code === 0 || (code === null && stdout)) return stdout
+  if (code === 127) throw new ConnectionError('Docker CLI not found on this host')
+  throw new ConnectionError(stderr.trim() || `Command failed (exit ${code})`)
 }
 
 function disposeSession(id: string): void {

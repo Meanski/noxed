@@ -53,6 +53,18 @@ function resetAttempts(): void {
 
 export const isUnlocked = (): boolean => _unlocked
 
+const lockListeners = new Set<() => void>()
+
+/** Runs `listener` whenever noxed locks, whether by the user or auto-lock. */
+export function onLock(listener: () => void): void {
+  lockListeners.add(listener)
+}
+
+function lock(): void {
+  _unlocked = false
+  for (const listener of lockListeners) listener()
+}
+
 let _autoLockTimer: ReturnType<typeof setTimeout> | null = null
 
 function parseTimeoutMs(setting: string): number {
@@ -77,7 +89,7 @@ function startAutoLock(): void {
   }
   if (timeoutMs <= 0) return
   _autoLockTimer = setTimeout(() => {
-    _unlocked = false
+    lock()
     for (const win of BrowserWindow.getAllWindows()) {
       win.webContents.send('auth:locked')
     }
@@ -101,6 +113,17 @@ export async function saveCredential(sessionId: string, field: 'password', value
 export async function getCredential(sessionId: string, field: 'password'): Promise<string | null> {
   if (!_unlocked) throw new Error('App is locked')
   return keytar.getPassword(KEYCHAIN_SERVICE, `${sessionId}:${field}`)
+}
+
+// noxed's own secrets (e.g. the MCP server token), for main-process use only:
+// unlike session credentials they're needed before the user unlocks, and any
+// IPC that hands one to the renderer must check isUnlocked() itself.
+export async function saveAppSecret(name: string, value: string): Promise<void> {
+  await keytar.setPassword(KEYCHAIN_SERVICE, `app:${name}`, value)
+}
+
+export async function getAppSecret(name: string): Promise<string | null> {
+  return keytar.getPassword(KEYCHAIN_SERVICE, `app:${name}`)
 }
 
 export async function deleteCredentials(sessionId: string): Promise<void> {
@@ -193,7 +216,7 @@ export function registerKeychainHandlers(): void {
   })
 
   ipcMain.handle('auth:lock', () => {
-    _unlocked = false
+    lock()
     clearAutoLock()
   })
 

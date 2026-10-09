@@ -2,16 +2,10 @@ import { useEffect, useState } from 'react'
 import Modal, { ModalButton } from '../Modal'
 import { hostWithPort, ipcErrorMessage } from '../../lib/format'
 import { useAppStore } from '../../store'
+import { withRequest, withoutRequest } from '../../lib/requestQueue'
 
 type HostKeyPromptRequest = Parameters<Parameters<Window['api']['hostKeys']['onPrompt']>[0]>[0]
 type Decision = Parameters<Window['api']['hostKeys']['respond']>[1]
-
-const withoutRequest = (requestId: string) => (queue: HostKeyPromptRequest[]) =>
-  queue.filter((p) => p.requestId !== requestId)
-
-// Puts a prompt back at the front unless it's already queued.
-const withRequest = (prompt: HostKeyPromptRequest) => (queue: HostKeyPromptRequest[]) =>
-  queue.some((p) => p.requestId === prompt.requestId) ? queue : [prompt, ...queue]
 
 // Where sshd keeps the public host key for each algorithm family.
 function hostKeyFile(keyType: string): string {

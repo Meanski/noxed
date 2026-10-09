@@ -11,7 +11,8 @@ vi.mock('electron-store', () => ({
     set(key: string, value: unknown) { this.data.set(key, value) }
   },
 }))
-vi.mock('../sshClients', () => ({
+vi.mock('../sshClients', async (importOriginal) => ({
+  execCapture: (await importOriginal<typeof import('../sshClients')>()).execCapture,
   connectSessionClient: vi.fn(),
 }))
 
