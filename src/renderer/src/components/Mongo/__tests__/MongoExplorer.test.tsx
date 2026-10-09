@@ -6,7 +6,10 @@ import { installWindowApi, seedStore, makeSession, makeTab, type WindowApiMock }
 import { useAppStore } from '../../../store'
 
 let api: WindowApiMock
-const order = (n: number) => JSON.stringify({ _id: { $oid: `65a00000000000000000000${n}` }, qty: n })
+const order = (n: number) => ({
+  json: JSON.stringify({ _id: { $oid: `65a00000000000000000000${n}` }, qty: { $numberInt: String(n) } }),
+  display: JSON.stringify({ _id: { $oid: `65a00000000000000000000${n}` }, qty: n }),
+})
 
 function setup() {
   api = installWindowApi()
@@ -60,7 +63,8 @@ describe('MongoExplorer', () => {
     fireEvent.click(screen.getByText('Save'))
     await waitFor(() => expect(api.mongo.insert).toHaveBeenCalledWith('mongo-1', 'shop', 'orders', '{"qty": 9}'))
     fireEvent.click(screen.getAllByLabelText('Edit document')[0])
-    expect((screen.getByLabelText('Document JSON') as HTMLTextAreaElement).value).toContain('"qty": 1')
+    // The editor gets canonical JSON, so saving keeps each value's BSON type.
+    expect((screen.getByLabelText('Document JSON') as HTMLTextAreaElement).value).toContain('"$numberInt": "1"')
     fireEvent.change(screen.getByLabelText('Document JSON'), { target: { value: '{"qty": 10}' } })
     fireEvent.click(screen.getByText('Save'))
     await waitFor(() => expect(api.mongo.replace).toHaveBeenCalledWith('mongo-1', 'shop', 'orders', '{"_id":{"$oid":"65a000000000000000000001"}}', '{"qty": 10}'))
@@ -135,7 +139,7 @@ describe('MongoExplorer', () => {
     api.mongo.collections.mockResolvedValueOnce(['orders', 'users'])
     fireEvent.click(await screen.findByText('shop'))
     await screen.findByText('users')
-    let finishSlow: (r: { documents: string[]; total: number }) => void = () => undefined
+    let finishSlow: (r: { documents: Array<{ json: string; display: string }>; total: number }) => void = () => undefined
     api.mongo.find
       .mockReturnValueOnce(new Promise((resolve) => { finishSlow = resolve }))
       .mockResolvedValueOnce({ documents: [order(2)], total: 1 })

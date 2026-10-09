@@ -105,7 +105,7 @@ function validateSqliteConfig(c: Record<string, unknown>): SqliteConfig {
   // judged by where the path really resolves.
   const check = isInsideHome(c.filePath)
   if (!check.ok) throw new ValidationError(check.reason)
-  return { dbType: 'sqlite', filePath: check.resolved }
+  return { dbType: 'sqlite', filePath: check.real }
 }
 
 function validateConnectConfig(raw: unknown): DbConnectConfig {

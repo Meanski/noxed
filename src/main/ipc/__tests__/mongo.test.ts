@@ -46,12 +46,12 @@ vi.mock('mongodb', async (importOriginal) => {
   return { ...actual, MongoClient }
 })
 
-import { ObjectId } from 'mongodb'
+import { Double, Int32, ObjectId } from 'mongodb'
 import { disposeMongoClientsForSender, mongoUrl, registerMongoHandlers, validateMongoConfig } from '../mongo'
 import { ConnectionError, NotFoundError, OwnershipError, ValidationError } from '../errors'
 
 registerMongoHandlers()
-const owner = { sender: { id: 8 } }
+const owner = { sender: { id: 8, isDestroyed: () => false } }
 const call = (ch: string, ...args: unknown[]) => handlers.get(ch)!(owner, ...args) as Promise<unknown>
 const connect = () => call('mongo:connect', { host: 'db.lan', port: 27017, username: 'app', password: 'pw', authSource: 'admin' }) as Promise<string>
 
@@ -88,6 +88,12 @@ describe('MongoDB connections', () => {
     expect(fake.clients[0].close).toHaveBeenCalled()
   })
 
+  it('closes the client when its window closed while connecting', async () => {
+    const closing = { sender: { id: 8, isDestroyed: () => true } }
+    await expect(handlers.get('mongo:connect')!(closing, { host: 'db.lan', port: 27017 }) as Promise<string>).rejects.toThrow('window closed')
+    expect(fake.clients[0].close).toHaveBeenCalled()
+  })
+
   it('lists databases and collections, sorted', async () => {
     const id = await connect()
     expect(await call('mongo:databases', id)).toEqual([{ name: 'admin', sizeOnDisk: 0 }, { name: 'shop', sizeOnDisk: 4096 }])
@@ -97,9 +103,10 @@ describe('MongoDB connections', () => {
   it('finds documents as Extended JSON, keeping ObjectIds and dates', async () => {
     const id = await connect()
     fake.docs = [{ _id: new ObjectId('65a000000000000000000002'), at: new Date('2026-01-01T00:00:00Z'), qty: 3 }]
-    const result = (await call('mongo:find', id, 'shop', 'orders', { filter: '{"_id": {"$oid": "65a000000000000000000002"}}', sort: '{"at": -1}', limit: 20, skip: 40 })) as { documents: string[]; total: number }
+    const result = (await call('mongo:find', id, 'shop', 'orders', { filter: '{"_id": {"$oid": "65a000000000000000000002"}}', sort: '{"at": -1}', limit: 20, skip: 40 })) as { documents: Array<{ json: string; display: string }>; total: number }
     expect(result.total).toBe(42)
-    expect(JSON.parse(result.documents[0])).toEqual({ _id: { $oid: '65a000000000000000000002' }, at: { $date: '2026-01-01T00:00:00Z' }, qty: 3 })
+    expect(JSON.parse(result.documents[0].display)).toEqual({ _id: { $oid: '65a000000000000000000002' }, at: { $date: '2026-01-01T00:00:00Z' }, qty: 3 })
+    expect(JSON.parse(result.documents[0].json)).toEqual({ _id: { $oid: '65a000000000000000000002' }, at: { $date: { $numberLong: '1767225600000' } }, qty: { $numberInt: '3' } })
     const filter = fake.calls[0][3] as { _id: ObjectId }
     expect(filter._id).toBeInstanceOf(ObjectId)
     expect(fake.calls.slice(1)).toEqual([['sort', { at: -1 }], ['skip', 40], ['limit', 20]])
@@ -126,9 +133,17 @@ describe('MongoDB connections', () => {
     await call('mongo:replace', id, 'shop', 'orders', '{"_id": {"$oid": "65a000000000000000000002"}}', '{"_id": "sneaky", "qty": 5}')
     const [, filter, doc] = fake.calls.find((c) => c[0] === 'replace')!
     expect((filter as { _id: ObjectId })._id).toBeInstanceOf(ObjectId)
-    expect(doc).toEqual({ qty: 5 })
+    expect(doc).toEqual({ qty: new Int32(5) })
     await call('mongo:delete', id, 'shop', 'orders', '{"_id": 7}')
-    expect(fake.calls.at(-1)).toEqual(['delete', { _id: 7 }])
+    expect(fake.calls.at(-1)).toEqual(['delete', { _id: new Int32(7) }])
+  })
+
+  it('keeps numeric BSON types through an edit', async () => {
+    const id = await connect()
+    await call('mongo:replace', id, 'shop', 'orders', '{"_id": 1}', '{"price": {"$numberDouble": "5.0"}, "qty": {"$numberInt": "2"}}')
+    const doc = fake.calls.find((c) => c[0] === 'replace')![2] as { price: unknown; qty: unknown }
+    expect(doc.price).toBeInstanceOf(Double)
+    expect(doc.qty).toBeInstanceOf(Int32)
   })
 
   it('says when the document is already gone', async () => {

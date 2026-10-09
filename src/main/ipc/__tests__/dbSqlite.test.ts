@@ -41,8 +41,8 @@ vi.mock('better-sqlite3', () => {
   return { default: Database }
 })
 
-import { connectSqlite } from '../dbSqlite'
-import { ConnectionError } from '../errors'
+import { connectSqlite, fileEscapingStatement } from '../dbSqlite'
+import { ConnectionError, ValidationError } from '../errors'
 
 const TABLES = "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name"
 const COLS = 'SELECT name, type, "notnull", pk FROM pragma_table_info(?)'
@@ -101,5 +101,31 @@ describe('connectSqlite', () => {
     expect(fake.runs).toEqual([])
     await db.close()
     expect(fake.closed).toBe(true)
+  })
+})
+
+describe('fileEscapingStatement', () => {
+  it.each([
+    "ATTACH DATABASE '/etc/x' AS a",
+    "  attach '/tmp/x.db' as other",
+    "VACUUM INTO '/tmp/copy.db'",
+    "vacuum main\ninto '/tmp/copy.db'",
+  ])('refuses %j', (sql) => {
+    expect(fileEscapingStatement(sql)).not.toBeNull()
+  })
+
+  it.each([
+    "SELECT * FROM notes WHERE body = 'attach the file'",
+    'SELECT "attach" FROM t',
+    'SELECT 1 -- ATTACH later',
+    'SELECT [vacuum into] FROM t',
+    'VACUUM',
+  ])('allows %j', (sql) => {
+    expect(fileEscapingStatement(sql)).toBeNull()
+  })
+
+  it('stops the query before it reaches SQLite', async () => {
+    const conn = await connectSqlite({ dbType: 'sqlite', filePath: '/home/me/app.sqlite' })
+    await expect(conn.query("ATTACH '/etc/x' AS x")).rejects.toThrow(ValidationError)
   })
 })

@@ -11,8 +11,15 @@ interface MongoExplorerProps {
   tab: Tab
 }
 
+interface ShownDocument {
+  /** Canonical Extended JSON: exact BSON types, used for editing and as the id. */
+  doc: Record<string, unknown>
+  /** Relaxed Extended JSON, easier to read. */
+  display: Record<string, unknown>
+}
+
 interface Results {
-  documents: Array<Record<string, unknown>>
+  documents: ShownDocument[]
   total: number
 }
 
@@ -99,7 +106,7 @@ export default function MongoExplorer({ tab }: Readonly<MongoExplorerProps>) {
     try {
       const { documents, total } = await window.api.mongo.find(clientId, target.db, target.collection, { filter, sort, limit, skip: from })
       if (seq !== runSeq.current) return
-      setResults({ documents: documents.map((d) => JSON.parse(d) as Record<string, unknown>), total })
+      setResults({ documents: documents.map((d) => ({ doc: JSON.parse(d.json) as Record<string, unknown>, display: JSON.parse(d.display) as Record<string, unknown> })), total })
     } catch (err) {
       if (seq === runSeq.current) setQueryError(ipcErrorMessage(err, 'Query failed'))
     } finally {
@@ -189,9 +196,9 @@ export default function MongoExplorer({ tab }: Readonly<MongoExplorerProps>) {
               {results?.documents.length === 0 && !loading && (
                 <p className="text-center py-10 text-[12px]" style={{ color: 'var(--nox-text-2)' }}>No documents match.</p>
               )}
-              {results?.documents.map((doc) => (
+              {results?.documents.map(({ doc, display }) => (
                 <div key={idOf(doc)} className="group relative rounded-md" style={{ background: 'var(--nox-shell)', border: '1px solid var(--nox-border)' }}>
-                  <pre className="p-3 text-[11.5px] font-['JetBrains_Mono'] overflow-x-auto max-h-80 select-text" style={{ color: 'var(--nox-text)' }}>{pretty(doc)}</pre>
+                  <pre className="p-3 text-[11.5px] font-['JetBrains_Mono'] overflow-x-auto max-h-80 select-text" style={{ color: 'var(--nox-text)' }}>{pretty(display)}</pre>
                   <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100">
                     <button type="button" aria-label="Edit document" onClick={() => setEditing({ mode: 'edit', doc })} className="p-1 rounded hover:bg-[var(--nox-hover)]" style={{ color: 'var(--nox-text-2)' }}><Pencil className="w-3.5 h-3.5" /></button>
                     <button type="button" aria-label="Delete document" onClick={() => setDeleting(doc)} className="p-1 rounded hover:bg-[var(--nox-hover)]" style={{ color: 'var(--nox-danger-text)' }}><Trash2 className="w-3.5 h-3.5" /></button>

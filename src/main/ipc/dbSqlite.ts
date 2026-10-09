@@ -1,5 +1,5 @@
 import Database from 'better-sqlite3'
-import { ConnectionError, toMessage } from './errors'
+import { ConnectionError, ValidationError, toMessage } from './errors'
 import { quoteIdentifier, type CellValue } from './dbTransfer'
 import { assembleSchema, type DbConnection, type ForeignKey, type QueryParam, type SqliteConfig } from './dbTypes'
 
@@ -7,6 +7,21 @@ import { assembleSchema, type DbConnection, type ForeignKey, type QueryParam, ty
 // no boolean type, so booleans travel as 1/0.
 function bindable(v: QueryParam): string | number | null {
   return typeof v === 'boolean' ? Number(v) : v
+}
+
+// Strings, quoted identifiers and comments, which may mention ATTACH harmlessly.
+const SQL_LITERALS_AND_COMMENTS = /'(?:[^']|'')*'|"(?:[^"]|"")*"|`[^`]*`|\[[^\]]*\]|--[^\n]*|\/\*[\s\S]*?\*\//g
+
+/**
+ * Why a statement must not run, or null. The connection was opened only after
+ * checking the file is inside the home folder; ATTACH and VACUUM INTO would
+ * read or write any other file the app can reach.
+ */
+export function fileEscapingStatement(sql: string): string | null {
+  const code = sql.replaceAll(SQL_LITERALS_AND_COMMENTS, ' ')
+  if (/\bATTACH\b/i.test(code)) return 'ATTACH is not allowed: open the other database as its own connection'
+  if (/\bVACUUM\b[\s\S]*\bINTO\b/i.test(code)) return 'VACUUM INTO is not allowed: use Export to save a copy'
+  return null
 }
 
 type PragmaColumn = { name: string; type: string; notnull: number; pk: number }
@@ -41,6 +56,8 @@ export async function connectSqlite(config: SqliteConfig): Promise<DbConnection>
     type: 'sqlite',
     async query(sql: string, params?: QueryParam[]) {
       const start = Date.now()
+      const refused = fileEscapingStatement(sql)
+      if (refused) throw new ValidationError(refused)
       const stmt = db.prepare(sql)
       const values = (params ?? []).map(bindable)
       if (stmt.reader) {

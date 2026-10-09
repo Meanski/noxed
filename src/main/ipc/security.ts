@@ -1,5 +1,5 @@
 import { homedir } from 'node:os'
-import { basename, dirname, isAbsolute, join, normalize, relative, resolve } from 'node:path'
+import { basename, dirname, isAbsolute, join, normalize, relative, resolve, sep } from 'node:path'
 import { realpathSync, statSync } from 'node:fs'
 
 const MAX_KEY_FILE_SIZE = 64 * 1024
@@ -42,7 +42,8 @@ function checkPathBase(rawPath: string): { resolved: string } | { error: string 
  */
 export function isWithin(child: string, dir: string): boolean {
   const rel = relative(dir, child)
-  return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel))
+  // Only a `..` segment leaves `dir`; a child named `..cache` stays inside.
+  return rel === '' || (rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel))
 }
 
 function isInsideAny(resolvedPath: string, dirs: string[]): boolean {
@@ -87,14 +88,16 @@ export function isAllowedKubeconfigPath(rawPath: string): PathCheck {
   return checkAllowedFile(rawPath, ALLOWED_KUBECONFIG_DIRS, MAX_KUBECONFIG_FILE_SIZE, 'kubeconfig')
 }
 
-export function isInsideHome(rawPath: string): PathCheck {
+/** `real` is where the path resolves through symlinks: open that, not `resolved`, to avoid a swap after the check. */
+export function isInsideHome(rawPath: string): { ok: true; resolved: string; real: string } | { ok: false; reason: string } {
   const base = checkPathBase(rawPath)
   if ('error' in base) return { ok: false, reason: base.error }
   const home = homedir()
-  if (!isWithin(base.resolved, home) || !isWithin(realPathOrSelf(base.resolved), realPathOrSelf(home))) {
+  const real = realPathOrSelf(base.resolved)
+  if (!isWithin(base.resolved, home) || !isWithin(real, realPathOrSelf(home))) {
     return { ok: false, reason: 'Path must be inside your home directory' }
   }
-  return { ok: true, resolved: base.resolved }
+  return { ok: true, resolved: base.resolved, real }
 }
 
 const BLOCKED_REDIS_COMMANDS = new Set([

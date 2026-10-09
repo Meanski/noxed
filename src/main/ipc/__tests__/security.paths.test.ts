@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest'
-import { mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { mkdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 // A throwaway home directory with an allowed ~/.ssh, a file outside home, and
@@ -20,6 +20,9 @@ beforeAll(() => {
   writeFileSync(join(outside, 'secret'), 'SECRET')
   symlinkSync(join(outside, 'secret'), join(fakeHome, '.ssh', 'sneaky'))
   symlinkSync(outside, join(fakeHome, 'linked-dir'))
+  mkdirSync(join(fakeHome, 'data'))
+  writeFileSync(join(fakeHome, 'data', 'app.sqlite'), '')
+  symlinkSync(join(fakeHome, 'data'), join(fakeHome, 'data-link'))
 })
 
 afterAll(() => {
@@ -37,6 +40,11 @@ describe('isWithin', () => {
     expect(isWithin('/home/meow/file', '/home/me')).toBe(false)
     expect(isWithin('/home', '/home/me')).toBe(false)
     expect(isWithin('/etc/passwd', '/home/me')).toBe(false)
+  })
+
+  it('accepts children whose names start with two dots', () => {
+    expect(isWithin('/home/me/..cache', '/home/me')).toBe(true)
+    expect(isWithin('/home/me/..', '/home/me')).toBe(false)
   })
 })
 
@@ -56,6 +64,11 @@ describe('symlinks cannot escape allowed folders', () => {
     expect(isInsideHome(join(fakeHome, 'linked-dir', 'secret')).ok).toBe(false)
     expect(isInsideHome(join(fakeHome, 'not-created-yet.txt')).ok).toBe(true)
     expect(isInsideHome(join(outside, 'secret')).ok).toBe(false)
+  })
+
+  it('reports where an allowed path really lives, for opening without a re-check', () => {
+    const check = isInsideHome(join(fakeHome, 'data-link', 'app.sqlite'))
+    expect(check).toMatchObject({ ok: true, real: realpathSync(join(fakeHome, 'data', 'app.sqlite')) })
   })
 })
 

@@ -83,7 +83,7 @@ declare global {
         databases: (id: string) => Promise<Array<{ name: string; sizeOnDisk: number }>>
         collections: (id: string, db: string) => Promise<string[]>
         /** Documents come back as relaxed Extended JSON strings. */
-        find: (id: string, db: string, collection: string, options: { filter?: string; sort?: string; limit?: number; skip?: number }) => Promise<{ documents: string[]; total: number }>
+        find: (id: string, db: string, collection: string, options: { filter?: string; sort?: string; limit?: number; skip?: number }) => Promise<{ documents: Array<{ json: string; display: string }>; total: number }>
         insert: (id: string, db: string, collection: string, doc: string) => Promise<string>
         /** `docId` is Extended JSON of `{ "_id": … }`. */
         replace: (id: string, db: string, collection: string, docId: string, doc: string) => Promise<void>

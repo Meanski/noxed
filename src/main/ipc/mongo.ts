@@ -6,8 +6,9 @@ import { isUuid, validateHost, validatePort } from './security'
 
 const { EJSON } = BSON
 
-// MongoDB browsing and editing. Documents cross IPC as relaxed Extended JSON
-// strings, so ObjectIds, dates and the like keep their types on the way back.
+// MongoDB browsing and editing. Documents cross IPC as canonical Extended JSON
+// strings, so every BSON type (ObjectIds, dates, Int32 vs Int64 vs Double)
+// survives an edit and save; a relaxed copy is sent alongside for display.
 
 interface MongoEntry {
   client: MongoClient
@@ -64,12 +65,16 @@ export function mongoUrl({ host, port, srv }: MongoConnectConfig): string {
   return srv ? `mongodb+srv://${bracketed}` : `mongodb://${bracketed}:${port}`
 }
 
-/** Parses Extended JSON from the renderer into a plain object (no arrays or scalars). */
-function parseDocument(raw: unknown, label: string): Document {
+/**
+ * Parses Extended JSON from the renderer into a plain object (no arrays or
+ * scalars). Documents parse canonically so numbers keep their BSON types;
+ * queries parse relaxed, since sort directions must be plain numbers.
+ */
+function parseDocument(raw: unknown, label: string, relaxed = false): Document {
   if (typeof raw !== 'string' || Buffer.byteLength(raw, 'utf8') > MAX_JSON_BYTES) throw new ValidationError(`Invalid ${label}`)
   let value: unknown
   try {
-    value = EJSON.parse(raw === '' ? '{}' : raw)
+    value = EJSON.parse(raw === '' ? '{}' : raw, { relaxed })
   } catch (err) {
     throw new ValidationError(`${label} is not valid JSON: ${toMessage(err)}`)
   }
@@ -83,7 +88,8 @@ function parseDocumentId(raw: unknown): Document {
   return { _id }
 }
 
-const toEjson = (doc: unknown) => EJSON.stringify(doc, { relaxed: true })
+const toEjson = (doc: unknown) => EJSON.stringify(doc, { relaxed: false })
+const toDisplay = (doc: unknown) => EJSON.stringify(doc, { relaxed: true })
 
 function requireClient(event: IpcMainInvokeEvent, rawId: unknown): MongoClient {
   if (!isUuid(rawId)) throw new ValidationError('Invalid MongoDB client id')
@@ -123,7 +129,7 @@ function validateFind(raw: unknown): FindOptions {
   const skip = o.skip ?? 0
   if (!Number.isInteger(limit) || (limit as number) < 1 || (limit as number) > MAX_LIMIT) throw new ValidationError(`Limit must be 1 to ${MAX_LIMIT}`)
   if (!Number.isInteger(skip) || (skip as number) < 0) throw new ValidationError('Skip must be 0 or more')
-  return { filter: parseDocument(o.filter ?? '', 'Filter'), sort: parseDocument(o.sort ?? '', 'Sort'), limit: limit as number, skip: skip as number }
+  return { filter: parseDocument(o.filter ?? '', 'Filter', true), sort: parseDocument(o.sort ?? '', 'Sort', true), limit: limit as number, skip: skip as number }
 }
 
 export function registerMongoHandlers(): void {
@@ -143,6 +149,11 @@ export function registerMongoHandlers(): void {
     } catch (err) {
       await client.close().catch(() => undefined) // the connection never opened; nothing to clean up
       throw new ConnectionError(`Could not connect to MongoDB: ${toMessage(err)}`)
+    }
+    // The window closed while connecting, after its cleanup ran.
+    if (event.sender.isDestroyed()) {
+      await client.close().catch((err: unknown) => console.error(`[mongo] close: ${toMessage(err)}`))
+      throw new ConnectionError('The window closed while connecting')
     }
     const id = randomUUID()
     clients.set(id, { client, senderId: event.sender.id })
@@ -168,7 +179,7 @@ export function registerMongoHandlers(): void {
       // An unfiltered count can come from collection metadata instead of a scan.
       Object.keys(filter).length === 0 ? coll.estimatedDocumentCount() : coll.countDocuments(filter),
     ])
-    return { documents: docs.map(toEjson), total }
+    return { documents: docs.map((d) => ({ json: toEjson(d), display: toDisplay(d) })), total }
   })
 
   ipcMain.handle('mongo:insert', async (event, rawId: unknown, rawDb: unknown, rawCollection: unknown, rawDoc: unknown) => {
