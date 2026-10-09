@@ -110,6 +110,8 @@ describe('fileEscapingStatement', () => {
     "  attach '/tmp/x.db' as other",
     "VACUUM INTO '/tmp/copy.db'",
     "vacuum main\ninto '/tmp/copy.db'",
+    "SELECT 'unterminated ATTACH x",
+    '/* note */ ATTACH ?',
   ])('refuses %j', (sql) => {
     expect(fileEscapingStatement(sql)).not.toBeNull()
   })
@@ -120,6 +122,7 @@ describe('fileEscapingStatement', () => {
     'SELECT 1 -- ATTACH later',
     'SELECT [vacuum into] FROM t',
     'VACUUM',
+    "SELECT 'it''s attached' /* attach */ FROM t",
   ])('allows %j', (sql) => {
     expect(fileEscapingStatement(sql)).toBeNull()
   })

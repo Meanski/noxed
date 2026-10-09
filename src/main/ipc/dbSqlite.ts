@@ -9,8 +9,34 @@ function bindable(v: QueryParam): string | number | null {
   return typeof v === 'boolean' ? Number(v) : v
 }
 
-// Strings, quoted identifiers and comments, which may mention ATTACH harmlessly.
-const SQL_LITERALS_AND_COMMENTS = /'(?:[^']|'')*'|"(?:[^"]|"")*"|`[^`]*`|\[[^\]]*\]|--[^\n]*|\/\*[\s\S]*?\*\//g
+const LITERAL_END: Record<string, string> = { "'": "'", '"': '"', '`': '`', '[': ']' }
+
+// Blanks out strings, quoted identifiers and comments, which may mention
+// ATTACH harmlessly. One pass, so long input can't make it slow. An
+// unterminated literal is left as code, which errs toward refusing.
+function codeOnly(sql: string): string {
+  const lineEnd = (text: string, from: number) => {
+    const nl = text.indexOf('\n', from)
+    return nl === -1 ? text.length : nl
+  }
+  let out = ''
+  let i = 0
+  while (i < sql.length) {
+    const ch = sql[i]
+    let end = -1
+    if (Object.hasOwn(LITERAL_END, ch)) end = sql.indexOf(LITERAL_END[ch], i + 1)
+    else if (sql.startsWith('--', i)) end = lineEnd(sql, i)
+    else if (sql.startsWith('/*', i)) end = sql.indexOf('*/', i + 2) + 1
+    if (end > i) {
+      out += ' '
+      i = end + 1
+    } else {
+      out += ch
+      i++
+    }
+  }
+  return out
+}
 
 /**
  * Why a statement must not run, or null. The connection was opened only after
@@ -18,7 +44,7 @@ const SQL_LITERALS_AND_COMMENTS = /'(?:[^']|'')*'|"(?:[^"]|"")*"|`[^`]*`|\[[^\]]
  * read or write any other file the app can reach.
  */
 export function fileEscapingStatement(sql: string): string | null {
-  const code = sql.replaceAll(SQL_LITERALS_AND_COMMENTS, ' ')
+  const code = codeOnly(sql)
   if (/\bATTACH\b/i.test(code)) return 'ATTACH is not allowed: open the other database as its own connection'
   if (/\bVACUUM\b[\s\S]*\bINTO\b/i.test(code)) return 'VACUUM INTO is not allowed: use Export to save a copy'
   return null
