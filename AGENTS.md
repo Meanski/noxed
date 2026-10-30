@@ -7,7 +7,7 @@ These rules apply to all AI coding agents working on this project.
 noxed is an Electron app with three isolated layers. Never leak concerns across them.
 
 - **Main process** (`src/main/`) — Node.js. Owns all system access: SSH, SFTP, Docker, databases, Redis, K8s, tunnels, filesystem, keychain. Exposes functionality exclusively through IPC handlers.
-- **Preload** (`src/preload/`) — Thin bridge. Only `contextBridge` + `ipcRenderer`. No logic, no transforms.
+- **Preload** (`src/preload/`) — Thin bridge. Only `contextBridge` + `ipcRenderer`, plus `webUtils` for dropped-file path lookup. No logic, no transforms.
 - **Renderer** (`src/renderer/`) — React + Zustand. Pure UI. All system access goes through `window.api.*`. Never import Node.js modules.
 
 IPC is the security boundary. Every handler in `src/main/ipc/` must validate its inputs — the renderer is untrusted.
