@@ -1,0 +1,8 @@
+{
+  "name": "cpu-features",
+  "version": "0.0.10",
+  "private": true,
+  "description": "Stub for ssh2's optional cpu-features addon, which no longer compiles against current Electron V8 headers.",
+  "main": "index.js",
+  "license": "MIT"
+}
