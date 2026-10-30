@@ -89,6 +89,7 @@ export function buildWindowApi() {
       list: vi.fn().mockResolvedValue([]),
       readTextFile: vi.fn().mockResolvedValue(''),
       writeTextFile: vi.fn().mockResolvedValue(undefined),
+      pathForFile: vi.fn((file: { path?: string }) => file.path ?? ''),
     },
     fs: { readFile: vi.fn().mockResolvedValue('') },
     k8s: {

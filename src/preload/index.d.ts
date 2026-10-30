@@ -50,9 +50,6 @@ interface HostKeyPrompt {
 }
 
 declare global {
-  interface File {
-    readonly path: string
-  }
   interface Window {
     api: {
       platform: NodeJS.Platform
@@ -167,6 +164,7 @@ declare global {
         list: (dirPath: string) => Promise<{ name: string; size: number; mtime: number; permissions: number; isDirectory: boolean; path: string }[]>
         readTextFile: (filePath: string) => Promise<string>
         writeTextFile: (filePath: string, content: string) => Promise<boolean>
+        pathForFile: (file: File) => string
       }
       fs: {
         readFile: (path: string) => Promise<string>

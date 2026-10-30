@@ -750,7 +750,7 @@ function K8sContextForm({ form, set, error, k8sContexts, k8sLoading, k8sSelected
         setDropActive(false)
         const file = e.dataTransfer.files[0]
         if (!file) return
-        const filePath = (file as any).path as string | undefined
+        const filePath = window.api.localfs.pathForFile(file)
         if (filePath) onK8sImport(filePath)
       }}
       style={dropActive ? { outline: '2px dashed #3B5CCC', outlineOffset: -2, borderRadius: 6 } : undefined}

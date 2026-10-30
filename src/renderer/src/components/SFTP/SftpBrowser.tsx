@@ -288,7 +288,7 @@ export default function SftpBrowser({ tab }: Readonly<{ tab: Tab }>) {
   function onPaneDrop(target: Side, e: React.DragEvent) {
     e.preventDefault()
     try { const d = JSON.parse(e.dataTransfer.getData('application/json')); if (d.side === 'local' && target === 'remote') doUpload(d.entries); else if (d.side === 'remote' && target === 'local') doDownload(d.entries) }
-    catch { if (target === 'remote' && clientId && e.dataTransfer.files.length) { const files = Array.from(e.dataTransfer.files).map(f => ({ name: f.name, size: f.size, mtime: 0, permissions: 0, isDirectory: false, path: f.path })); doUpload(files) } }
+    catch { if (target === 'remote' && clientId && e.dataTransfer.files.length) { const files = Array.from(e.dataTransfer.files).map(f => ({ name: f.name, size: f.size, mtime: 0, permissions: 0, isDirectory: false, path: window.api.localfs.pathForFile(f) })); doUpload(files) } }
   }
 
   const splitPctFromPointer = (clientX: number) => {

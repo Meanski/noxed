@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, webUtils } from 'electron'
 
 contextBridge.exposeInMainWorld('api', {
   platform: process.platform,
@@ -116,6 +116,8 @@ contextBridge.exposeInMainWorld('api', {
     list: (dirPath: string) => ipcRenderer.invoke('localfs:list', dirPath),
     readTextFile: (filePath: string) => ipcRenderer.invoke('localfs:readTextFile', filePath) as Promise<string>,
     writeTextFile: (filePath: string, content: string) => ipcRenderer.invoke('localfs:writeTextFile', filePath, content),
+    // Electron 32 removed File.path; dropped files only expose their path through webUtils.
+    pathForFile: (file: File) => webUtils.getPathForFile(file),
   },
 
   // Filesystem (for reading SSH keys)
